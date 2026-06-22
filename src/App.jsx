@@ -27,7 +27,10 @@ const sb = async (path, method = "GET", body = null) => {
 };
 
 const db = {
-  get: (table, query = "") => sb(`${table}?select=*${query ? "&" + query : ""}&order=id.desc`),
+ get: (table, query = "") => {
+  const orderCol = table === "stock" ? "produit_id" : "id";
+  return sb(`${table}?select=*${query ? "&" + query : ""}&order=${orderCol}.desc`);
+},
   insert: (table, data) => sb(table, "POST", data),
   update: (table, id, data) => sb(`${table}?id=eq.${id}`, "PATCH", data),
   delete: (table, id) => sb(`${table}?id=eq.${id}`, "DELETE"),
