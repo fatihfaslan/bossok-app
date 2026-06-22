@@ -14,7 +14,7 @@ const sb = async (path, method = "GET", body = null) => {
       "apikey": SUPABASE_KEY,
       "Authorization": `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json",
-      "Prefer": method === "POST" ? "return=representation" : "return=representation",
+      "Prefer": "return=representation",
     },
     body: body ? JSON.stringify(body) : null,
   });
@@ -27,13 +27,10 @@ const sb = async (path, method = "GET", body = null) => {
 };
 
 const db = {
-  get: (table, query = "") => sb(`${table}?${query}&order=id.desc`),
+  get: (table, query = "") => sb(`${table}?select=*${query ? "&" + query : ""}&order=id.desc`),
   insert: (table, data) => sb(table, "POST", data),
   update: (table, id, data) => sb(`${table}?id=eq.${id}`, "PATCH", data),
   delete: (table, id) => sb(`${table}?id=eq.${id}`, "DELETE"),
-  upsert: (table, data) => sb(table, "POST", data).catch(() =>
-    sb(`${table}?id=eq.${data.id}`, "PATCH", data)
-  ),
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -162,10 +159,10 @@ export default function App() {
     try {
       setLoading(true);
       const [cls, facts, cmds, stk] = await Promise.all([
-        db.get("clients", "select=*"),
-        db.get("factures", "select=*"),
-        db.get("commandes", "select=*"),
-        db.get("stock", "select=*"),
+        db.get("clients"),
+        db.get("factures"),
+        db.get("commandes"),
+        db.get("stock"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -293,7 +290,7 @@ export default function App() {
     const newQte = Math.max(0, qte);
     setStock(prev=>({...prev,[produitId]:newQte}));
     try {
-      const existing = await db.get("stock", `produit_id=eq.${produitId}&select=*`);
+      const existing = await db.get("stock", `produit_id=eq.${produitId}`);
       if (existing.length > 0) {
         await db.update("stock", existing[0].produit_id, {quantite: newQte, updated_at: new Date().toISOString()});
       } else {
