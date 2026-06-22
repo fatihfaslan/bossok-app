@@ -5,7 +5,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 // SUPABASE CONFIG
 // ═══════════════════════════════════════════════════════════════════
 const SUPABASE_URL = "https://yjjdpfaubpbicehqiepe.supabase.co";
-const SUPABASE_KEY = "sb_publishable_JHH9jH-5VjhVkMxOkeNeuQ__UCLAi35";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlqamRwZmF1YnBiaWNlaHFpZXBlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNDg5MjEsImV4cCI6MjA5NzcyNDkyMX0.IUNl-DCU0C_iyFP74JOXeEKufD53NeJSQRJsu3vosys";
 
 const sb = async (path, method = "GET", body = null) => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
