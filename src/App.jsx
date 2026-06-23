@@ -1061,11 +1061,17 @@ function BossokApp({ session, onLogout }) {
       <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:12,marginBottom:12}}>
         <div style={{fontWeight:700,color:"#DC2626",fontSize:13,marginBottom:8}}>⚠️ Factures impayées — {fmtFull(factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0))}</div>
         {factures.filter(f=>f.statut==="Impayée").map(f=>(
-          <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"4px 0",borderBottom:"1px solid #FECACA",gap:8}}>
-            <span style={{fontWeight:500,flex:1}}>{f.numero} — {f.client_nom}</span>
-            <span style={{color:"#6B7280"}}>{f.date} · éch. {f.echeance}</span>
+          <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderBottom:"1px solid #FECACA",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontWeight:600,color:"#DC2626",width:90}}>{f.numero}</span>
+            <span style={{fontWeight:500,flex:1}}>{f.client_nom}</span>
+            <span style={{color:"#6B7280",fontSize:11}}>{f.date} · éch. {f.echeance}</span>
             <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes).total)}</span>
-            <button onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓</button>
+            <div style={{display:"flex",gap:4}}>
+              <button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>
+              <button title="Imprimer / Télécharger PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
+              <button title="Créer un avoir" onClick={()=>creerAvoir(f)} style={{...S.btn("#8B5CF6"),padding:"2px 8px",fontSize:11}}>↩️</button>
+              <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"2px 8px",fontSize:11}}>🗑️</button>
+            </div>
           </div>
         ))}
       </div>
