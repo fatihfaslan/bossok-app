@@ -151,12 +151,11 @@ const totalFact = (lignes=[]) => {
 // ═══════════════════════════════════════════════════════════════════
 // PDF GENERATOR
 // ═══════════════════════════════════════════════════════════════════
-const generatePDF = (facture, client) => {
+const generatePDF = (facture, client, impayees = []) => {
   const lignes = facture.lignes || [];
   const sousTotal = lignes.reduce((s, l) => s + l.qte * l.pu, 0);
   const totalConsignes = lignes.reduce((s, l) => s + l.qte * (l.consigne || 0), 0);
-  
-  // TVA : 0% pour Belgique et France, 3% pour Luxembourg
+
   const paysExport = ["Belgique", "France", "Hollande"].includes(client?.region || "");
   const tvaPct = paysExport ? 0 : 3;
   const tvaVal = sousTotal * tvaPct / 100;
@@ -168,22 +167,39 @@ const generatePDF = (facture, client) => {
     <tr>
       <td style="padding:6px 8px;color:#C0392B;font-weight:600;text-align:center;border-bottom:1px solid #f0f0f0">${l.qte}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0">${l.nom}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center">${l.consigne > 0 ? fmtEur(l.qte * l.consigne) : ""}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center;color:#8B5CF6;font-weight:600">${l.consigne > 0 ? fmtEur(l.qte * l.consigne) : ""}</td>
       <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0">${fmtEur(l.pu)}</td>
       <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0">${fmtEur(l.qte * l.pu)}</td>
     </tr>
   `).join("");
 
-  // Empty rows to fill
-  const emptyRows = Array(Math.max(0, 8 - lignes.length)).fill("").map(() => `
+  const emptyRows = Array(Math.max(0, 7 - lignes.length)).fill("").map(() => `
     <tr>
       <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0">&nbsp;</td>
       <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0"></td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;color:#999">- €</td>
       <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0"></td>
       <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0"></td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;color:#ccc">- €</td>
     </tr>
   `).join("");
+
+  // Impayées section
+  const impayeesHTML = impayees.length > 0 ? `
+    <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:10px 14px;margin-bottom:8px">
+      <p style="font-weight:700;color:#DC2626;font-size:10px;margin-bottom:6px">⚠️ RAPPEL — Factures impayées :</p>
+      ${impayees.map(f => {
+        const ft = (f.lignes||[]).reduce((s,l) => s + l.qte*(l.pu+(l.consigne||0)), 0);
+        return `<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px;color:#333">
+          <span>${f.numero} — ${f.date}</span>
+          <span style="font-weight:700;color:#DC2626">${fmtEur(ft)}</span>
+        </div>`;
+      }).join("")}
+      <div style="border-top:1px solid #FECACA;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:#DC2626">
+        <span>Total dû :</span>
+        <span>${fmtEur(impayees.reduce((s,f) => s + (f.lignes||[]).reduce((ss,l) => ss + l.qte*(l.pu+(l.consigne||0)), 0), 0))}</span>
+      </div>
+    </div>
+  ` : "";
 
   const html = `<!DOCTYPE html>
 <html lang="fr">
@@ -193,59 +209,47 @@ const generatePDF = (facture, client) => {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; font-size: 11px; color: #333; padding: 20px 30px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-    .company h1 { font-size: 18px; font-weight: 800; color: #C0392B; text-decoration: underline; margin-bottom: 8px; }
-    .company p { font-size: 10px; line-height: 1.6; color: #555; }
-    .logo img { width: 120px; }
-    .meta { display: flex; justify-content: space-between; margin: 16px 0; padding: 12px; border: 1px solid #ddd; }
-    .meta-left p { line-height: 1.8; }
-    .client-box { font-size: 11px; }
-    .client-name { font-size: 16px; font-weight: 800; color: #C0392B; text-decoration: underline; margin: 4px 0; }
-    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-    thead tr { background: #e8e8e8; }
-    th { padding: 7px 8px; text-align: left; font-size: 10px; font-weight: 700; border: 1px solid #ccc; }
-    .totals { float: right; width: 280px; margin-top: 8px; }
-    .totals table { margin: 0; }
-    .totals td { padding: 4px 8px; font-size: 11px; }
-    .total-final { font-size: 14px; font-weight: 800; }
-    .signatures { display: flex; gap: 40px; margin-top: 30px; padding-top: 16px; border-top: 1px solid #ddd; }
-    .sig-box { flex: 1; }
-    .sig-box p { font-size: 10px; color: #555; margin-bottom: 30px; }
-    .sig-line { border-top: 1px solid #333; margin-top: 4px; }
-    .footer { margin-top: 20px; font-size: 9px; color: #555; }
-    .footer .bank { color: #C0392B; font-weight: 700; }
-    .merci { text-align: center; font-weight: 800; font-size: 12px; margin-top: 12px; }
-    @media print { body { padding: 10px 20px; } }
+    @media print {
+      body { padding: 10px 20px; }
+      .no-print { display: none; }
+    }
   </style>
 </head>
 <body>
 
-<!-- HEADER -->
-<div class="header">
-  <div class="company">
-    <h1>BOSSOK DISTRIBUTION Sàrl</h1>
-    <p>Adresse : 71A Boulevard Robert Schuman<br/>
-    Code postal, Ville : 8340, Olm<br/>
-    Téléphone : 661-620-620<br/>
-    TVA: LU35355446</p>
-  </div>
-  <div class="logo">
-    <img src="${LOGO}" alt="BOSSOK"/>
-  </div>
+<!-- PRINT BUTTON -->
+<div class="no-print" style="position:fixed;top:10px;right:10px;z-index:999">
+  <button onclick="window.print()" style="padding:10px 20px;background:#1D4ED8;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.2)">
+    🖨️ Imprimer / Sauvegarder PDF
+  </button>
 </div>
 
-<hr style="border:none;border-top:1px solid #ddd;margin:12px 0"/>
-
-<!-- META -->
-<div class="meta">
-  <div class="meta-left">
-    <p><strong>DATE :</strong> ${facture.date || ""}</p>
-    <p><strong>N° FACTURE</strong> <strong>${facture.numero}</strong></p>
+<!-- HEADER -->
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+  <div>
+    <h1 style="font-size:18px;font-weight:800;color:#C0392B;text-decoration:underline;margin-bottom:8px">BOSSOK DISTRIBUTION Sàrl</h1>
+    <p style="font-size:10px;line-height:1.7;color:#555">
+      Adresse : 71A Boulevard Robert Schuman<br/>
+      Code postal, Ville : 8340, Olm<br/>
+      Téléphone : 661-620-620<br/>
+      TVA: LU35355446
+    </p>
   </div>
-  <div class="client-box">
-    <p>Facturé à :</p>
-    <table style="margin:0;border:none" cellpadding="3">
-      <tr><td style="color:#555;width:130px">Nom de la société:</td><td><span class="client-name">${facture.client_nom || ""}</span></td></tr>
+  <img src="${LOGO}" alt="BOSSOK" style="width:110px;height:110px;object-fit:contain"/>
+</div>
+
+<hr style="border:none;border-top:1px solid #ddd;margin:10px 0"/>
+
+<!-- DATE + CLIENT -->
+<div style="display:flex;justify-content:space-between;margin:14px 0;padding:12px;border:1px solid #ddd;border-radius:4px">
+  <div>
+    <p style="line-height:1.9"><strong>DATE :</strong> ${facture.date || ""}</p>
+    <p style="line-height:1.9"><strong>N° FACTURE</strong> <strong style="font-size:13px">${facture.numero}</strong></p>
+  </div>
+  <div style="font-size:11px">
+    <p style="margin-bottom:4px">Facturé à :</p>
+    <table cellpadding="3" style="border:none">
+      <tr><td style="color:#555;width:130px">Nom de la société:</td><td><strong style="font-size:15px;color:#C0392B;text-decoration:underline">${facture.client_nom || ""}</strong></td></tr>
       <tr><td style="color:#555">Adresse:</td><td>${client?.adresse || facture.client_adresse || ""}</td></tr>
       <tr><td style="color:#555">Téléphone:</td><td>${client?.telephone || ""}</td></tr>
       <tr><td style="color:#555">TVA:</td><td>${client?.tva || facture.client_tva || ""}</td></tr>
@@ -253,15 +257,15 @@ const generatePDF = (facture, client) => {
   </div>
 </div>
 
-<!-- LINES TABLE -->
-<table>
+<!-- TABLE -->
+<table style="width:100%;border-collapse:collapse;margin:14px 0">
   <thead>
-    <tr>
-      <th style="width:70px;text-align:center">QUANTITÉ</th>
-      <th>DESCRIPTION</th>
-      <th style="width:100px;text-align:center">VIDANGES fournis</th>
-      <th style="width:100px;text-align:right">PRIX UNITAIRE</th>
-      <th style="width:100px;text-align:right">MONTANT</th>
+    <tr style="background:#e8e8e8">
+      <th style="padding:7px 8px;text-align:center;font-size:10px;font-weight:700;border:1px solid #ccc;width:70px">QUANTITÉ</th>
+      <th style="padding:7px 8px;text-align:left;font-size:10px;font-weight:700;border:1px solid #ccc">DESCRIPTION</th>
+      <th style="padding:7px 8px;text-align:center;font-size:10px;font-weight:700;border:1px solid #ccc;width:110px">VIDANGES fournis</th>
+      <th style="padding:7px 8px;text-align:right;font-size:10px;font-weight:700;border:1px solid #ccc;width:110px">PRIX UNITAIRE</th>
+      <th style="padding:7px 8px;text-align:right;font-size:10px;font-weight:700;border:1px solid #ccc;width:110px">MONTANT</th>
     </tr>
   </thead>
   <tbody>
@@ -270,42 +274,43 @@ const generatePDF = (facture, client) => {
   </tbody>
 </table>
 
-<!-- TOTALS -->
-<div style="overflow:hidden">
-  <div class="signatures" style="float:left;width:55%;margin-top:0">
-    <div>
-      <p style="font-size:10px;color:#C0392B;font-weight:700">Reçu marchandise en bon état : ${"─".repeat(40)}</p>
-      <br/><br/>
-      <p style="font-size:10px;color:#C0392B;font-weight:700">Pour acquit le <strong>BOSSOK Distribution Sàrl</strong> : ${"─".repeat(25)}</p>
-    </div>
+<!-- BOTTOM -->
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:8px">
+
+  <!-- LEFT: Signatures + Impayées -->
+  <div style="width:52%">
+    <p style="font-size:10px;color:#C0392B;font-weight:700;margin-bottom:20px">Reçu marchandise en bon état : ─────────────────────</p>
+    <p style="font-size:10px;color:#C0392B;font-weight:700;margin-bottom:30px">Pour acquit le <strong>BOSSOK Distribution Sàrl</strong> : ──────────────</p>
+    ${impayeesHTML}
   </div>
-  <div class="totals">
-    <table>
-      <tr><td>SOUS-TOTAL</td><td style="text-align:right;font-weight:700">${fmtEur(sousTotal)}</td></tr>
-      <tr><td>TAUX DE T.V.A.</td><td style="text-align:right">${tvaPct}%</td></tr>
-      <tr><td>T.V.A.</td><td style="text-align:right;font-weight:700">${fmtEur(tvaVal)}</td></tr>
-      <tr><td>Vidanges Fournis:</td><td style="text-align:right">${totalConsignes > 0 ? fmtEur(totalConsignes) : "- €"}</td></tr>
+
+  <!-- RIGHT: Totals -->
+  <div style="width:44%">
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="padding:5px 8px;font-size:11px">SOUS-TOTAL</td><td style="padding:5px 8px;text-align:right;font-weight:700;font-size:11px">${fmtEur(sousTotal)}</td></tr>
+      <tr><td style="padding:5px 8px;font-size:11px">TAUX DE T.V.A.</td><td style="padding:5px 8px;text-align:right;font-size:11px">${tvaPct}%</td></tr>
+      <tr><td style="padding:5px 8px;font-size:11px">T.V.A.</td><td style="padding:5px 8px;text-align:right;font-weight:700;font-size:11px">${fmtEur(tvaVal)}</td></tr>
+      <tr><td style="padding:5px 8px;font-size:11px">Vidanges Fournis:</td><td style="padding:5px 8px;text-align:right;font-size:11px;color:#8B5CF6;font-weight:700">${totalConsignes > 0 ? fmtEur(totalConsignes) : "- €"}</td></tr>
       <tr style="border-top:2px solid #333">
-        <td class="total-final">TOTAL</td>
-        <td class="total-final" style="text-align:right">${fmtEur(total)}</td>
+        <td style="padding:6px 8px;font-size:14px;font-weight:800">TOTAL</td>
+        <td style="padding:6px 8px;text-align:right;font-size:14px;font-weight:800">${fmtEur(total)}</td>
       </tr>
     </table>
   </div>
 </div>
 
 <!-- FOOTER -->
-<div class="footer" style="clear:both;margin-top:20px">
-  <p>Pour toute question concernant cette facture, veuillez contacter <strong>Bossok Distribution Sàrl</strong></p>
-  <p class="bank">CONDITIONS DE PAIEMENT: 7 JOUR DATE DE FACTURE &nbsp;&nbsp; 1- ) BIC: BGLLLULL / LU14 0030 1895 5248 0000</p>
-  <p class="bank" style="text-align:center">2- ) BIC: REVOLT21 / LT85 3250 0571 2868 0584</p>
-  <p class="bank" style="text-align:center">Titulaires du compte: BOSSOK DISTRIBUTION S.A.R.L</p>
-  <p class="merci">MERCI DE VOTRE CONFIANCE !</p>
+<div style="margin-top:18px;font-size:9px;color:#555;border-top:1px solid #ddd;padding-top:10px">
+  <p style="margin-bottom:4px">Pour toute question concernant cette facture, veuillez contacter <strong>Bossok Distribution Sàrl</strong></p>
+  <p style="color:#C0392B;font-weight:700;margin-bottom:2px">CONDITIONS DE PAIEMENT: 7 JOUR DATE DE FACTURE &nbsp;&nbsp; 1- ) BIC: BGLLLULL / LU14 0030 1895 5248 0000</p>
+  <p style="color:#C0392B;font-weight:700;text-align:center;margin-bottom:2px">2- ) BIC: REVOLT21 / LT85 3250 0571 2868 0584</p>
+  <p style="color:#C0392B;font-weight:700;text-align:center;margin-bottom:8px">Titulaires du compte: BOSSOK DISTRIBUTION S.A.R.L</p>
+  <p style="text-align:center;font-weight:800;font-size:12px">MERCI DE VOTRE CONFIANCE !</p>
 </div>
 
 </body>
 </html>`;
 
-  // Download as HTML file
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -316,6 +321,7 @@ const generatePDF = (facture, client) => {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
+
 
 // ═══════════════════════════════════════════════════════════════════
 // LOGIN PAGE
@@ -577,6 +583,8 @@ function BossokApp({ session, onLogout }) {
     finally { setSaving(false); }
   };
 
+  const [lastFacture, setLastFacture] = useState(null);
+
   const saveFact = async () => {
     if (!factClientId || factLignes.length===0) return;
     const client = clients.find(c=>c.id===factClientId);
@@ -592,6 +600,12 @@ function BossokApp({ session, onLogout }) {
         lignes: factLignes, statut: "Impayée", notes: factNotes, retours: []
       });
       await loadAll();
+      const newFact = {numero:"F-"+Date.now().toString().slice(-6), client_id:factClientId,
+        client_nom:clients.find(c=>c.id===factClientId)?.nom||"",
+        client_adresse:clients.find(c=>c.id===factClientId)?.adresse||"",
+        client_tva:clients.find(c=>c.id===factClientId)?.tva||"",
+        date:factDate, lignes:factLignes, statut:"Impayée"};
+      setLastFacture({facture:newFact, client:clients.find(c=>c.id===factClientId)});
       setFactLignes([]); setFactNotes(""); setFactClientId(null);
       setSearchFactClient(""); setShowFactForm(false);
     } catch(e) { alert("Erreur : "+e.message); }
@@ -967,7 +981,7 @@ function BossokApp({ session, onLogout }) {
                     <div style={{display:"flex",gap:4}}>
                       {f.statut==="Impayée"&&<button onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"3px 8px",fontSize:11}}>✓</button>}
                       {(f.lignes||[]).some(l=>l.consigne>0)&&<button onClick={()=>{setShowRetour(f.id);setRetourQtes({});}} style={{...S.btn("#7C3AED"),padding:"3px 8px",fontSize:11}}>♻️</button>}
-                      <button onClick={()=>{const c=clients.find(x=>x.id===f.client_id);generatePDF(f,c);}} style={{...S.btn("#374151"),padding:"3px 8px",fontSize:11}}>🖨️</button>
+                      <button onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id);generatePDF(f,c,imp);}} style={{...S.btn("#374151"),padding:"3px 8px",fontSize:11}}>🖨️</button>
                     </div>
                   </td>
                 </tr>
@@ -1300,7 +1314,7 @@ function BossokApp({ session, onLogout }) {
                   <span style={{fontWeight:600}}>{fmtFull(total)}</span>
                   <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2",f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
                   {f.statut==="Impayée"&&<button onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓</button>}
-                  <button onClick={()=>{const c=selClient;generatePDF(f,c);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
+                  <button onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id);generatePDF(f,selClient,imp);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
                 </div>
               );
             })
@@ -1482,6 +1496,29 @@ function BossokApp({ session, onLogout }) {
           </div>
         );
       })()}
+    </div>
+  </div>
+)}
+
+{/* ══ MODAL IMPRIMER APRES CREATION ══════════════════════════════ */}
+{lastFacture && (
+  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div style={{background:"#fff",borderRadius:16,padding:28,maxWidth:420,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+      <div style={{fontSize:48,marginBottom:12}}>✅</div>
+      <div style={{fontWeight:700,fontSize:18,marginBottom:4}}>Facture créée !</div>
+      <div style={{fontSize:13,color:"#6B7280",marginBottom:20}}>{lastFacture.facture.numero} — {lastFacture.facture.client_nom}</div>
+      <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+        <button onClick={()=>{
+          const imp=factures.filter(x=>x.client_id===lastFacture.facture.client_id&&x.statut==="Impayée");
+          generatePDF(lastFacture.facture,lastFacture.client,imp);
+          setLastFacture(null);
+        }} style={{padding:"10px 20px",background:"#1D4ED8",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          🖨️ Imprimer la facture
+        </button>
+        <button onClick={()=>setLastFacture(null)} style={{padding:"10px 20px",background:"#F3F4F6",color:"#374151",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer"}}>
+          Plus tard
+        </button>
+      </div>
     </div>
   </div>
 )}
