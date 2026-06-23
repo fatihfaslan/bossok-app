@@ -551,20 +551,26 @@ function BossokApp({ session, onLogout }) {
   const planningB = commandes.filter(c=>c.statut==="En attente"&&getChauffeur(c.client_region)==="B");
 
   // Credit consignes = caisses retournées non encore déduites d'une facture
-  const creditConsignes = (cid) => {
-    let credit = 0;
+  const creditConsignesDetail = (cid) => {
+    let details = []; // {numero, montant}
+    let alreadyDeducted = 0;
+
     factures.filter(f => f.client_id === cid).forEach(f => {
-      // Add retours
       (f.retours || []).forEach(r => {
-        credit += r.qte * r.consigne;
+        details.push({ numero: f.numero, montant: r.qte * r.consigne });
       });
-      // Subtract already deducted (lignes with negative pu = retour consignes)
-      (f.lignes || []).filter(l => l.nom === "Retour consignes" && l.pu < 0).forEach(l => {
-        credit += l.qte * l.pu; // negative, so it subtracts
+      (f.lignes || []).filter(l => l.nom && l.nom.startsWith("Retour consignes") && l.pu < 0).forEach(l => {
+        alreadyDeducted += Math.abs(l.qte * l.pu);
       });
     });
-    return Math.max(0, credit);
+
+    const totalCredit = details.reduce((s, d) => s + d.montant, 0);
+    const remaining = Math.max(0, totalCredit - alreadyDeducted);
+    const refs = [...new Set(details.map(d => d.numero))].join(", ");
+    return { total: remaining, refs };
   };
+
+  const creditConsignes = (cid) => creditConsignesDetail(cid).total;
 
   const soldeConsignes = (cid) => {
     const r={};
@@ -754,16 +760,16 @@ function BossokApp({ session, onLogout }) {
   };
 
   const addCreditConsignes = (clientId) => {
-    const credit = creditConsignes(clientId);
-    if (credit <= 0) return;
+    const { total, refs } = creditConsignesDetail(clientId);
+    if (total <= 0) return;
+    const nom = refs ? `Retour consignes (réf. ${refs})` : "Retour consignes";
     setFactLignes(prev => {
-      // Remove existing credit line if any
-      const filtered = prev.filter(l => l.nom !== "Retour consignes");
+      const filtered = prev.filter(l => !l.isCredit);
       return [...filtered, {
         produitId: "CREDIT_CONSIGNES",
-        nom: "Retour consignes",
+        nom,
         qte: 1,
-        pu: -credit,
+        pu: -total,
         consigne: 0,
         isCredit: true
       }];
