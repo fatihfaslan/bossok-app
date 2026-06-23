@@ -7,12 +7,41 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 const SUPABASE_URL = "https://yjjdpfaubpbicehqiepe.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlqamRwZmF1YnBiaWNlaHFpZXBlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNDg5MjEsImV4cCI6MjA5NzcyNDkyMX0.IUNl-DCU0C_iyFP74JOXeEKufD53NeJSQRJsu3vosys";
 
+
+// ═══════════════════════════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════════════════════════
+const sbAuth = async (endpoint, body) => {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+};
+
+const getSession = () => {
+  try {
+    const raw = localStorage.getItem("bossok_session");
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (session.expires_at && Date.now() / 1000 > session.expires_at) {
+      localStorage.removeItem("bossok_session");
+      return null;
+    }
+    return session;
+  } catch { return null; }
+};
+
 const sb = async (path, method = "GET", body = null) => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     method,
     headers: {
       "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Authorization": `Bearer ${getSession()?.access_token || SUPABASE_KEY}`,
       "Content-Type": "application/json",
       "Prefer": "return=representation",
     },
@@ -27,10 +56,10 @@ const sb = async (path, method = "GET", body = null) => {
 };
 
 const db = {
- get: (table, query = "") => {
-  const orderCol = table === "stock" ? "produit_id" : "id";
-  return sb(`${table}?select=*${query ? "&" + query : ""}&order=${orderCol}.desc`);
-},
+  get: (table, query = "") => {
+    const orderCol = table === 'stock' ? 'produit_id' : 'id';
+    return sb(`${table}?select=*${query ? '&' + query : ''}&order=${orderCol}.desc`);
+  },
   insert: (table, data) => sb(table, "POST", data),
   update: (table, id, data) => sb(`${table}?id=eq.${id}`, "PATCH", data),
   delete: (table, id) => sb(`${table}?id=eq.${id}`, "DELETE"),
@@ -116,7 +145,153 @@ const totalFact = (lignes=[]) => {
 // ═══════════════════════════════════════════════════════════════════
 // APP
 // ═══════════════════════════════════════════════════════════════════
-export default function App() {
+// ═══════════════════════════════════════════════════════════════════
+// LOGIN PAGE
+// ═══════════════════════════════════════════════════════════════════
+function LoginPage({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState("login"); // login | reset
+  const [resetSent, setResetSent] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) return;
+    setLoading(true);
+    setError("");
+    try {
+      const data = await sbAuth("token?grant_type=password", { email, password });
+      if (data.access_token) {
+        const session = {
+          access_token: data.access_token,
+          expires_at: Math.floor(Date.now() / 1000) + (data.expires_in || 3600),
+          user: data.user,
+        };
+        localStorage.setItem("bossok_session", JSON.stringify(session));
+        onLogin(session);
+      } else {
+        setError("Email ou mot de passe incorrect");
+      }
+    } catch (e) {
+      setError("Erreur de connexion");
+    }
+    setLoading(false);
+  };
+
+  const handleReset = async () => {
+    if (!email) { setError("Entrez votre email"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      setResetSent(true);
+    } catch(e) {
+      setError("Erreur lors de l'envoi");
+    }
+    setLoading(false);
+  };
+
+  const inputStyle = { width: "100%", padding: "10px 12px", background: "#0F172A", border: "1px solid #334155", borderRadius: 8, color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" };
+
+  return (
+    <div style={{ fontFamily: "'Inter',system-ui,sans-serif", background: "#0F172A", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#1E293B", borderRadius: 16, padding: 40, width: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ width: 56, height: 56, background: "#1D4ED8", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 16px" }}>🍺</div>
+          <div style={{ fontWeight: 800, fontSize: 24, color: "#fff" }}>BOSSOK</div>
+          <div style={{ fontSize: 13, color: "#64748B", marginTop: 4 }}>Distribution de Boissons · Luxembourg</div>
+        </div>
+
+        {mode === "login" ? (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+                placeholder="votre@email.com" style={inputStyle}/>
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Mot de passe</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+                placeholder="••••••••" style={inputStyle}/>
+            </div>
+            <div style={{ textAlign: "right", marginBottom: 20 }}>
+              <button onClick={() => { setMode("reset"); setError(""); setResetSent(false); }}
+                style={{ background: "none", border: "none", color: "#60A5FA", fontSize: 12, cursor: "pointer" }}>
+                Mot de passe oublié ?
+              </button>
+            </div>
+            {error && <div style={{ background: "#450A0A", border: "1px solid #DC2626", borderRadius: 8, padding: "10px 12px", color: "#FCA5A5", fontSize: 13, marginBottom: 16 }}>{error}</div>}
+            <button onClick={handleLogin} disabled={loading}
+              style={{ width: "100%", padding: "12px 0", background: loading ? "#1E3A8A" : "#1D4ED8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer" }}>
+              {loading ? "Connexion..." : "Se connecter"}
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ marginBottom: 8, fontSize: 13, color: "#94A3B8", lineHeight: 1.5 }}>
+              Entrez votre email et nous vous enverrons un lien pour réinitialiser votre mot de passe.
+            </div>
+            {!resetSent ? (
+              <>
+                <div style={{ margin: "16px 0" }}>
+                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Email</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleReset()}
+                    placeholder="votre@email.com" style={inputStyle}/>
+                </div>
+                {error && <div style={{ background: "#450A0A", border: "1px solid #DC2626", borderRadius: 8, padding: "10px 12px", color: "#FCA5A5", fontSize: 13, marginBottom: 16 }}>{error}</div>}
+                <button onClick={handleReset} disabled={loading}
+                  style={{ width: "100%", padding: "12px 0", background: loading ? "#1E3A8A" : "#1D4ED8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer", marginBottom: 12 }}>
+                  {loading ? "Envoi..." : "Envoyer le lien"}
+                </button>
+              </>
+            ) : (
+              <div style={{ background: "#052E16", border: "1px solid #16A34A", borderRadius: 8, padding: "14px", color: "#86EFAC", fontSize: 13, margin: "16px 0", textAlign: "center" }}>
+                ✅ Email envoyé ! Vérifiez votre boîte mail et cliquez sur le lien pour choisir un nouveau mot de passe.
+              </div>
+            )}
+            <button onClick={() => { setMode("login"); setError(""); setResetSent(false); }}
+              style={{ width: "100%", padding: "10px 0", background: "transparent", color: "#60A5FA", border: "1px solid #1E3A8A", borderRadius: 8, fontSize: 13, cursor: "pointer" }}>
+              ← Retour à la connexion
+            </button>
+          </>
+        )}
+
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 11, color: "#475569" }}>
+          🔒 Accès sécurisé — BOSSOK Distribution Sàrl
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN APP WRAPPER
+// ═══════════════════════════════════════════════════════════════════
+export default function AppWrapper() {
+  const [session, setSession] = useState(getSession());
+
+  if (!session) return <LoginPage onLogin={setSession} />;
+
+  return (
+    <div>
+      <BossokApp session={session} onLogout={() => { localStorage.removeItem("bossok_session"); setSession(null); }} />
+    </div>
+  );
+}
+
+function App({ session, onLogout }) {
+  // renamed internally
+}
+
+function BossokApp({ session, onLogout }) {
   const [page, setPage] = useState("dashboard");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -424,11 +599,15 @@ export default function App() {
       <div style={S.main}>
         <div style={S.topbar}>
           <div style={{fontWeight:700,fontSize:15}}>{PAGE_TITLES[page]}</div>
-          <div style={{display:"flex",gap:8}}>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {page==="clients" && <button style={S.btn()} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours"});setShowClientForm(true);}}>+ Nouveau client</button>}
             {page==="factures" && <button style={S.btn()} onClick={()=>{setShowFactForm(true);setFactClientId(null);setFactLignes([]);setSearchFactClient("");}}>+ Nouvelle facture</button>}
             {page==="commandes" && <button style={{...S.btn(),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>✅ Enregistrer</button>}
             <button style={S.btn("#F1F5F9","#374151")} onClick={loadAll}>🔄</button>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 10px",background:"#F1F5F9",borderRadius:8}}>
+              <span style={{fontSize:12,color:"#374151"}}>{session?.user?.email}</span>
+              <button onClick={onLogout} style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",fontSize:12,fontWeight:600}}>Déconnexion</button>
+            </div>
           </div>
         </div>
 
