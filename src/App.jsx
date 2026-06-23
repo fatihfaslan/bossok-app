@@ -164,23 +164,17 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
 
   const rows = lignes.map(l => `
-    <tr style="${l.isCredit ? 'background:#F0FDF4' : ''}">
-      <td style="padding:6px 8px;color:${l.isCredit ? '#059669' : '#C0392B'};font-weight:600;text-align:center;border-bottom:1px solid #f0f0f0">${l.isCredit ? "♻️" : l.qte}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;color:${l.isCredit ? '#059669' : 'inherit'};font-weight:${l.isCredit ? '600' : 'normal'}">${l.nom}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center;color:#8B5CF6;font-weight:600">${l.consigne > 0 ? fmtEur(l.qte * l.consigne) : ""}</td>
-      <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0">${l.isCredit ? "" : fmtEur(l.pu)}</td>
-      <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0;color:${l.isCredit ? '#059669' : 'inherit'}">${fmtEur(l.qte * l.pu)}</td>
+    <tr>
+      <td style="text-align:center;font-weight:600;color:${l.isCredit?'#059669':'#111'}">${l.isCredit ? "♻" : l.qte}</td>
+      <td style="color:${l.isCredit?'#059669':'inherit'};font-style:${l.isCredit?'italic':'normal'}">${l.nom}</td>
+      <td style="text-align:center;color:#555">${l.consigne > 0 ? fmtEur(l.qte * l.consigne) : ""}</td>
+      <td style="text-align:right">${l.isCredit ? "" : fmtEur(l.pu)}</td>
+      <td style="text-align:right;font-weight:600;color:${l.isCredit?'#059669':'inherit'}">${fmtEur(l.qte * l.pu)}</td>
     </tr>
   `).join("");
 
-  const emptyRows = Array(Math.max(0, 7 - lignes.length)).fill("").map(() => `
-    <tr>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0">&nbsp;</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0"></td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;color:#ccc">- €</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0"></td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;color:#ccc">- €</td>
-    </tr>
+  const emptyRows = Array(Math.max(0, 5 - lignes.length)).fill("").map(() => `
+    <tr><td>&nbsp;</td><td></td><td></td><td></td><td style="text-align:right;color:#ccc">—</td></tr>
   `).join("");
 
   // Impayées section
@@ -190,44 +184,33 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   const creditDeduit = lignes.filter(l => l.isCredit).reduce((s,l) => s + Math.abs(l.qte * l.pu), 0);
 
   const soldeConsignesHTML = (totalNouvellesConsignes > 0 || soldeClient > 0) ? `
-    <div style="background:#F5F3FF;border:1px solid #DDD6FE;border-radius:6px;padding:10px 14px;margin-top:8px">
-      <p style="font-weight:700;color:#7C3AED;font-size:10px;margin-bottom:6px">🫙 SOLDE CONSIGNES APRÈS CETTE FACTURE :</p>
+    <div class="consignes-box">
+      <p style="font-weight:700;margin-bottom:3px">🫙 Solde consignes après cette facture :</p>
       ${newConsignes.map(l => `
-        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px">
-          <span>${l.nom} × ${l.qte} caisse(s)</span>
-          <span style="font-weight:600;color:#7C3AED">${fmtEur(l.qte * l.consigne)}</span>
+        <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+          <span>${l.nom} × ${l.qte} cs</span>
+          <span style="font-weight:600">${fmtEur(l.qte * l.consigne)}</span>
         </div>
       `).join("")}
-      ${creditDeduit > 0 ? `
-        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px;color:#059669">
-          <span>Crédit consignes déduit</span>
-          <span style="font-weight:600">- ${fmtEur(creditDeduit)}</span>
-        </div>
-      ` : ""}
-      ${soldeClient > 0 ? `
-        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px;color:#6B7280">
-          <span>Solde précédent</span>
-          <span style="font-weight:600">${fmtEur(soldeClient)}</span>
-        </div>
-      ` : ""}
-      <div style="border-top:1px solid #DDD6FE;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#7C3AED">
-        <span>Total consignes dues :</span>
-        <span>${fmtEur(soldeClient + totalNouvellesConsignes - creditDeduit)}</span>
+      ${creditDeduit > 0 ? `<div style="display:flex;justify-content:space-between;color:#333"><span>Crédit déduit</span><span>- ${fmtEur(creditDeduit)}</span></div>` : ""}
+      ${soldeClient > 0 ? `<div style="display:flex;justify-content:space-between;color:#555"><span>Solde précédent</span><span>${fmtEur(soldeClient)}</span></div>` : ""}
+      <div style="border-top:1px solid #555;margin-top:3px;padding-top:3px;display:flex;justify-content:space-between;font-weight:700">
+        <span>Total consignes dues :</span><span>${fmtEur(soldeClient + totalNouvellesConsignes - creditDeduit)}</span>
       </div>
     </div>
   ` : "";
 
   const impayeesHTML = impayees.length > 0 ? `
-    <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:10px 14px;margin-bottom:8px">
-      <p style="font-weight:700;color:#DC2626;font-size:10px;margin-bottom:6px">⚠️ RAPPEL — Factures impayées :</p>
+    <div class="impayees">
+      <p class="impayees-title">⚠ RAPPEL — Factures impayées :</p>
       ${impayees.map(f => {
         const ft = (f.lignes||[]).reduce((s,l) => s + l.qte*(l.pu+(l.consigne||0)), 0);
-        return `<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px;color:#333">
-          <span>${f.numero} — ${f.date}</span>
-          <span style="font-weight:700;color:#DC2626">${fmtEur(ft)}</span>
+        return `<div style="display:flex;justify-content:space-between;margin-bottom:2px">
+          <span>${f.numero} · ${f.date}</span>
+          <strong style="color:#C0392B">${fmtEur(ft)}</strong>
         </div>`;
       }).join("")}
-      <div style="border-top:1px solid #FECACA;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:#DC2626">
+      <div style="border-top:1px solid #C0392B;margin-top:4px;padding-top:3px;display:flex;justify-content:space-between;font-weight:700;color:#C0392B">
         <span>Total dû :</span>
         <span>${fmtEur(impayees.reduce((s,f) => s + (f.lignes||[]).reduce((ss,l) => ss + l.qte*(l.pu+(l.consigne||0)), 0), 0))}</span>
       </div>
@@ -240,65 +223,91 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   <meta charset="UTF-8"/>
   <title>Facture ${facture.numero}</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; font-size: 11px; color: #333; padding: 20px 30px; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:12mm 14mm; }
+    .no-print { position:fixed; top:8px; right:8px; z-index:999; }
+    .no-print button { padding:8px 16px; background:#1D4ED8; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; }
+    h1 { font-size:13pt; font-weight:700; color:#C0392B; margin-bottom:2px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+    .company p { font-size:8pt; line-height:1.5; color:#333; }
+    .logo img { width:80px; }
+    hr { border:none; border-top:1px solid #999; margin:6px 0; }
+    .meta { display:flex; justify-content:space-between; margin:8px 0; font-size:8.5pt; }
+    .meta-left p { line-height:1.7; }
+    .client-name { font-size:11pt; font-weight:700; color:#111; }
+    table { width:100%; border-collapse:collapse; margin:8px 0; font-size:8.5pt; }
+    thead tr { background:#111; color:#fff; }
+    th { padding:4px 6px; text-align:left; font-size:8pt; font-weight:600; }
+    tbody tr:nth-child(even) { background:#f7f7f7; }
+    td { padding:3px 6px; border-bottom:1px solid #ddd; }
+    .bottom { display:flex; justify-content:space-between; align-items:flex-start; margin-top:6px; }
+    .sig { font-size:7.5pt; color:#333; line-height:2.2; }
+    .totals-table { width:240px; font-size:8.5pt; }
+    .totals-table td { padding:2px 6px; border:none; }
+    .totals-table .total-row td { border-top:1.5px solid #111; font-weight:700; font-size:10pt; padding-top:4px; }
+    .footer { margin-top:8px; padding-top:6px; border-top:1px solid #999; font-size:7pt; color:#333; }
+    .footer .bank { color:#C0392B; font-weight:700; }
+    .merci { text-align:center; font-weight:700; font-size:9pt; margin-top:6px; }
+    .impayees { border:1px solid #C0392B; border-radius:3px; padding:5px 8px; margin-top:6px; font-size:7.5pt; }
+    .impayees-title { font-weight:700; color:#C0392B; margin-bottom:3px; }
+    .consignes-box { border:1px solid #555; border-radius:3px; padding:5px 8px; margin-top:6px; font-size:7.5pt; }
     @media print {
-      body { padding: 10px 20px; }
-      .no-print { display: none; }
+      .no-print { display:none; }
+      body { padding:8mm 10mm; }
     }
   </style>
 </head>
 <body>
 
-<!-- PRINT BUTTON -->
-<div class="no-print" style="position:fixed;top:10px;right:10px;z-index:999">
-  <button onclick="window.print()" style="padding:10px 20px;background:#1D4ED8;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.2)">
-    🖨️ Imprimer / Sauvegarder PDF
-  </button>
+<div class="no-print">
+  <button onclick="window.print()">🖨️ Imprimer</button>
 </div>
 
 <!-- HEADER -->
-<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
-  <div>
-    <h1 style="font-size:18px;font-weight:800;color:#C0392B;text-decoration:underline;margin-bottom:8px">BOSSOK DISTRIBUTION Sàrl</h1>
-    <p style="font-size:10px;line-height:1.7;color:#555">
-      Adresse : 71A Boulevard Robert Schuman<br/>
-      Code postal, Ville : 8340, Olm<br/>
-      Téléphone : 661-620-620<br/>
-      TVA: LU35355446
+<div class="header">
+  <div class="company">
+    <h1>BOSSOK DISTRIBUTION Sàrl</h1>
+    <p>
+      71A Boulevard Robert Schuman · 8340 Olm<br/>
+      Tél : 661-620-620 · TVA : LU35355446
     </p>
   </div>
-  <img src="${LOGO}" alt="BOSSOK" style="width:110px;height:110px;object-fit:contain"/>
+  <div class="logo">
+    <img src="${LOGO}" alt="BOSSOK"/>
+  </div>
 </div>
 
-<hr style="border:none;border-top:1px solid #ddd;margin:10px 0"/>
+<hr/>
 
 <!-- DATE + CLIENT -->
-<div style="display:flex;justify-content:space-between;margin:14px 0;padding:12px;border:1px solid #ddd;border-radius:4px">
-  <div>
-    <p style="line-height:1.9"><strong>DATE :</strong> ${facture.date || ""}</p>
-    <p style="line-height:1.9"><strong>N° FACTURE</strong> <strong style="font-size:13px">${facture.numero}</strong></p>
+<div class="meta">
+  <div class="meta-left">
+    <p><strong>Date :</strong> ${facture.date || ""}</p>
+    <p><strong>N° Facture :</strong> <strong>${facture.numero}</strong></p>
+    <p><strong>Échéance :</strong> ${facture.echeance || ""}</p>
   </div>
-  <div style="font-size:11px">
-    <p style="margin-bottom:4px">Facturé à :</p>
-    <table cellpadding="3" style="border:none">
-      <tr><td style="color:#555;width:130px">Nom de la société:</td><td><strong style="font-size:15px;color:#C0392B;text-decoration:underline">${facture.client_nom || ""}</strong></td></tr>
-      <tr><td style="color:#555">Adresse:</td><td>${client?.adresse || facture.client_adresse || ""}</td></tr>
-      <tr><td style="color:#555">Téléphone:</td><td>${client?.telephone || ""}</td></tr>
-      <tr><td style="color:#555">TVA:</td><td>${client?.tva || facture.client_tva || ""}</td></tr>
-    </table>
+  <div style="text-align:right">
+    <p style="font-size:7.5pt;color:#555;margin-bottom:2px">Facturé à :</p>
+    <p class="client-name">${facture.client_nom || ""}</p>
+    <p style="font-size:8pt;color:#333;line-height:1.6">
+      ${client?.adresse || facture.client_adresse || ""}<br/>
+      ${client?.telephone ? "Tél : "+client.telephone : ""}<br/>
+      ${client?.tva || facture.client_tva ? "TVA : "+(client?.tva || facture.client_tva) : ""}
+    </p>
   </div>
 </div>
 
+<hr/>
+
 <!-- TABLE -->
-<table style="width:100%;border-collapse:collapse;margin:14px 0">
+<table>
   <thead>
-    <tr style="background:#e8e8e8">
-      <th style="padding:7px 8px;text-align:center;font-size:10px;font-weight:700;border:1px solid #ccc;width:70px">QUANTITÉ</th>
-      <th style="padding:7px 8px;text-align:left;font-size:10px;font-weight:700;border:1px solid #ccc">DESCRIPTION</th>
-      <th style="padding:7px 8px;text-align:center;font-size:10px;font-weight:700;border:1px solid #ccc;width:110px">VIDANGES fournis</th>
-      <th style="padding:7px 8px;text-align:right;font-size:10px;font-weight:700;border:1px solid #ccc;width:110px">PRIX UNITAIRE</th>
-      <th style="padding:7px 8px;text-align:right;font-size:10px;font-weight:700;border:1px solid #ccc;width:110px">MONTANT</th>
+    <tr>
+      <th style="width:45px;text-align:center">Qté</th>
+      <th>Description</th>
+      <th style="width:90px;text-align:center">Vidanges</th>
+      <th style="width:80px;text-align:right">Prix unit.</th>
+      <th style="width:80px;text-align:right">Montant</th>
     </tr>
   </thead>
   <tbody>
@@ -308,38 +317,31 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
 </table>
 
 <!-- BOTTOM -->
-<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:8px">
-
-  <!-- LEFT: Signatures + Impayées -->
+<div class="bottom">
   <div style="width:52%">
-    <p style="font-size:10px;color:#C0392B;font-weight:700;margin-bottom:20px">Reçu marchandise en bon état : ─────────────────────</p>
-    <p style="font-size:10px;color:#C0392B;font-weight:700;margin-bottom:16px">Pour acquit le <strong>BOSSOK Distribution Sàrl</strong> : ──────────────</p>
+    <div class="sig">
+      Reçu marchandise en bon état : ──────────────────────<br/>
+      Pour acquit BOSSOK Distribution Sàrl : ─────────────
+    </div>
     ${soldeConsignesHTML}
     ${impayeesHTML}
   </div>
-
-  <!-- RIGHT: Totals -->
-  <div style="width:44%">
-    <table style="width:100%;border-collapse:collapse">
-      <tr><td style="padding:5px 8px;font-size:11px">SOUS-TOTAL</td><td style="padding:5px 8px;text-align:right;font-weight:700;font-size:11px">${fmtEur(sousTotal)}</td></tr>
-      <tr><td style="padding:5px 8px;font-size:11px">TAUX DE T.V.A.</td><td style="padding:5px 8px;text-align:right;font-size:11px">${tvaPct}%</td></tr>
-      <tr><td style="padding:5px 8px;font-size:11px">T.V.A.</td><td style="padding:5px 8px;text-align:right;font-weight:700;font-size:11px">${fmtEur(tvaVal)}</td></tr>
-      <tr><td style="padding:5px 8px;font-size:11px">Vidanges Fournis:</td><td style="padding:5px 8px;text-align:right;font-size:11px;color:#8B5CF6;font-weight:700">${totalConsignes > 0 ? fmtEur(totalConsignes) : "- €"}</td></tr>
-      <tr style="border-top:2px solid #333">
-        <td style="padding:6px 8px;font-size:14px;font-weight:800">TOTAL</td>
-        <td style="padding:6px 8px;text-align:right;font-size:14px;font-weight:800">${fmtEur(total)}</td>
-      </tr>
+  <div>
+    <table class="totals-table">
+      <tr><td>Sous-total HT</td><td style="text-align:right"><strong>${fmtEur(sousTotal)}</strong></td></tr>
+      <tr><td>TVA ${tvaPct}%</td><td style="text-align:right">${fmtEur(tvaVal)}</td></tr>
+      <tr><td>Vidanges</td><td style="text-align:right">${totalConsignes > 0 ? fmtEur(totalConsignes) : "—"}</td></tr>
+      <tr class="total-row"><td>TOTAL TTC</td><td style="text-align:right">${fmtEur(total)}</td></tr>
     </table>
   </div>
 </div>
 
 <!-- FOOTER -->
-<div style="margin-top:18px;font-size:9px;color:#555;border-top:1px solid #ddd;padding-top:10px">
-  <p style="margin-bottom:4px">Pour toute question concernant cette facture, veuillez contacter <strong>Bossok Distribution Sàrl</strong></p>
-  <p style="color:#C0392B;font-weight:700;margin-bottom:2px">CONDITIONS DE PAIEMENT: 7 JOUR DATE DE FACTURE &nbsp;&nbsp; 1- ) BIC: BGLLLULL / LU14 0030 1895 5248 0000</p>
-  <p style="color:#C0392B;font-weight:700;text-align:center;margin-bottom:2px">2- ) BIC: REVOLT21 / LT85 3250 0571 2868 0584</p>
-  <p style="color:#C0392B;font-weight:700;text-align:center;margin-bottom:8px">Titulaires du compte: BOSSOK DISTRIBUTION S.A.R.L</p>
-  <p style="text-align:center;font-weight:800;font-size:12px">MERCI DE VOTRE CONFIANCE !</p>
+<div class="footer">
+  <p>Pour toute question : <strong>Bossok Distribution Sàrl</strong> · 661-620-620</p>
+  <p class="bank">Conditions : 7 jours date de facture &nbsp;|&nbsp; BIC: BGLLLULL · LU14 0030 1895 5248 0000 &nbsp;|&nbsp; BIC: REVOLT21 · LT85 3250 0571 2868 0584</p>
+  <p class="bank" style="text-align:center">Titulaire : BOSSOK DISTRIBUTION S.A.R.L</p>
+  <p class="merci">— MERCI DE VOTRE CONFIANCE —</p>
 </div>
 
 </body>
