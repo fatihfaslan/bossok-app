@@ -164,12 +164,12 @@ const generatePDF = (facture, client, impayees = []) => {
   const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
 
   const rows = lignes.map(l => `
-    <tr>
-      <td style="padding:6px 8px;color:#C0392B;font-weight:600;text-align:center;border-bottom:1px solid #f0f0f0">${l.qte}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0">${l.nom}</td>
+    <tr style="${l.isCredit ? 'background:#F0FDF4' : ''}">
+      <td style="padding:6px 8px;color:${l.isCredit ? '#059669' : '#C0392B'};font-weight:600;text-align:center;border-bottom:1px solid #f0f0f0">${l.isCredit ? "♻️" : l.qte}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;color:${l.isCredit ? '#059669' : 'inherit'};font-weight:${l.isCredit ? '600' : 'normal'}">${l.nom}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center;color:#8B5CF6;font-weight:600">${l.consigne > 0 ? fmtEur(l.qte * l.consigne) : ""}</td>
-      <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0">${fmtEur(l.pu)}</td>
-      <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0">${fmtEur(l.qte * l.pu)}</td>
+      <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0">${l.isCredit ? "" : fmtEur(l.pu)}</td>
+      <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0;color:${l.isCredit ? '#059669' : 'inherit'}">${fmtEur(l.qte * l.pu)}</td>
     </tr>
   `).join("");
 
@@ -550,6 +550,22 @@ function BossokApp({ session, onLogout }) {
   const planningA = commandes.filter(c=>c.statut==="En attente"&&getChauffeur(c.client_region)==="A");
   const planningB = commandes.filter(c=>c.statut==="En attente"&&getChauffeur(c.client_region)==="B");
 
+  // Credit consignes = caisses retournées non encore déduites d'une facture
+  const creditConsignes = (cid) => {
+    let credit = 0;
+    factures.filter(f => f.client_id === cid).forEach(f => {
+      // Add retours
+      (f.retours || []).forEach(r => {
+        credit += r.qte * r.consigne;
+      });
+      // Subtract already deducted (lignes with negative pu = retour consignes)
+      (f.lignes || []).filter(l => l.nom === "Retour consignes" && l.pu < 0).forEach(l => {
+        credit += l.qte * l.pu; // negative, so it subtracts
+      });
+    });
+    return Math.max(0, credit);
+  };
+
   const soldeConsignes = (cid) => {
     const r={};
     factures.filter(f=>f.client_id===cid).forEach(f=>{
@@ -617,6 +633,15 @@ function BossokApp({ session, onLogout }) {
     try {
       await db.update("factures", id, {statut:"Payée"});
       setFactures(prev=>prev.map(f=>f.id===id?{...f,statut:"Payée"}:f));
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
+  };
+
+  const marquerImpayee = async (id) => {
+    setSaving(true);
+    try {
+      await db.update("factures", id, {statut:"Impayée"});
+      setFactures(prev=>prev.map(f=>f.id===id?{...f,statut:"Impayée"}:f));
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -726,6 +751,23 @@ function BossokApp({ session, onLogout }) {
       setClients(prev=>prev.map(c=>c.id===clientId?{...c,prix_individuels:newPrix}:c));
       if (selClient?.id===clientId) setSelClient(prev=>({...prev,prix_individuels:newPrix}));
     } catch(e) { console.error(e); }
+  };
+
+  const addCreditConsignes = (clientId) => {
+    const credit = creditConsignes(clientId);
+    if (credit <= 0) return;
+    setFactLignes(prev => {
+      // Remove existing credit line if any
+      const filtered = prev.filter(l => l.nom !== "Retour consignes");
+      return [...filtered, {
+        produitId: "CREDIT_CONSIGNES",
+        nom: "Retour consignes",
+        qte: 1,
+        pu: -credit,
+        consigne: 0,
+        isCredit: true
+      }];
+    });
   };
 
   const addLigneFact = (prod, client) => {
@@ -1019,11 +1061,12 @@ function BossokApp({ session, onLogout }) {
                   </td>
                   <td style={{padding:"7px 10px"}}>
                     <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                      {f.statut==="Impayée"&&<button onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"3px 8px",fontSize:11}}>✓</button>}
-                      {(f.lignes||[]).some(l=>l.consigne>0)&&<button onClick={()=>{setShowRetour(f.id);setRetourQtes({});}} style={{...S.btn("#7C3AED"),padding:"3px 8px",fontSize:11}}>♻️</button>}
-                      <button onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);generatePDF(f,c,imp);}} style={{...S.btn("#374151"),padding:"3px 8px",fontSize:11}}>🖨️</button>
-                      {(f.statut==="Impayée"||f.statut==="Payée")&&<button onClick={()=>creerAvoir(f)} title="Créer un avoir" style={{...S.btn("#F59E0B"),padding:"3px 8px",fontSize:11}}>↩️</button>}
-                      <button onClick={()=>supprimerFacture(f.id,f.numero)} title="Supprimer" style={{...S.btn("#EF4444"),padding:"3px 8px",fontSize:11}}>🗑️</button>
+                      {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"3px 8px",fontSize:11}}>✓ Payée</button>}
+                      {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"3px 8px",fontSize:11}}>↺ Impayée</button>}
+                      {(f.lignes||[]).some(l=>l.consigne>0)&&<button title="Retour de consignes" onClick={()=>{setShowRetour(f.id);setRetourQtes({});}} style={{...S.btn("#7C3AED"),padding:"3px 8px",fontSize:11}}>♻️</button>}
+                      <button title="Imprimer / Télécharger PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);generatePDF(f,c,imp);}} style={{...S.btn("#374151"),padding:"3px 8px",fontSize:11}}>🖨️</button>
+                      {(f.statut==="Impayée"||f.statut==="Payée")&&<button title="Créer un avoir (annulation comptable)" onClick={()=>creerAvoir(f)} style={{...S.btn("#8B5CF6"),padding:"3px 8px",fontSize:11}}>↩️ Avoir</button>}
+                      <button title="Supprimer définitivement" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"3px 8px",fontSize:11}}>🗑️</button>
                     </div>
                   </td>
                 </tr>
@@ -1355,8 +1398,10 @@ function BossokApp({ session, onLogout }) {
                   <span style={{color:"#6B7280",flex:1}}>{f.date}</span>
                   <span style={{fontWeight:600}}>{fmtFull(total)}</span>
                   <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2",f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
-                  {f.statut==="Impayée"&&<button onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓</button>}
-                  <button onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);generatePDF(f,selClient,imp);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
+                  {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
+                  {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"2px 8px",fontSize:11}}>↺</button>}
+                  <button title="Imprimer" onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);generatePDF(f,selClient,imp);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
+                  <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"2px 8px",fontSize:11}}>🗑️</button>
                 </div>
               );
             })
@@ -1365,6 +1410,14 @@ function BossokApp({ session, onLogout }) {
       )}
       {clientTab==="consignes"&&(
         <div>
+          {creditConsignes(selClient.id)>0&&(
+            <div style={{background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,padding:12,marginBottom:12}}>
+              <div style={{fontWeight:700,color:"#059669",fontSize:13}}>
+                ♻️ Crédit consignes à déduire : {fmtFull(creditConsignes(selClient.id))}
+              </div>
+              <div style={{fontSize:11,color:"#6B7280",marginTop:4}}>Ce crédit sera automatiquement appliqué sur la prochaine facture.</div>
+            </div>
+          )}
           {soldeConsignes(selClient.id).length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"30px 0",fontSize:13}}>Aucune consigne en cours</div>:(
             soldeConsignes(selClient.id).map((r,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:"#F5F3FF",borderRadius:8,marginBottom:6,fontSize:13}}>
@@ -1422,7 +1475,7 @@ function BossokApp({ session, onLogout }) {
               {searchFactClient&&(
                 <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,.1)",zIndex:50,maxHeight:200,overflowY:"auto"}}>
                   {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchFactClient.toLowerCase())).slice(0,6).map(c=>(
-                    <div key={c.id} onClick={()=>{setFactClientId(c.id);setSearchFactClient("");}} style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9"}}
+                    <div key={c.id} onClick={()=>{setFactClientId(c.id);setSearchFactClient("");setTimeout(()=>addCreditConsignes(c.id),100);}} style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9"}}
                       onMouseEnter={e=>e.currentTarget.style.background="#F9FAFB"}
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                       {c.nom}
@@ -1438,6 +1491,15 @@ function BossokApp({ session, onLogout }) {
           <input type="date" value={factDate} onChange={e=>setFactDate(e.target.value)} style={S.input}/>
         </div>
       </div>
+      {factClientId&&creditConsignes(factClientId)>0&&(
+        <div style={{background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,padding:10,marginBottom:12}}>
+          <div style={{fontWeight:600,color:"#059669",fontSize:12,marginBottom:4}}>
+            ♻️ Crédit consignes disponible : <strong>{new Intl.NumberFormat("fr-LU",{style:"currency",currency:"EUR"}).format(creditConsignes(factClientId))}</strong>
+          </div>
+          <div style={{fontSize:11,color:"#6B7280"}}>Ce montant sera automatiquement déduit de cette facture.</div>
+        </div>
+      )}
+
       {factClientId&&clientImpayees(factClientId).length>0&&(
         <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,padding:10,marginBottom:12}}>
           <div style={{fontWeight:600,color:"#DC2626",fontSize:12,marginBottom:6}}>⚠️ Factures impayées de ce client :</div>
