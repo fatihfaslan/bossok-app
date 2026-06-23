@@ -159,7 +159,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   const paysExport = ["Belgique", "France", "Hollande"].includes(client?.region || "");
   const tvaPct = paysExport ? 0 : 3;
   const tvaVal = sousTotal * tvaPct / 100;
-  const total = sousTotal + tvaVal + totalConsignes;
+  const total = sousTotal + tvaVal + totalConsignes; // vidanges incluses
 
   const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
 
@@ -541,6 +541,7 @@ function BossokApp({ session, onLogout }) {
   const [factDate, setFactDate] = useState(new Date().toISOString().split("T")[0]);
   const [factNotes, setFactNotes] = useState("");
   const [factNumero, setFactNumero] = useState("");
+  const [factEcheance, setFactEcheance] = useState("");
   const [searchFactClient, setSearchFactClient] = useState("");
   const [cmdClientId, setCmdClientId] = useState(null);
   const [cmdProduits, setCmdProduits] = useState([]);
@@ -681,6 +682,7 @@ function BossokApp({ session, onLogout }) {
     setFactDate(f.date || new Date().toISOString().split("T")[0]);
     setFactNotes(f.notes || "");
     setFactNumero(f.numero || "");
+    setFactEcheance(f.echeance || "");
     setSearchFactClient("");
     setShowFactForm(true);
   };
@@ -689,6 +691,7 @@ function BossokApp({ session, onLogout }) {
     if (!factClientId || factLignes.length===0) return;
     const client = clients.find(c=>c.id===factClientId);
     const num = factNumero || "F-" + Date.now().toString().slice(-6);
+    const echDate = factEcheance || (() => { const e = new Date(factDate); e.setDate(e.getDate()+7); return e.toISOString().split("T")[0]; })();
     const ech = new Date(factDate); ech.setDate(ech.getDate()+7);
     setSaving(true);
     try {
@@ -698,7 +701,7 @@ function BossokApp({ session, onLogout }) {
           numero: num, client_id: factClientId,
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
-          date: factDate, echeance: ech.toISOString().split("T")[0],
+          date: factDate, echeance: echDate,
           lignes: factLignes, notes: factNotes,
         });
         await loadAll();
@@ -709,7 +712,7 @@ function BossokApp({ session, onLogout }) {
           numero: num, client_id: factClientId,
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
-          date: factDate, echeance: ech.toISOString().split("T")[0],
+          date: factDate, echeance: echDate,
           lignes: factLignes, statut: "Impayée", notes: factNotes, retours: []
         });
         await loadAll();
@@ -966,6 +969,8 @@ function BossokApp({ session, onLogout }) {
   setSearchFactClient("");setEditingFacture(null);
   setFactDate(today);
   setFactNumero(genererNumeroFacture(today));
+  const echInit = new Date(today); echInit.setDate(echInit.getDate()+7);
+  setFactEcheance(echInit.toISOString().split("T")[0]);
 }}>+ Nouvelle facture</button>}
             {page==="commandes" && <button style={{...S.btn(),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>✅ Enregistrer</button>}
             <button style={S.btn("#F1F5F9","#374151")} onClick={loadAll}>🔄</button>
@@ -1762,7 +1767,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{...S.modalBox,maxWidth:680}} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editingFacture ? "Modifier la facture" : "Nouvelle facture"}</h2>
-        <button onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+        <button onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");setFactEcheance("");}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
         <div>
@@ -1796,9 +1801,17 @@ function BossokApp({ session, onLogout }) {
         <div>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
           <input type="date" value={factDate} onChange={e=>{
-            setFactDate(e.target.value);
-            if(!editingFacture && !factNumero) setFactNumero(genererNumeroFacture(e.target.value));
+            const newDate = e.target.value;
+            setFactDate(newDate);
+            if(!editingFacture && !factNumero) setFactNumero(genererNumeroFacture(newDate));
+            const ech = new Date(newDate); ech.setDate(ech.getDate()+7);
+            setFactEcheance(echDate);
+            setFactEcheance(echDate);
           }} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Échéance (J+7 auto)</label>
+          <input type="date" value={factEcheance} onChange={e=>setFactEcheance(e.target.value)} style={S.input}/>
         </div>
       </div>
       {factClientId&&creditConsignes(factClientId)>0&&(
@@ -1867,7 +1880,7 @@ function BossokApp({ session, onLogout }) {
         <input value={factNotes} onChange={e=>setFactNotes(e.target.value)} placeholder="Notes optionnelles..." style={S.input}/>
       </div>
       <div style={{display:"flex",gap:8}}>
-        <button onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");setFactEcheance("");}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveFact} disabled={!factClientId||factLignes.length===0||saving} style={{...S.btn(),flex:2,opacity:(!factClientId||factLignes.length===0||saving)?0.4:1}}>
           {saving?"Sauvegarde...":editingFacture?"Enregistrer les modifications":"Créer la facture"}
         </button>
