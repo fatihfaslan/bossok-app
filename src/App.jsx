@@ -1143,9 +1143,8 @@ function BossokApp({ session, onLogout }) {
       const {prod,cons,total}=totalFact(f.lignes);
       rows.push([f.numero,f.date,f.client_nom,prod.toFixed(2),cons.toFixed(2),total.toFixed(2),f.statut,f.notes||""]);
     });
-    const csv = rows.map(r=>r.map(v=>`"${v}"`).join(";")).join("
-");
-    const blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
+    const csv = rows.map(r=>r.map(v=>`"${v}"`).join(";")).join("\n");
+    const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href=url; a.download="factures_bossok.csv";
