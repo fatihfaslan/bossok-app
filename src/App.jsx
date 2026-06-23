@@ -1116,7 +1116,9 @@ function BossokApp({ session, onLogout }) {
             <span style={{color:"#6B7280",fontSize:11}}>{f.date} · éch. {f.echeance}</span>
             <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes).total)}</span>
             <div style={{display:"flex",gap:4}}>
-              <button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>
+              {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
+              {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"2px 8px",fontSize:11}}>↺</button>}
+              <button title="Modifier la facture" onClick={()=>openEditFacture(f)} style={{...S.btn("#1D4ED8"),padding:"2px 8px",fontSize:11}}>✏️</button>
               <button title="Imprimer / Télécharger PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
               <button title="Créer un avoir" onClick={()=>creerAvoir(f)} style={{...S.btn("#8B5CF6"),padding:"2px 8px",fontSize:11}}>↩️</button>
               <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"2px 8px",fontSize:11}}>🗑️</button>
@@ -1826,4 +1828,3 @@ function BossokApp({ session, onLogout }) {
     </div>
   );
 }
- 
