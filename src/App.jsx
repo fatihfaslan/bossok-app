@@ -147,6 +147,175 @@ const totalFact = (lignes=[]) => {
 // ═══════════════════════════════════════════════════════════════════
 // APP
 // ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// PDF GENERATOR
+// ═══════════════════════════════════════════════════════════════════
+const generatePDF = (facture, client) => {
+  const lignes = facture.lignes || [];
+  const sousTotal = lignes.reduce((s, l) => s + l.qte * l.pu, 0);
+  const totalConsignes = lignes.reduce((s, l) => s + l.qte * (l.consigne || 0), 0);
+  
+  // TVA : 0% pour Belgique et France, 3% pour Luxembourg
+  const paysExport = ["Belgique", "France", "Hollande"].includes(client?.region || "");
+  const tvaPct = paysExport ? 0 : 3;
+  const tvaVal = sousTotal * tvaPct / 100;
+  const total = sousTotal + tvaVal + totalConsignes;
+
+  const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
+
+  const rows = lignes.map(l => `
+    <tr>
+      <td style="padding:6px 8px;color:#C0392B;font-weight:600;text-align:center;border-bottom:1px solid #f0f0f0">${l.qte}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0">${l.nom}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center">${l.consigne > 0 ? fmtEur(l.qte * l.consigne) : ""}</td>
+      <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0">${fmtEur(l.pu)}</td>
+      <td style="padding:6px 8px;font-weight:700;text-align:right;border-bottom:1px solid #f0f0f0">${fmtEur(l.qte * l.pu)}</td>
+    </tr>
+  `).join("");
+
+  // Empty rows to fill
+  const emptyRows = Array(Math.max(0, 8 - lignes.length)).fill("").map(() => `
+    <tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0">&nbsp;</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0"></td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right;color:#999">- €</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0"></td>
+      <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0"></td>
+    </tr>
+  `).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Facture ${facture.numero}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 11px; color: #333; padding: 20px 30px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+    .company h1 { font-size: 18px; font-weight: 800; color: #C0392B; text-decoration: underline; margin-bottom: 8px; }
+    .company p { font-size: 10px; line-height: 1.6; color: #555; }
+    .logo img { width: 120px; }
+    .meta { display: flex; justify-content: space-between; margin: 16px 0; padding: 12px; border: 1px solid #ddd; }
+    .meta-left p { line-height: 1.8; }
+    .client-box { font-size: 11px; }
+    .client-name { font-size: 16px; font-weight: 800; color: #C0392B; text-decoration: underline; margin: 4px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    thead tr { background: #e8e8e8; }
+    th { padding: 7px 8px; text-align: left; font-size: 10px; font-weight: 700; border: 1px solid #ccc; }
+    .totals { float: right; width: 280px; margin-top: 8px; }
+    .totals table { margin: 0; }
+    .totals td { padding: 4px 8px; font-size: 11px; }
+    .total-final { font-size: 14px; font-weight: 800; }
+    .signatures { display: flex; gap: 40px; margin-top: 30px; padding-top: 16px; border-top: 1px solid #ddd; }
+    .sig-box { flex: 1; }
+    .sig-box p { font-size: 10px; color: #555; margin-bottom: 30px; }
+    .sig-line { border-top: 1px solid #333; margin-top: 4px; }
+    .footer { margin-top: 20px; font-size: 9px; color: #555; }
+    .footer .bank { color: #C0392B; font-weight: 700; }
+    .merci { text-align: center; font-weight: 800; font-size: 12px; margin-top: 12px; }
+    @media print { body { padding: 10px 20px; } }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="company">
+    <h1>BOSSOK DISTRIBUTION Sàrl</h1>
+    <p>Adresse : 71A Boulevard Robert Schuman<br/>
+    Code postal, Ville : 8340, Olm<br/>
+    Téléphone : 661-620-620<br/>
+    TVA: LU35355446</p>
+  </div>
+  <div class="logo">
+    <img src="${logo_b64}" alt="BOSSOK"/>
+  </div>
+</div>
+
+<hr style="border:none;border-top:1px solid #ddd;margin:12px 0"/>
+
+<!-- META -->
+<div class="meta">
+  <div class="meta-left">
+    <p><strong>DATE :</strong> ${facture.date || ""}</p>
+    <p><strong>N° FACTURE</strong> <strong>${facture.numero}</strong></p>
+  </div>
+  <div class="client-box">
+    <p>Facturé à :</p>
+    <table style="margin:0;border:none" cellpadding="3">
+      <tr><td style="color:#555;width:130px">Nom de la société:</td><td><span class="client-name">${facture.client_nom || ""}</span></td></tr>
+      <tr><td style="color:#555">Adresse:</td><td>${client?.adresse || facture.client_adresse || ""}</td></tr>
+      <tr><td style="color:#555">Téléphone:</td><td>${client?.telephone || ""}</td></tr>
+      <tr><td style="color:#555">TVA:</td><td>${client?.tva || facture.client_tva || ""}</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- LINES TABLE -->
+<table>
+  <thead>
+    <tr>
+      <th style="width:70px;text-align:center">QUANTITÉ</th>
+      <th>DESCRIPTION</th>
+      <th style="width:100px;text-align:center">VIDANGES fournis</th>
+      <th style="width:100px;text-align:right">PRIX UNITAIRE</th>
+      <th style="width:100px;text-align:right">MONTANT</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rows}
+    ${emptyRows}
+  </tbody>
+</table>
+
+<!-- TOTALS -->
+<div style="overflow:hidden">
+  <div class="signatures" style="float:left;width:55%;margin-top:0">
+    <div>
+      <p style="font-size:10px;color:#C0392B;font-weight:700">Reçu marchandise en bon état : ${"─".repeat(40)}</p>
+      <br/><br/>
+      <p style="font-size:10px;color:#C0392B;font-weight:700">Pour acquit le <strong>BOSSOK Distribution Sàrl</strong> : ${"─".repeat(25)}</p>
+    </div>
+  </div>
+  <div class="totals">
+    <table>
+      <tr><td>SOUS-TOTAL</td><td style="text-align:right;font-weight:700">${fmtEur(sousTotal)}</td></tr>
+      <tr><td>TAUX DE T.V.A.</td><td style="text-align:right">${tvaPct}%</td></tr>
+      <tr><td>T.V.A.</td><td style="text-align:right;font-weight:700">${fmtEur(tvaVal)}</td></tr>
+      <tr><td>Vidanges Fournis:</td><td style="text-align:right">${totalConsignes > 0 ? fmtEur(totalConsignes) : "- €"}</td></tr>
+      <tr style="border-top:2px solid #333">
+        <td class="total-final">TOTAL</td>
+        <td class="total-final" style="text-align:right">${fmtEur(total)}</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer" style="clear:both;margin-top:20px">
+  <p>Pour toute question concernant cette facture, veuillez contacter <strong>Bossok Distribution Sàrl</strong></p>
+  <p class="bank">CONDITIONS DE PAIEMENT: 7 JOUR DATE DE FACTURE &nbsp;&nbsp; 1- ) BIC: BGLLLULL / LU14 0030 1895 5248 0000</p>
+  <p class="bank" style="text-align:center">2- ) BIC: REVOLT21 / LT85 3250 0571 2868 0584</p>
+  <p class="bank" style="text-align:center">Titulaires du compte: BOSSOK DISTRIBUTION S.A.R.L</p>
+  <p class="merci">MERCI DE VOTRE CONFIANCE !</p>
+</div>
+
+</body>
+</html>`;
+
+  // Open in new tab
+  const newTab = window.open("", "_blank");
+  newTab.document.write(html);
+  newTab.document.close();
+
+  // Also trigger print/download after a short delay
+  setTimeout(() => {
+    newTab.print();
+  }, 500);
+};
+
 // ═══════════════════════════════════════════════════════════════════
 // LOGIN PAGE
 // ═══════════════════════════════════════════════════════════════════
@@ -797,6 +966,7 @@ function BossokApp({ session, onLogout }) {
                     <div style={{display:"flex",gap:4}}>
                       {f.statut==="Impayée"&&<button onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"3px 8px",fontSize:11}}>✓</button>}
                       {(f.lignes||[]).some(l=>l.consigne>0)&&<button onClick={()=>{setShowRetour(f.id);setRetourQtes({});}} style={{...S.btn("#7C3AED"),padding:"3px 8px",fontSize:11}}>♻️</button>}
+                      <button onClick={()=>{const c=clients.find(x=>x.id===f.client_id);generatePDF(f,c);}} style={{...S.btn("#374151"),padding:"3px 8px",fontSize:11}}>🖨️</button>
                     </div>
                   </td>
                 </tr>
@@ -1129,6 +1299,7 @@ function BossokApp({ session, onLogout }) {
                   <span style={{fontWeight:600}}>{fmtFull(total)}</span>
                   <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2",f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
                   {f.statut==="Impayée"&&<button onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓</button>}
+                  <button onClick={()=>{const c=selClient;generatePDF(f,c);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
                 </div>
               );
             })
