@@ -528,6 +528,8 @@ function BossokApp({ session, onLogout }) {
   const [factFilterSearch, setFactFilterSearch] = useState("");
   const [factFilterMois, setFactFilterMois] = useState("Tous");
   const [factFilterClient, setFactFilterClient] = useState("");
+  const [factFilterDateFrom, setFactFilterDateFrom] = useState("");
+  const [factFilterDateTo, setFactFilterDateTo] = useState("");
   const [factSort, setFactSort] = useState({col:"date",dir:"desc"});
   const [factPage, setFactPage] = useState(1);
   const FACT_PER_PAGE = 50;
@@ -1108,8 +1110,10 @@ function BossokApp({ session, onLogout }) {
     const matchStatut = factFilterStatut==="Tous" || f.statut===factFilterStatut;
     const matchSearch = !factFilterSearch || f.client_nom?.toLowerCase().includes(factFilterSearch.toLowerCase()) || String(f.numero||"").toLowerCase().includes(factFilterSearch.toLowerCase());
     const matchMois = factFilterMois==="Tous" || (f.date && f.date.startsWith(factFilterMois));
-    const matchClient = factFilterClient==="Tous" || f.client_nom===factFilterClient;
-    return matchStatut && matchSearch && matchMois && matchClient;
+    const matchClient = !factFilterClient || factFilterClient==="Tous" || f.client_nom===factFilterClient;
+    const matchFrom = !factFilterDateFrom || (f.date && f.date >= factFilterDateFrom);
+    const matchTo = !factFilterDateTo || (f.date && f.date <= factFilterDateTo);
+    return matchStatut && matchSearch && matchMois && matchClient && matchFrom && matchTo;
   });
 
   // Sort
@@ -1173,7 +1177,7 @@ function BossokApp({ session, onLogout }) {
         {l:"Impayées",v:factures.filter(f=>f.statut==="Impayée").length,c:"#DC2626",s:"Impayée",sub:fmtFull(totalImpaye)},
         {l:"Avoirs",v:factures.filter(f=>f.statut==="Avoir").length,c:"#F59E0B",s:"Avoir"},
       ].map((k,i)=>(
-        <div key={i} style={{...S.kpi(k.c),cursor:"pointer",outline:factFilterStatut===k.s?"2px solid "+k.c:"none"}} onClick={()=>{setFactFilterStatut(k.s);setFactPage(1);}}>
+        <div key={i} style={{...S.kpi(k.c),cursor:"pointer",outline:factFilterStatut===k.s?"2px solid "+k.c:"none"}} onClick={()=>{setFactFilterStatut(k.s);setFactFilterDateFrom("");setFactFilterDateTo("");setFactFilterMois("Tous");setFactFilterSearch("");setFactFilterClient("");setFactPage(1);}}>
           <div style={{fontSize:22,fontWeight:800,color:k.c}}>{k.v}</div>
           <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{k.l}</div>
           {k.sub&&<div style={{fontSize:11,color:k.c,fontWeight:700}}>{k.sub}</div>}
@@ -1187,19 +1191,39 @@ function BossokApp({ session, onLogout }) {
         <input value={factFilterSearch} onChange={e=>{setFactFilterSearch(e.target.value);setFactPage(1);}}
           placeholder="🔍 Rechercher client ou N°..."
           style={{...S.input,flex:1,minWidth:180}}/>
+        <select value={factFilterStatut} onChange={e=>{setFactFilterStatut(e.target.value);setFactPage(1);}}
+          style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,background:"#F9FAFB"}}>
+          <option value="Tous">Tous les statuts</option>
+          <option value="Impayée">⚠ Impayées</option>
+          <option value="Payée">✓ Payées</option>
+          <option value="Avoir">↩ Avoirs</option>
+          <option value="Annulée">✕ Annulées</option>
+        </select>
         <select value={factFilterClient} onChange={e=>{setFactFilterClient(e.target.value);setFactPage(1);}}
-          style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:200}}>
+          style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:180,background:"#F9FAFB"}}>
           {clientsDispos.map(c=><option key={c} value={c}>{c==="Tous"?"Tous les clients":c}</option>)}
         </select>
         <select value={factFilterMois} onChange={e=>{setFactFilterMois(e.target.value);setFactPage(1);}}
-          style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
+          style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,background:"#F9FAFB"}}>
           {moisDispos.map(m=><option key={m} value={m}>{m==="Tous"?"Tous les mois":m}</option>)}
         </select>
-        {(factFilterStatut!=="Tous"||factFilterSearch||factFilterMois!=="Tous"||factFilterClient!=="Tous"&&factFilterClient!=="")&&(
-          <button onClick={()=>{setFactFilterStatut("Tous");setFactFilterSearch("");setFactFilterMois("Tous");setFactFilterClient("");setFactPage(1);}}
-            style={{...S.btn("#F3F4F6","#374151"),padding:"7px 12px",fontSize:12}}>✕ Réinitialiser</button>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <label style={{fontSize:12,color:"#6B7280",whiteSpace:"nowrap"}}>Du :</label>
+          <input type="date" value={factFilterDateFrom} onChange={e=>{setFactFilterDateFrom(e.target.value);setFactPage(1);}}
+            style={{padding:"6px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,background:"#F9FAFB"}}/>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <label style={{fontSize:12,color:"#6B7280",whiteSpace:"nowrap"}}>Au :</label>
+          <input type="date" value={factFilterDateTo} onChange={e=>{setFactFilterDateTo(e.target.value);setFactPage(1);}}
+            style={{padding:"6px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,background:"#F9FAFB"}}/>
+        </div>
+        {(factFilterStatut!=="Tous"||factFilterSearch||factFilterMois!=="Tous"||factFilterClient||factFilterDateFrom||factFilterDateTo)&&(
+          <button onClick={()=>{setFactFilterStatut("Tous");setFactFilterSearch("");setFactFilterMois("Tous");setFactFilterClient("");setFactFilterDateFrom("");setFactFilterDateTo("");setFactPage(1);}}
+            style={{...S.btn("#F3F4F6","#374151"),padding:"6px 12px",fontSize:12}}>✕ Réinitialiser</button>
         )}
-        <button onClick={exportExcel} style={{...S.btn("#059669"),padding:"7px 12px",fontSize:12}}>📥 Export CSV</button>
+        <button onClick={exportExcel} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>📥 Export CSV</button>
         <span style={{fontSize:12,color:"#6B7280",marginLeft:"auto",fontWeight:600}}>
           {ff.length} résultat(s) · {fmtFull(totalFiltre)}
         </span>
