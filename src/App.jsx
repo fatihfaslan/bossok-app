@@ -524,6 +524,9 @@ function BossokApp({ session, onLogout }) {
   const [editClient, setEditClient] = useState(null);
   const [clientForm, setClientForm] = useState({});
   const [showFactForm, setShowFactForm] = useState(false);
+  const [factFilterStatut, setFactFilterStatut] = useState("Tous");
+  const [factFilterSearch, setFactFilterSearch] = useState("");
+  const [factFilterMois, setFactFilterMois] = useState("Tous");
   const [editingFacture, setEditingFacture] = useState(null);
   const [factClientId, setFactClientId] = useState(null);
   const [factLignes, setFactLignes] = useState([]);
@@ -1091,93 +1094,113 @@ function BossokApp({ session, onLogout }) {
 )}
 
 {/* ══ FACTURES ══════════════════════════════════════════════════ */}
-{page==="factures" && (
+{page==="factures" && (()=>{
+  const moisDispos = ["Tous",...Array.from(new Set(factures.map(f=>f.date?f.date.slice(0,7):"").filter(Boolean))).sort().reverse()];
+  const facturesFiltrees = factures.filter(f=>{
+    const matchStatut = factFilterStatut==="Tous" || f.statut===factFilterStatut;
+    const matchSearch = !factFilterSearch || f.client_nom?.toLowerCase().includes(factFilterSearch.toLowerCase()) || String(f.numero||"").toLowerCase().includes(factFilterSearch.toLowerCase());
+    const matchMois = factFilterMois==="Tous" || (f.date && f.date.startsWith(factFilterMois));
+    return matchStatut && matchSearch && matchMois;
+  });
+  const totalImpaye = factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
+  const totalFiltre = facturesFiltrees.reduce((s,f)=>s+totalFact(f.lignes).total,0);
+  return(
   <div>
+    {/* KPIs cliquables */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
-        {l:"Total",v:factures.filter(f=>f.statut!=="Avoir"&&f.statut!=="Annulée").length,c:"#1D4ED8"},
-        {l:"Payées",v:factures.filter(f=>f.statut==="Payée").length,c:"#059669"},
-        {l:"Impayées",v:factures.filter(f=>f.statut==="Impayée").length,c:"#DC2626"},
-        {l:"Avoirs",v:factures.filter(f=>f.statut==="Avoir").length,c:"#F59E0B"},
-      ].map((s,i)=>(
-        <div key={i} style={S.kpi(s.c)}>
-          <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
-          <div style={{fontSize:11,color:"#6B7280"}}>{s.l}</div>
+        {l:"Total",v:factures.filter(f=>f.statut!=="Avoir"&&f.statut!=="Annulée").length,c:"#1D4ED8",s:"Tous"},
+        {l:"Payées",v:factures.filter(f=>f.statut==="Payée").length,c:"#059669",s:"Payée"},
+        {l:"Impayées",v:factures.filter(f=>f.statut==="Impayée").length,c:"#DC2626",s:"Impayée",sub:fmtFull(totalImpaye)},
+        {l:"Avoirs",v:factures.filter(f=>f.statut==="Avoir").length,c:"#F59E0B",s:"Avoir"},
+      ].map((k,i)=>(
+        <div key={i} style={{...S.kpi(k.c),cursor:"pointer",outline:factFilterStatut===k.s?"2px solid "+k.c:"none"}} onClick={()=>setFactFilterStatut(k.s)}>
+          <div style={{fontSize:22,fontWeight:800,color:k.c}}>{k.v}</div>
+          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{k.l}</div>
+          {k.sub&&<div style={{fontSize:11,color:k.c,fontWeight:700}}>{k.sub}</div>}
         </div>
       ))}
     </div>
-    {factures.filter(f=>f.statut==="Impayée").length>0&&(
-      <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:12,marginBottom:12}}>
-        <div style={{fontWeight:700,color:"#DC2626",fontSize:13,marginBottom:8}}>⚠️ Factures impayées — {fmtFull(factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0))}</div>
-        {factures.filter(f=>f.statut==="Impayée").map(f=>(
-          <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderBottom:"1px solid #FECACA",gap:8,flexWrap:"wrap"}}>
-            <span style={{fontWeight:600,color:"#DC2626",width:90}}>{f.numero}</span>
-            <span style={{fontWeight:500,flex:1}}>{f.client_nom}</span>
-            <span style={{color:"#6B7280",fontSize:11}}>{f.date} · éch. {f.echeance}</span>
-            <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes).total)}</span>
-            <div style={{display:"flex",gap:4}}>
-              {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
-              {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"2px 8px",fontSize:11}}>↺</button>}
-              <button title="Modifier la facture" onClick={()=>openEditFacture(f)} style={{...S.btn("#1D4ED8"),padding:"2px 8px",fontSize:11}}>✏️</button>
-              <button title="Imprimer / Télécharger PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
-              <button title="Créer un avoir" onClick={()=>creerAvoir(f)} style={{...S.btn("#8B5CF6"),padding:"2px 8px",fontSize:11}}>↩️</button>
-              <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"2px 8px",fontSize:11}}>🗑️</button>
-            </div>
-          </div>
-        ))}
-      </div>
-    )}
-    {factures.length===0?(
+
+    {/* Filtres */}
+    <div style={{...S.card,marginBottom:12,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+      <input value={factFilterSearch} onChange={e=>setFactFilterSearch(e.target.value)}
+        placeholder="🔍 Rechercher client ou N° facture..."
+        style={{...S.input,flex:1,minWidth:200}}/>
+      <select value={factFilterMois} onChange={e=>setFactFilterMois(e.target.value)}
+        style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,background:"#F9FAFB"}}>
+        {moisDispos.map(m=><option key={m} value={m}>{m==="Tous"?"Tous les mois":m}</option>)}
+      </select>
+      {(factFilterStatut!=="Tous"||factFilterSearch||factFilterMois!=="Tous")&&(
+        <button onClick={()=>{setFactFilterStatut("Tous");setFactFilterSearch("");setFactFilterMois("Tous");}}
+          style={{...S.btn("#F3F4F6","#374151"),padding:"7px 12px",fontSize:12}}>✕ Réinitialiser</button>
+      )}
+      <span style={{fontSize:12,color:"#6B7280",marginLeft:"auto",fontWeight:600}}>
+        {facturesFiltrees.length} résultat(s) · {fmtFull(totalFiltre)}
+      </span>
+    </div>
+
+    {/* Tableau unique */}
+    {facturesFiltrees.length===0?(
       <div style={{...S.card,textAlign:"center",padding:"48px 0",color:"#9CA3AF"}}>
         <div style={{fontSize:40,marginBottom:12}}>🧾</div>
-        <div>Aucune facture — cliquez sur "+ Nouvelle facture"</div>
+        <div>Aucune facture trouvée</div>
       </div>
     ):(
-      <div style={S.card}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+      <div style={{...S.card,overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:800}}>
           <thead>
-            <tr style={{borderBottom:"2px solid #E5E7EB"}}>
-              {["N°","Date","Client","Montant HT","Consignes","Statut","Actions"].map(h=>(
-                <th key={h} style={{textAlign:"left",padding:"8px 10px",color:"#6B7280",fontWeight:600,fontSize:12}}>{h}</th>
+            <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
+              {["N°","Date","Client","Montant HT","Consignes","Total TTC","Statut","Actions"].map(h=>(
+                <th key={h} style={{textAlign:["Montant HT","Consignes","Total TTC"].includes(h)?"right":"left",padding:"8px 10px",color:"#6B7280",fontWeight:600,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {factures.map((f,i)=>{
-              const {prod,cons}=totalFact(f.lignes);
+            {facturesFiltrees.map((f,i)=>{
+              const {prod,cons,total}=totalFact(f.lignes);
+              const isImp = f.statut==="Impayée";
+              const sc = f.statut==="Payée"?"#DCFCE7":f.statut==="Avoir"?"#EDE9FE":f.statut==="Annulée"?"#F3F4F6":"#FEE2E2";
+              const st = f.statut==="Payée"?"#166534":f.statut==="Avoir"?"#6D28D9":f.statut==="Annulée"?"#6B7280":"#DC2626";
+              const sl = f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":"⚠ Impayée";
               return(
-                <tr key={f.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFAFA"}}>
-                  <td style={{padding:"7px 10px",fontWeight:700,color:"#1D4ED8"}}>{f.numero}</td>
-                  <td style={{padding:"7px 10px",color:"#6B7280",fontSize:12}}>{f.date}</td>
-                  <td style={{padding:"7px 10px",fontWeight:500}}>{f.client_nom}</td>
-                  <td style={{padding:"7px 10px",fontWeight:700}}>{fmtFull(prod)}</td>
-                  <td style={{padding:"7px 10px",color:cons>0?"#7C3AED":"#9CA3AF"}}>{cons>0?fmtFull(cons):"—"}</td>
-                  <td style={{padding:"7px 10px"}}>
-                    <span style={S.badge(
-                      f.statut==="Payée"?"#DCFCE7":f.statut==="Avoir"?"#EDE9FE":f.statut==="Annulée"?"#F3F4F6":"#FEE2E2",
-                      f.statut==="Payée"?"#166534":f.statut==="Avoir"?"#6D28D9":f.statut==="Annulée"?"#6B7280":"#DC2626"
-                    )}>{f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":"⚠ Impayée"}</span>
-                  </td>
-                  <td style={{padding:"7px 10px"}}>
-                    <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                      {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"3px 8px",fontSize:11}}>✓ Payée</button>}
-                      {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"3px 8px",fontSize:11}}>↺ Impayée</button>}
-                      {(f.lignes||[]).some(l=>l.consigne>0)&&<button title="Retour de consignes" onClick={()=>{setShowRetour(f.id);setRetourQtes({});}} style={{...S.btn("#7C3AED"),padding:"3px 8px",fontSize:11}}>♻️</button>}
-                      <button title="Imprimer / Télécharger PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}} style={{...S.btn("#374151"),padding:"3px 8px",fontSize:11}}>🖨️</button>
-                      {(f.statut==="Impayée"||f.statut==="Payée")&&<button title="Créer un avoir (annulation comptable)" onClick={()=>creerAvoir(f)} style={{...S.btn("#8B5CF6"),padding:"3px 8px",fontSize:11}}>↩️ Avoir</button>}
-                      <button title="Supprimer définitivement" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"3px 8px",fontSize:11}}>🗑️</button>
+                <tr key={f.id} style={{borderBottom:"1px solid #F1F5F9",background:isImp?"#FFF5F5":i%2===0?"#fff":"#FAFAFA"}}>
+                  <td style={{padding:"6px 10px",fontWeight:700,color:"#1D4ED8",whiteSpace:"nowrap"}}>{f.numero}</td>
+                  <td style={{padding:"6px 10px",color:"#6B7280",whiteSpace:"nowrap"}}>{f.date}</td>
+                  <td style={{padding:"6px 10px",fontWeight:500}}>{f.client_nom}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",whiteSpace:"nowrap"}}>{fmtFull(prod)}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",whiteSpace:"nowrap",color:cons>0?"#7C3AED":"#9CA3AF"}}>{cons>0?fmtFull(cons):"—"}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",fontWeight:700,whiteSpace:"nowrap",color:isImp?"#DC2626":"inherit"}}>{fmtFull(total)}</td>
+                  <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}><span style={S.badge(sc,st)}>{sl}</span></td>
+                  <td style={{padding:"6px 6px"}}>
+                    <div style={{display:"flex",gap:3,alignItems:"center"}}>
+                      {f.statut==="Impayée"&&<button title="Marquer Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"3px 5px",fontSize:10}}>✓</button>}
+                      {f.statut==="Payée"&&<button title="Remettre Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"3px 5px",fontSize:10}}>↺</button>}
+                      <button title="Modifier" onClick={()=>openEditFacture(f)} style={{...S.btn("#1D4ED8"),padding:"3px 5px",fontSize:10}}>✏️</button>
+                      <button title="Imprimer PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}} style={{...S.btn("#374151"),padding:"3px 5px",fontSize:10}}>🖨️</button>
+                      {(f.statut==="Impayée"||f.statut==="Payée")&&<button title="Créer un avoir" onClick={()=>creerAvoir(f)} style={{...S.btn("#8B5CF6"),padding:"3px 5px",fontSize:10}}>↩️</button>}
+                      <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"3px 5px",fontSize:10}}>🗑️</button>
                     </div>
                   </td>
                 </tr>
               );
             })}
           </tbody>
+          <tfoot>
+            <tr style={{borderTop:"2px solid #E5E7EB",background:"#F9FAFB",fontWeight:700,fontSize:12}}>
+              <td colSpan={3} style={{padding:"8px 10px"}}>Total ({facturesFiltrees.length})</td>
+              <td style={{padding:"8px 10px",textAlign:"right"}}>{fmtFull(facturesFiltrees.reduce((s,f)=>s+totalFact(f.lignes).prod,0))}</td>
+              <td style={{padding:"8px 10px",textAlign:"right",color:"#7C3AED"}}>{fmtFull(facturesFiltrees.reduce((s,f)=>s+totalFact(f.lignes).cons,0))}</td>
+              <td style={{padding:"8px 10px",textAlign:"right"}}>{fmtFull(totalFiltre)}</td>
+              <td colSpan={2}></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     )}
   </div>
-)}
-
+  );
+})()}
 {/* ══ COMMANDES ══════════════════════════════════════════════════ */}
 {page==="commandes" && (
   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
@@ -1828,4 +1851,3 @@ function BossokApp({ session, onLogout }) {
     </div>
   );
 }
- 
