@@ -151,7 +151,7 @@ const totalFact = (lignes=[]) => {
 // ═══════════════════════════════════════════════════════════════════
 // PDF GENERATOR
 // ═══════════════════════════════════════════════════════════════════
-const generatePDF = (facture, client, impayees = []) => {
+const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   const lignes = facture.lignes || [];
   const sousTotal = lignes.reduce((s, l) => s + l.qte * l.pu, 0);
   const totalConsignes = lignes.reduce((s, l) => s + l.qte * (l.consigne || 0), 0);
@@ -184,6 +184,39 @@ const generatePDF = (facture, client, impayees = []) => {
   `).join("");
 
   // Impayées section
+  // Calculate solde consignes after this invoice
+  const newConsignes = lignes.filter(l => l.consigne > 0);
+  const totalNouvellesConsignes = newConsignes.reduce((s,l) => s + l.qte * l.consigne, 0);
+  const creditDeduit = lignes.filter(l => l.isCredit).reduce((s,l) => s + Math.abs(l.qte * l.pu), 0);
+
+  const soldeConsignesHTML = (totalNouvellesConsignes > 0 || soldeClient > 0) ? `
+    <div style="background:#F5F3FF;border:1px solid #DDD6FE;border-radius:6px;padding:10px 14px;margin-top:8px">
+      <p style="font-weight:700;color:#7C3AED;font-size:10px;margin-bottom:6px">🫙 SOLDE CONSIGNES APRÈS CETTE FACTURE :</p>
+      ${newConsignes.map(l => `
+        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px">
+          <span>${l.nom} × ${l.qte} caisse(s)</span>
+          <span style="font-weight:600;color:#7C3AED">${fmtEur(l.qte * l.consigne)}</span>
+        </div>
+      `).join("")}
+      ${creditDeduit > 0 ? `
+        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px;color:#059669">
+          <span>Crédit consignes déduit</span>
+          <span style="font-weight:600">- ${fmtEur(creditDeduit)}</span>
+        </div>
+      ` : ""}
+      ${soldeClient > 0 ? `
+        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px;color:#6B7280">
+          <span>Solde précédent</span>
+          <span style="font-weight:600">${fmtEur(soldeClient)}</span>
+        </div>
+      ` : ""}
+      <div style="border-top:1px solid #DDD6FE;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#7C3AED">
+        <span>Total consignes dues :</span>
+        <span>${fmtEur(soldeClient + totalNouvellesConsignes - creditDeduit)}</span>
+      </div>
+    </div>
+  ` : "";
+
   const impayeesHTML = impayees.length > 0 ? `
     <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:10px 14px;margin-bottom:8px">
       <p style="font-weight:700;color:#DC2626;font-size:10px;margin-bottom:6px">⚠️ RAPPEL — Factures impayées :</p>
@@ -280,7 +313,8 @@ const generatePDF = (facture, client, impayees = []) => {
   <!-- LEFT: Signatures + Impayées -->
   <div style="width:52%">
     <p style="font-size:10px;color:#C0392B;font-weight:700;margin-bottom:20px">Reçu marchandise en bon état : ─────────────────────</p>
-    <p style="font-size:10px;color:#C0392B;font-weight:700;margin-bottom:30px">Pour acquit le <strong>BOSSOK Distribution Sàrl</strong> : ──────────────</p>
+    <p style="font-size:10px;color:#C0392B;font-weight:700;margin-bottom:16px">Pour acquit le <strong>BOSSOK Distribution Sàrl</strong> : ──────────────</p>
+    ${soldeConsignesHTML}
     ${impayeesHTML}
   </div>
 
@@ -555,7 +589,8 @@ function BossokApp({ session, onLogout }) {
     let details = []; // {numero, montant}
     let alreadyDeducted = 0;
 
-    factures.filter(f => f.client_id === cid).forEach(f => {
+    // Only count non-historical factures
+    factures.filter(f => f.client_id === cid && f.notes !== "Import historique").forEach(f => {
       (f.retours || []).forEach(r => {
         details.push({ numero: f.numero, montant: r.qte * r.consigne });
       });
@@ -574,7 +609,8 @@ function BossokApp({ session, onLogout }) {
 
   const soldeConsignes = (cid) => {
     const r={};
-    factures.filter(f=>f.client_id===cid).forEach(f=>{
+    // Only count non-historical factures (notes !== "Import historique")
+    factures.filter(f=>f.client_id===cid&&f.notes!=="Import historique").forEach(f=>{
       (f.lignes||[]).filter(l=>l.consigne>0).forEach(l=>{
         const k=l.nom+"|"+l.consigne;
         if(!r[k]) r[k]={nom:l.nom,consigne:l.consigne,envoyé:0,retourné:0};
@@ -1070,7 +1106,7 @@ function BossokApp({ session, onLogout }) {
                       {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"3px 8px",fontSize:11}}>✓ Payée</button>}
                       {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"3px 8px",fontSize:11}}>↺ Impayée</button>}
                       {(f.lignes||[]).some(l=>l.consigne>0)&&<button title="Retour de consignes" onClick={()=>{setShowRetour(f.id);setRetourQtes({});}} style={{...S.btn("#7C3AED"),padding:"3px 8px",fontSize:11}}>♻️</button>}
-                      <button title="Imprimer / Télécharger PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);generatePDF(f,c,imp);}} style={{...S.btn("#374151"),padding:"3px 8px",fontSize:11}}>🖨️</button>
+                      <button title="Imprimer / Télécharger PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}} style={{...S.btn("#374151"),padding:"3px 8px",fontSize:11}}>🖨️</button>
                       {(f.statut==="Impayée"||f.statut==="Payée")&&<button title="Créer un avoir (annulation comptable)" onClick={()=>creerAvoir(f)} style={{...S.btn("#8B5CF6"),padding:"3px 8px",fontSize:11}}>↩️ Avoir</button>}
                       <button title="Supprimer définitivement" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"3px 8px",fontSize:11}}>🗑️</button>
                     </div>
@@ -1281,35 +1317,89 @@ function BossokApp({ session, onLogout }) {
 {/* ══ CONSIGNES ══════════════════════════════════════════════════ */}
 {page==="consignes" && (
   <div>
-    <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>Emballages verre non retournés par client.</div>
-    {clientsActifs.map(c=>{
-      const sol=soldeConsignes(c.id);
-      if(sol.length===0) return null;
-      const total=sol.reduce((s,r)=>s+r.solde*r.consigne,0);
-      return(
-        <div key={c.id} style={{...S.card,marginBottom:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <div style={{width:30,height:30,borderRadius:8,background:tc(c.type).bg,color:tc(c.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:10}}>{initials(c.nom)}</div>
-              <div><div style={{fontWeight:600,fontSize:13}}>{c.nom}</div><div style={{fontSize:11,color:"#6B7280"}}>{c.region}</div></div>
+    {/* Stats */}
+    {(() => {
+      const clientsAvecSolde = clientsActifs.map(c => ({
+        ...c,
+        sol: soldeConsignes(c.id),
+        credit: creditConsignes(c.id),
+        total: soldeConsignes(c.id).reduce((s,r)=>s+r.solde*r.consigne,0)
+      })).filter(c => c.total > 0 || c.credit > 0).sort((a,b) => b.total - a.total);
+
+      const totalGlobal = clientsAvecSolde.reduce((s,c)=>s+c.total,0);
+      const totalCredit = clientsAvecSolde.reduce((s,c)=>s+c.credit,0);
+
+      return (
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+            <div style={S.kpi("#7C3AED")}>
+              <div style={{fontSize:22,fontWeight:800,color:"#7C3AED"}}>{fmtFull(totalGlobal)}</div>
+              <div style={{fontSize:11,color:"#6B7280"}}>Valeur consignes en circulation</div>
             </div>
-            <div style={{fontWeight:700,color:"#7C3AED"}}>{fmtFull(total)}</div>
+            <div style={S.kpi("#059669")}>
+              <div style={{fontSize:22,fontWeight:800,color:"#059669"}}>{fmtFull(totalCredit)}</div>
+              <div style={{fontSize:11,color:"#6B7280"}}>Crédits à déduire</div>
+            </div>
+            <div style={S.kpi("#1D4ED8")}>
+              <div style={{fontSize:22,fontWeight:800,color:"#1D4ED8"}}>{clientsAvecSolde.length}</div>
+              <div style={{fontSize:11,color:"#6B7280"}}>Clients avec consignes</div>
+            </div>
           </div>
-          {sol.map((r,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"4px 8px",background:"#F5F3FF",borderRadius:6,marginBottom:3}}>
-              <span>{r.nom}</span>
-              <span style={{fontWeight:600,color:"#7C3AED"}}>{r.solde} cs × {fmtFull(r.consigne)} = {fmtFull(r.solde*r.consigne)}</span>
+
+          {clientsAvecSolde.length === 0 ? (
+            <div style={{...S.card,textAlign:"center",padding:"60px 0",color:"#9CA3AF"}}>
+              <div style={{fontSize:40,marginBottom:12}}>♻️</div>
+              <div>Aucune consigne en cours</div>
             </div>
-          ))}
+          ) : (
+            <div style={S.card}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead>
+                  <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
+                    {["Client","Région","Caisses en circulation","Valeur consignes","Crédit à déduire","Détail"].map(h=>(
+                      <th key={h} style={{textAlign:"left",padding:"8px 12px",color:"#6B7280",fontWeight:600,fontSize:11}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {clientsAvecSolde.map((c,i) => (
+                    <tr key={c.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFAFA"}}>
+                      <td style={{padding:"8px 12px"}}>
+                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                          <div style={{width:28,height:28,borderRadius:7,background:tc(c.type).bg,color:tc(c.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:10,flexShrink:0}}>{initials(c.nom)}</div>
+                          <span style={{fontWeight:600}}>{c.nom}</span>
+                        </div>
+                      </td>
+                      <td style={{padding:"8px 12px",color:"#6B7280",fontSize:12}}>{c.region}</td>
+                      <td style={{padding:"8px 12px",textAlign:"center",fontWeight:700,color:"#7C3AED"}}>
+                        {c.sol.reduce((s,r)=>s+r.solde,0)}
+                      </td>
+                      <td style={{padding:"8px 12px",fontWeight:700,color:"#7C3AED"}}>{fmtFull(c.total)}</td>
+                      <td style={{padding:"8px 12px",fontWeight:700,color:c.credit>0?"#059669":"#9CA3AF"}}>
+                        {c.credit>0?`- ${fmtFull(c.credit)}`:"—"}
+                      </td>
+                      <td style={{padding:"8px 12px"}}>
+                        <button onClick={()=>{setSelClient(c);setClientTab("consignes");}} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
+                          Voir détail
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{borderTop:"2px solid #E5E7EB",background:"#F9FAFB",fontWeight:700}}>
+                    <td colSpan={3} style={{padding:"8px 12px",color:"#7C3AED"}}>TOTAL</td>
+                    <td style={{padding:"8px 12px",color:"#7C3AED"}}>{fmtFull(totalGlobal)}</td>
+                    <td style={{padding:"8px 12px",color:"#059669"}}>- {fmtFull(totalCredit)}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
         </div>
       );
-    })}
-    {clientsActifs.every(c=>soldeConsignes(c.id).length===0)&&(
-      <div style={{...S.card,textAlign:"center",padding:"60px 0",color:"#9CA3AF"}}>
-        <div style={{fontSize:40,marginBottom:12}}>♻️</div>
-        <div>Aucune consigne en cours</div>
-      </div>
-    )}
+    })()}
   </div>
 )}
 
@@ -1406,7 +1496,7 @@ function BossokApp({ session, onLogout }) {
                   <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2",f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
                   {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
                   {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"2px 8px",fontSize:11}}>↺</button>}
-                  <button title="Imprimer" onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);generatePDF(f,selClient,imp);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
+                  <button title="Imprimer" onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,selClient,imp,solde);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
                   <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"2px 8px",fontSize:11}}>🗑️</button>
                 </div>
               );
@@ -1424,7 +1514,10 @@ function BossokApp({ session, onLogout }) {
               <div style={{fontSize:11,color:"#6B7280",marginTop:4}}>Ce crédit sera automatiquement appliqué sur la prochaine facture.</div>
             </div>
           )}
-          {soldeConsignes(selClient.id).length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"30px 0",fontSize:13}}>Aucune consigne en cours</div>:(
+          <div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:10,marginBottom:12,fontSize:12,color:"#92400E"}}>
+            ℹ️ Les consignes sont calculées uniquement sur les factures créées dans l'app. Les factures historiques importées ne sont pas comptabilisées — le solde repart de zéro.
+          </div>
+          {soldeConsignes(selClient.id).length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:13}}>Aucune consigne en cours — le solde augmentera au fur et à mesure des livraisons.</div>:(
             soldeConsignes(selClient.id).map((r,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:"#F5F3FF",borderRadius:8,marginBottom:6,fontSize:13}}>
                 <span style={{fontWeight:500}}>{r.nom}</span>
@@ -1620,7 +1713,8 @@ function BossokApp({ session, onLogout }) {
       <div style={{display:"flex",gap:10,justifyContent:"center"}}>
         <button onClick={()=>{
           const imp=factures.filter(x=>x.client_id===lastFacture.facture.client_id&&x.statut==="Impayée"&&x.numero!==lastFacture.facture.numero);
-          generatePDF(lastFacture.facture,lastFacture.client,imp);
+          const solde=soldeConsignes(lastFacture.facture.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);
+          generatePDF(lastFacture.facture,lastFacture.client,imp,solde);
           setLastFacture(null);
         }} style={{padding:"10px 20px",background:"#1D4ED8",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer"}}>
           🖨️ Imprimer la facture
