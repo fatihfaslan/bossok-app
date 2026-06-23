@@ -117,6 +117,109 @@ const MONTHLY_DATA = [
   {label:"Juin 26",ca:65821,paye:25702,impaye:40120},
 ];
 
+// GPS coordinates per region (approximate center)
+const REGION_COORDS = {
+  "Centre-ville":  {lat:49.6117, lng:6.1319},
+  "Nord":          {lat:49.8500, lng:6.1000},
+  "Nord-ouest":    {lat:49.7800, lng:5.9500},
+  "Nord-est":      {lat:49.8000, lng:6.3500},
+  "Nord-Est":      {lat:49.8000, lng:6.3500},
+  "Est":           {lat:49.6500, lng:6.5000},
+  "Sud":           {lat:49.4800, lng:6.0500},
+  "Sud-ouest":     {lat:49.5200, lng:5.8800},
+  "Sud-Est":       {lat:49.4500, lng:6.3000},
+  "Ouest":         {lat:49.6000, lng:5.9000},
+  "Belgique":      {lat:49.6800, lng:5.7500},
+  "France":        {lat:49.5000, lng:6.1000},
+  "Hollande":      {lat:50.0000, lng:6.1000},
+};
+
+// Aspelt departure point
+const DEPOT = {lat:49.5281, lng:6.1450};
+
+const distKm = (a, b) => {
+  const R = 6371;
+  const dLat = (b.lat-a.lat) * Math.PI/180;
+  const dLng = (b.lng-a.lng) * Math.PI/180;
+  const x = Math.sin(dLat/2)*Math.sin(dLat/2) +
+    Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*
+    Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+};
+
+// Smart dispatch: balance caisses (max 10% diff) + minimize distance
+const smartDispatch = (commandes) => {
+  if (commandes.length === 0) return {A:[], B:[]};
+
+  // Calculate caisses per commande
+  const cmdsWithData = commandes.map(c => ({
+    ...c,
+    caisses: (c.produits||[]).reduce((s,p)=>s+p.qte, 0),
+    coords: REGION_COORDS[c.client_region] || DEPOT,
+    distDepot: distKm(DEPOT, REGION_COORDS[c.client_region] || DEPOT),
+  }));
+
+  const totalCaisses = cmdsWithData.reduce((s,c)=>s+c.caisses, 0);
+  const targetPerDriver = totalCaisses / 2;
+  const maxDiff = targetPerDriver * 0.10; // 10% tolerance
+
+  // Sort by geographic clusters using distance from depot
+  // Group by region first, then assign greedily
+  const sorted = [...cmdsWithData].sort((a,b) => a.distDepot - b.distDepot);
+
+  let groupA = [], groupB = [];
+  let caissesA = 0, caissesB = 0;
+
+  // Greedy assignment: assign to the group that needs more caisses
+  // while keeping geographic coherence
+  for (const cmd of sorted) {
+    const diffA = Math.abs(caissesA + cmd.caisses - targetPerDriver);
+    const diffB = Math.abs(caissesB + cmd.caisses - targetPerDriver);
+    
+    if (diffA <= diffB) {
+      groupA.push(cmd);
+      caissesA += cmd.caisses;
+    } else {
+      groupB.push(cmd);
+      caissesB += cmd.caisses;
+    }
+  }
+
+  // Calculate estimated distance for each group (simple TSP nearest neighbor)
+  const calcRoute = (cmds) => {
+    if (cmds.length === 0) return {distance:0, order:[]};
+    let current = DEPOT;
+    let remaining = [...cmds];
+    let route = [];
+    let totalDist = 0;
+
+    while (remaining.length > 0) {
+      let nearest = remaining.reduce((best, c) => {
+        const d = distKm(current, c.coords);
+        return d < best.dist ? {cmd:c, dist:d} : best;
+      }, {cmd:remaining[0], dist:Infinity});
+
+      totalDist += nearest.dist;
+      current = nearest.cmd.coords;
+      route.push(nearest.cmd);
+      remaining = remaining.filter(c=>c.id !== nearest.cmd.id);
+    }
+    // Return to depot
+    totalDist += distKm(current, DEPOT);
+    return {distance: Math.round(totalDist), order: route};
+  };
+
+  const routeA = calcRoute(groupA);
+  const routeB = calcRoute(groupB);
+
+  return {
+    A: routeA.order,
+    B: routeB.order,
+    statsA: {caisses: caissesA, km: routeA.distance},
+    statsB: {caisses: caissesB, km: routeB.distance},
+  };
+};
+
 const CHAUFFEUR_REGIONS = {
   A:["Centre-ville","Nord","Nord-ouest","Nord-Est","Nord-est","Est"],
   B:["Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande"],
@@ -222,6 +325,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
 <head>
   <meta charset="UTF-8"/>
   <title>Facture ${facture.numero}</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:12mm 14mm; }
@@ -341,9 +445,49 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   <p>Pour toute question : <strong>Bossok Distribution Sàrl</strong> · 661-620-620</p>
   <p class="bank">Conditions : 7 jours date de facture &nbsp;|&nbsp; BIC: BGLLLULL · LU14 0030 1895 5248 0000 &nbsp;|&nbsp; BIC: REVOLT21 · LT85 3250 0571 2868 0584</p>
   <p class="bank" style="text-align:center">Titulaire : BOSSOK DISTRIBUTION S.A.R.L</p>
-  <p class="merci">— MERCI DE VOTRE CONFIANCE —</p>
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px">
+    <div>
+      <p class="merci" style="text-align:left">— MERCI DE VOTRE CONFIANCE —</p>
+    </div>
+    <div style="text-align:center">
+      <div id="qrcode" style="display:inline-block"></div>
+      <p style="font-size:6.5pt;color:#555;margin-top:2px">Scanner pour payer<br/><strong>${fmtEur(total)}</strong></p>
+    </div>
+  </div>
 </div>
 
+<script>
+  window.onload = function() {
+    // EPC QR Code for SEPA payment
+    const epcData = [
+      "BCD",           // Service Tag
+      "002",           // Version
+      "1",             // Encoding (UTF-8)
+      "SCT",           // Identification (SEPA Credit Transfer)
+      "BGLLLULL",      // BIC
+      "BOSSOK DISTRIBUTION S.A.R.L", // Beneficiary Name
+      "LU14003018955248000",          // IBAN (sans espaces)
+      "EUR${total.toFixed(2)}",       // Amount
+      "",              // Purpose (optional)
+      "${facture.numero}",            // Remittance Reference
+      "Facture ${facture.numero} - ${facture.client_nom}", // Remittance Info
+      ""               // Beneficiary to originator info
+    ].join("\n");
+
+    try {
+      new QRCode(document.getElementById("qrcode"), {
+        text: epcData,
+        width: 80,
+        height: 80,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    } catch(e) {
+      document.getElementById("qrcode").innerHTML = "";
+    }
+  };
+</script>
 </body>
 </html>`;
 
@@ -803,8 +947,42 @@ function BossokApp({ session, onLogout }) {
   const marquerLivre = async (id) => {
     setSaving(true);
     try {
+      const cmd = commandes.find(c=>c.id===id);
+      if (!cmd) return;
+
+      // Mark as delivered
       await db.update("commandes", id, {statut:"Livré"});
-      setCommandes(prev=>prev.map(c=>c.id===id?{...c,statut:"Livré"}:c));
+
+      // Create invoice automatically
+      const client = clients.find(c=>c.id===cmd.client_id);
+      const today = new Date().toISOString().split("T")[0];
+      const ech = new Date(); ech.setDate(ech.getDate()+7);
+      const num = genererNumeroFacture(today);
+
+      // Build lignes from commande produits
+      const lignes = (cmd.produits||[]).map(p => {
+        const produit = PRODUITS.find(x=>x.nom===p.nom);
+        const pu = produit ? getClientPrix(produit, client) : 0;
+        const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
+        return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
+      });
+
+      await db.insert("factures", {
+        numero: num,
+        client_id: cmd.client_id,
+        client_nom: cmd.client_nom,
+        client_adresse: cmd.client_adresse,
+        client_tva: client?.tva||"",
+        date: today,
+        echeance: ech.toISOString().split("T")[0],
+        lignes,
+        statut: "Impayée",
+        notes: `Commande #${cmd.id}`,
+        retours: []
+      });
+
+      await loadAll();
+      alert(`✅ Commande livrée ! Facture ${num} créée automatiquement.`);
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -1421,45 +1599,111 @@ function BossokApp({ session, onLogout }) {
 )}
 
 {/* ══ PLANNING ══════════════════════════════════════════════════ */}
-{page==="planning" && (
+{page==="planning" && (()=>{
+  const pending = commandes.filter(c=>c.statut==="En attente");
+  const dispatch = smartDispatch(pending);
+  const totalCaisses = pending.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0);
+
+  return(
   <div>
-    <div style={{marginBottom:14}}>
-      <div style={{fontSize:13,color:"#6B7280"}}>Livraisons prévues — {tomorrow}</div>
-      <div style={{fontWeight:600,fontSize:14,marginTop:2}}>{commandes.filter(c=>c.statut==="En attente").length} commande(s) en attente</div>
+    {/* Header stats */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+      {[
+        {l:"Commandes",v:pending.length,c:"#1D4ED8",icon:"📋"},
+        {l:"Total caisses",v:totalCaisses,c:"#7C3AED",icon:"📦"},
+        {l:"Chauffeur A",v:(dispatch.statsA?.caisses||0)+" cs · "+(dispatch.statsA?.km||0)+"km",c:"#1D4ED8",icon:"🚚"},
+        {l:"Chauffeur B",v:(dispatch.statsB?.caisses||0)+" cs · "+(dispatch.statsB?.km||0)+"km",c:"#7C3AED",icon:"🚚"},
+      ].map((s,i)=>(
+        <div key={i} style={S.kpi(s.c)}>
+          <div style={{fontSize:16,marginBottom:2}}>{s.icon}</div>
+          <div style={{fontSize:18,fontWeight:800,color:s.c}}>{s.v}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>{s.l}</div>
+        </div>
+      ))}
     </div>
-    {commandes.filter(c=>c.statut==="En attente").length===0?(
+
+    {/* Equilibre indicator */}
+    {pending.length > 0 && dispatch.statsA && dispatch.statsB && (()=>{
+      const total = (dispatch.statsA.caisses + dispatch.statsB.caisses) || 1;
+      const pctA = Math.round(dispatch.statsA.caisses / total * 100);
+      const pctB = 100 - pctA;
+      const balanced = Math.abs(pctA - pctB) <= 10;
+      return(
+        <div style={{...S.card,marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+            <span style={{fontSize:12,fontWeight:600,color:"#1D4ED8"}}>🚚 A : {dispatch.statsA.caisses} caisses ({pctA}%)</span>
+            <span style={{fontSize:12,fontWeight:600,color:balanced?"#059669":"#DC2626"}}>{balanced?"✅ Équilibré":"⚠️ Déséquilibré"}</span>
+            <span style={{fontSize:12,fontWeight:600,color:"#7C3AED"}}>🚚 B : {dispatch.statsB.caisses} caisses ({pctB}%)</span>
+          </div>
+          <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",background:"#E5E7EB"}}>
+            <div style={{width:pctA+"%",background:"#1D4ED8",transition:"width .3s"}}/>
+            <div style={{width:pctB+"%",background:"#7C3AED"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:10,color:"#9CA3AF"}}>
+            <span>Départ : Aspelt → {dispatch.statsA.km} km estimés</span>
+            <span>Départ : Aspelt → {dispatch.statsB.km} km estimés</span>
+          </div>
+        </div>
+      );
+    })()}
+
+    {pending.length===0?(
       <div style={{...S.card,textAlign:"center",padding:"60px 0",color:"#9CA3AF"}}>
         <div style={{fontSize:40,marginBottom:12}}>🚚</div>
         <div>Aucune commande en attente</div>
+        <div style={{fontSize:12,marginTop:4}}>Enregistrez des commandes dans l'onglet Commandes</div>
       </div>
     ):(
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         {["A","B"].map(ch=>{
-          const cmds=ch==="A"?planningA:planningB;
-          const regions=[...new Set(cmds.map(c=>c.client_region))];
+          const cmds = ch==="A" ? dispatch.A : dispatch.B;
+          const stats = ch==="A" ? dispatch.statsA : dispatch.statsB;
+          const col = ch==="A" ? "#1D4ED8" : "#7C3AED";
+          const bgCol = ch==="A" ? "#DBEAFE" : "#EDE9FE";
           return(
-            <div key={ch} style={{...S.card,borderTop:`4px solid ${ch==="A"?"#1D4ED8":"#7C3AED"}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
+            <div key={ch} style={{...S.card,borderTop:`4px solid ${col}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                 <div>
-                  <div style={{fontWeight:700,color:ch==="A"?"#1D4ED8":"#7C3AED"}}>🚚 Chauffeur {ch}</div>
-                  <div style={{fontSize:11,color:"#6B7280"}}>{cmds.length} arrêt(s)</div>
+                  <div style={{fontWeight:700,fontSize:14,color:col}}>🚚 Chauffeur {ch}</div>
+                  <div style={{fontSize:11,color:"#6B7280"}}>{cmds.length} arrêt(s) · {stats?.km||0} km estimés</div>
                 </div>
-                <span style={{...S.badge(ch==="A"?"#DBEAFE":"#EDE9FE",ch==="A"?"#1D4ED8":"#6D28D9"),fontSize:13,padding:"4px 10px"}}>{cmds.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0)} caisses</span>
+                <span style={{...S.badge(bgCol,col),fontSize:12,padding:"4px 10px"}}>{stats?.caisses||0} caisses</span>
               </div>
-              {cmds.length===0?<div style={{textAlign:"center",color:"#9CA3AF",fontSize:12,padding:"20px 0"}}>Aucune livraison</div>:(
-                regions.map(reg=>(
-                  <div key={reg} style={{marginBottom:10}}>
-                    <div style={{fontSize:11,fontWeight:600,color:"#6B7280",marginBottom:4}}>📍 {reg}</div>
-                    {cmds.filter(c=>c.client_region===reg).map(cmd=>(
-                      <div key={cmd.id} style={{padding:"6px 10px",background:"#F8FAFC",borderRadius:6,marginBottom:3,borderLeft:"3px solid #CBD5E1"}}>
-                        <div style={{fontWeight:500,fontSize:12}}>{cmd.client_nom}</div>
-                        <div style={{fontSize:11,color:"#6B7280"}}>{cmd.client_adresse}</div>
-                        <div style={{fontSize:11,marginTop:2}}>{(cmd.produits||[]).map((p,i)=><span key={i} style={{marginRight:6}}>📦 {p.nom} ×{p.qte}</span>)}</div>
-                        <button onClick={()=>marquerLivre(cmd.id)} style={{...S.btn("#059669"),padding:"3px 8px",fontSize:10,marginTop:4}}>✓ Livré</button>
+
+              {cmds.length===0?(
+                <div style={{textAlign:"center",color:"#9CA3AF",fontSize:12,padding:"20px 0"}}>Aucune livraison assignée</div>
+              ):(
+                <div>
+                  <div style={{fontSize:10,color:"#9CA3AF",marginBottom:6}}>📍 Ordre optimisé depuis Aspelt :</div>
+                  {cmds.map((cmd,idx)=>(
+                    <div key={cmd.id} style={{padding:"8px 10px",background:"#F8FAFC",borderRadius:8,marginBottom:6,borderLeft:`3px solid ${col}`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                            <span style={{background:col,color:"#fff",borderRadius:"50%",width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,flexShrink:0}}>{idx+1}</span>
+                            <span style={{fontWeight:600,fontSize:12}}>{cmd.client_nom}</span>
+                            <span style={{...S.badge(bgCol,col),fontSize:9}}>{cmd.client_region}</span>
+                          </div>
+                          <div style={{fontSize:11,color:"#6B7280",marginLeft:24}}>{cmd.client_adresse}</div>
+                          <div style={{fontSize:11,marginLeft:24,marginTop:3,display:"flex",flexWrap:"wrap",gap:4}}>
+                            {(cmd.produits||[]).map((p,i)=>(
+                              <span key={i} style={{background:"#F1F5F9",padding:"1px 6px",borderRadius:4,fontSize:10}}>📦 {p.nom} ×{p.qte}</span>
+                            ))}
+                          </div>
+                          {cmd.notes&&<div style={{fontSize:10,color:"#F59E0B",marginLeft:24,marginTop:2}}>💬 {cmd.notes}</div>}
+                        </div>
+                        <button onClick={()=>marquerLivre(cmd.id)} disabled={saving}
+                          style={{...S.btn("#059669"),padding:"4px 8px",fontSize:10,flexShrink:0,marginLeft:8}}>
+                          ✓ Livré
+                        </button>
                       </div>
-                    ))}
+                    </div>
+                  ))}
+                  <div style={{borderTop:"1px solid #E5E7EB",paddingTop:8,marginTop:4,display:"flex",justifyContent:"space-between",fontSize:11,color:"#6B7280"}}>
+                    <span>🏁 Retour Aspelt</span>
+                    <span style={{fontWeight:600}}>Total : {stats?.caisses||0} caisses · ~{stats?.km||0} km</span>
                   </div>
-                ))
+                </div>
               )}
             </div>
           );
@@ -1467,7 +1711,8 @@ function BossokApp({ session, onLogout }) {
       </div>
     )}
   </div>
-)}
+  );
+})()}
 
 {/* ══ STOCK ══════════════════════════════════════════════════════ */}
 {page==="stock" && (
