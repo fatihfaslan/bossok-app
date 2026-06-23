@@ -305,15 +305,22 @@ const generatePDF = (facture, client) => {
 </body>
 </html>`;
 
-  // Open in new tab
-  const newTab = window.open("", "_blank");
-  newTab.document.write(html);
-  newTab.document.close();
-
-  // Also trigger print/download after a short delay
-  setTimeout(() => {
-    newTab.print();
-  }, 500);
+  // Create blob and download
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  
+  // Open in new tab for printing
+  const newTab = window.open(url, "_blank");
+  if (newTab) {
+    setTimeout(() => newTab.print(), 800);
+  } else {
+    // Fallback: direct download
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Facture_${facture.numero}.html`;
+    a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
 };
 
 // ═══════════════════════════════════════════════════════════════════
