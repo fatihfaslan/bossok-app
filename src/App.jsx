@@ -230,7 +230,7 @@ const generatePDF = (facture, client) => {
     TVA: LU35355446</p>
   </div>
   <div class="logo">
-    <img src="${logo_b64}" alt="BOSSOK"/>
+    <img src="${LOGO}" alt="BOSSOK"/>
   </div>
 </div>
 
@@ -305,22 +305,16 @@ const generatePDF = (facture, client) => {
 </body>
 </html>`;
 
-  // Create blob and download
+  // Download as HTML file
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-  
-  // Open in new tab for printing
-  const newTab = window.open(url, "_blank");
-  if (newTab) {
-    setTimeout(() => newTab.print(), 800);
-  } else {
-    // Fallback: direct download
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Facture_${facture.numero}.html`;
-    a.click();
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "Facture_" + facture.numero + ".html";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 // ═══════════════════════════════════════════════════════════════════
