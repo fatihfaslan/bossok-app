@@ -925,19 +925,50 @@ function BossokApp({ session, onLogout }) {
     finally { setSaving(false); }
   };
 
+  const [editingCmd, setEditingCmd] = useState(null);
+
+  const supprimerCommande = async (id) => {
+    if (!window.confirm("Supprimer cette commande ?")) return;
+    setSaving(true);
+    try {
+      await db.delete("commandes", id);
+      setCommandes(prev=>prev.filter(c=>c.id!==id));
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
+  };
+
+  const openEditCmd = (cmd) => {
+    setEditingCmd(cmd);
+    setCmdClientId(cmd.client_id);
+    setCmdProduits(cmd.produits||[]);
+    setCmdNotes(cmd.notes||"");
+    setSearchCmdClient("");
+  };
+
   const saveCmd = async () => {
     if (!cmdClientId || cmdProduits.length===0) return;
     const client = clients.find(c=>c.id===cmdClientId);
     setSaving(true);
     try {
-      await db.insert("commandes", {
-        client_id: cmdClientId, client_nom: client?.nom||"",
-        client_adresse: client?.adresse||"", client_region: client?.region||"",
-        client_tel: client?.telephone||"",
-        produits: cmdProduits, notes: cmdNotes, statut: "En attente",
-        chauffeur: getChauffeur(client?.region||""),
-        date_commande: today, date_livraison: tomorrow,
-      });
+      if (editingCmd) {
+        await db.update("commandes", editingCmd.id, {
+          client_id: cmdClientId, client_nom: client?.nom||"",
+          client_adresse: client?.adresse||"", client_region: client?.region||"",
+          client_tel: client?.telephone||"",
+          produits: cmdProduits, notes: cmdNotes,
+          chauffeur: getChauffeur(client?.region||""),
+        });
+        setEditingCmd(null);
+      } else {
+        await db.insert("commandes", {
+          client_id: cmdClientId, client_nom: client?.nom||"",
+          client_adresse: client?.adresse||"", client_region: client?.region||"",
+          client_tel: client?.telephone||"",
+          produits: cmdProduits, notes: cmdNotes, statut: "En attente",
+          chauffeur: getChauffeur(client?.region||""),
+          date_commande: today, date_livraison: tomorrow,
+        });
+      }
       await loadAll();
       setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
     } catch(e) { alert("Erreur : "+e.message); }
@@ -1512,7 +1543,10 @@ function BossokApp({ session, onLogout }) {
 {page==="commandes" && (
   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
     <div style={S.card}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>➕ Nouvelle commande</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontWeight:700,fontSize:14}}>{editingCmd?"✏️ Modifier la commande":"➕ Nouvelle commande"}</div>
+        {editingCmd&&<button onClick={()=>{setEditingCmd(null);setCmdClientId(null);setCmdProduits([]);setCmdNotes("");}} style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:11}}>✕ Annuler</button>}
+      </div>
       <div style={{marginBottom:10}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Client *</label>
         {cmdClientId?(
@@ -1570,7 +1604,7 @@ function BossokApp({ session, onLogout }) {
       </div>
       <button onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}
         style={{...S.btn(),width:"100%",opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1}}>
-        {saving?"Sauvegarde...":"✅ Enregistrer la commande"}
+        {saving?"Sauvegarde...":editingCmd?"💾 Enregistrer modifications":"✅ Enregistrer la commande"}
       </button>
     </div>
     <div>
@@ -1692,10 +1726,14 @@ function BossokApp({ session, onLogout }) {
                           </div>
                           {cmd.notes&&<div style={{fontSize:10,color:"#F59E0B",marginLeft:24,marginTop:2}}>💬 {cmd.notes}</div>}
                         </div>
-                        <button onClick={()=>marquerLivre(cmd.id)} disabled={saving}
-                          style={{...S.btn("#059669"),padding:"4px 8px",fontSize:10,flexShrink:0,marginLeft:8}}>
-                          ✓ Livré
-                        </button>
+                        <div style={{display:"flex",gap:3,flexShrink:0,marginLeft:8}}>
+                          <button onClick={()=>marquerLivre(cmd.id)} disabled={saving}
+                            style={{...S.btn("#059669"),padding:"4px 6px",fontSize:10}}>✓</button>
+                          <button onClick={()=>{openEditCmd(cmd);setPage("commandes");}}
+                            style={{...S.btn("#1D4ED8"),padding:"4px 6px",fontSize:10}}>✏️</button>
+                          <button onClick={()=>supprimerCommande(cmd.id)}
+                            style={{...S.btn("#EF4444"),padding:"4px 6px",fontSize:10}}>🗑️</button>
+                        </div>
                       </div>
                     </div>
                   ))}
