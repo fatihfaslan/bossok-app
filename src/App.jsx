@@ -202,9 +202,8 @@ function LoginPage({ onLogin }) {
     <div style={{ fontFamily: "'Inter',system-ui,sans-serif", background: "#0F172A", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ background: "#1E293B", borderRadius: 16, padding: 40, width: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ width: 56, height: 56, background: "#1D4ED8", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 16px" }}>🍺</div>
-          <div style={{ fontWeight: 800, fontSize: 24, color: "#fff" }}>BOSSOK</div>
-          <div style={{ fontSize: 13, color: "#64748B", marginTop: 4 }}>Distribution de Boissons · Luxembourg</div>
+          <img src="/logo.png" alt="BOSSOK" style={{ width: 160, height: 160, objectFit: "contain", margin: "0 auto 8px", display: "block" }} />
+          <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>le distributeur Premium de vos boissons</div>
         </div>
 
         {mode === "login" ? (
@@ -575,7 +574,7 @@ function BossokApp({ session, onLogout }) {
       <div style={S.sidebar}>
         <div style={{padding:"16px",borderBottom:"1px solid #1E293B"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div style={{width:30,height:30,background:"#1D4ED8",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🍺</div>
+            <img src="/logo.png" alt="BOSSOK" style={{width:36,height:36,objectFit:"contain",borderRadius:8}}/>
             <div>
               <div style={{fontWeight:800,fontSize:14}}>BOSSOK</div>
               <div style={{fontSize:10,color:"#475569"}}>Luxembourg</div>
