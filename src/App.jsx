@@ -1616,7 +1616,6 @@ function BossokApp({ session, onLogout }) {
             onRepeat={(prods)=>setCmdProduits(prods)}
             S={S} getChauffeur={getChauffeur}
           />
-        )
         ):(
           <div style={{position:"relative"}}>
             <input value={searchCmdClient} 
