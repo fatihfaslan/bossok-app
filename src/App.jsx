@@ -1623,7 +1623,11 @@ function BossokApp({ session, onLogout }) {
                 <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 Chauffeur {cmd.chauffeur}</span>
                 <div style={{fontSize:11,marginTop:4}}>{(cmd.produits||[]).map((p,i)=><span key={i} style={{marginRight:6}}>📦 {p.nom} ×{p.qte}</span>)}</div>
               </div>
-              <button onClick={()=>marquerLivre(cmd.id)} style={{...S.btn("#059669"),padding:"5px 10px",fontSize:11}}>✓ Livré</button>
+              <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+                <button onClick={()=>marquerLivre(cmd.id)} style={{...S.btn("#059669"),padding:"4px 10px",fontSize:11}}>✓ Livré</button>
+                <button onClick={()=>openEditCmd(cmd)} style={{...S.btn("#1D4ED8"),padding:"4px 10px",fontSize:11}}>✏️ Modifier</button>
+                <button onClick={()=>supprimerCommande(cmd.id)} style={{...S.btn("#EF4444"),padding:"4px 10px",fontSize:11}}>🗑️ Supprimer</button>
+              </div>
             </div>
           </div>
         ))
@@ -2271,4 +2275,3 @@ function BossokApp({ session, onLogout }) {
     </div>
   );
 }
- 
