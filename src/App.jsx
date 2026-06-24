@@ -1013,7 +1013,22 @@ function BossokApp({ session, onLogout }) {
       });
 
       await loadAll();
-      alert(`✅ Commande livrée ! Facture ${num} créée automatiquement.`);
+      // Show print modal
+      setLastFacture({
+        facture: {
+          numero: num,
+          client_id: cmd.client_id,
+          client_nom: cmd.client_nom,
+          client_adresse: cmd.client_adresse,
+          client_tva: client?.tva||"",
+          date: today,
+          echeance: ech.toISOString().split("T")[0],
+          lignes,
+          statut: "Impayée",
+          notes: `Commande #${cmd.id}`
+        },
+        client
+      });
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -1547,7 +1562,9 @@ function BossokApp({ session, onLogout }) {
         <div style={{fontWeight:700,fontSize:14}}>{editingCmd?"✏️ Modifier la commande":"➕ Nouvelle commande"}</div>
         {editingCmd&&<button onClick={()=>{setEditingCmd(null);setCmdClientId(null);setCmdProduits([]);setCmdNotes("");}} style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:11}}>✕ Annuler</button>}
       </div>
-      <div style={{marginBottom:10}}>
+
+      {/* CLIENT - liste déroulante */}
+      <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Client *</label>
         {cmdClientId?(
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8}}>
@@ -1559,52 +1576,102 @@ function BossokApp({ session, onLogout }) {
           </div>
         ):(
           <div style={{position:"relative"}}>
-            <input value={searchCmdClient} onChange={e=>setSearchCmdClient(e.target.value)} placeholder="🔍 Rechercher..." style={S.input}/>
+            <input value={searchCmdClient} onChange={e=>setSearchCmdClient(e.target.value)}
+              placeholder="🔍 Taper pour rechercher..."
+              style={S.input}/>
             {searchCmdClient&&(
-              <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,.1)",zIndex:50,maxHeight:200,overflowY:"auto"}}>
-                {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchCmdClient.toLowerCase())).slice(0,6).map(c=>(
-                  <div key={c.id} onClick={()=>{setCmdClientId(c.id);setSearchCmdClient("");}} style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9"}}
-                    onMouseEnter={e=>e.currentTarget.style.background="#F9FAFB"}
+              <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 16px rgba(0,0,0,.12)",zIndex:50,maxHeight:220,overflowY:"auto"}}>
+                {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchCmdClient.toLowerCase())).slice(0,8).map(c=>(
+                  <div key={c.id} onClick={()=>{setCmdClientId(c.id);setSearchCmdClient("");}}
+                    style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="#F0F9FF"}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                    <div style={{fontWeight:500}}>{c.nom}</div>
-                    <div style={{fontSize:11,color:"#9CA3AF"}}>{c.region}</div>
+                    <div>
+                      <div style={{fontWeight:500}}>{c.nom}</div>
+                      <div style={{fontSize:10,color:"#9CA3AF"}}>{c.region} · {c.type}</div>
+                    </div>
+                    <span style={S.badge("#DBEAFE","#1D4ED8")}>{getChauffeur(c.region)}</span>
                   </div>
                 ))}
+                {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchCmdClient.toLowerCase())).length===0&&(
+                  <div style={{padding:"12px",fontSize:12,color:"#9CA3AF",textAlign:"center"}}>Aucun client trouvé</div>
+                )}
               </div>
             )}
           </div>
         )}
       </div>
-      <div style={{marginBottom:10}}>
-        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produits *</label>
-        {cmdProduits.map((p,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 8px",background:"#F9FAFB",borderRadius:6,marginBottom:4,fontSize:12}}>
-            <span style={{flex:1}}>{p.nom}</span>
-            <span style={{fontWeight:600,color:"#1D4ED8"}}>×{p.qte}</span>
-            <button onClick={()=>setCmdProduits(prev=>prev.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#EF4444",cursor:"pointer"}}>✕</button>
-          </div>
-        ))}
-        {showProdAdd?(
-          <div style={{border:"1px solid #E5E7EB",borderRadius:8,padding:10}}>
-            <input list="prod-list" value={newProd} onChange={e=>setNewProd(e.target.value)} placeholder="Produit..." style={{...S.input,marginBottom:6}}/>
-            <datalist id="prod-list">{PRODUITS.map(p=><option key={p.id} value={p.nom}/>)}</datalist>
-            <div style={{display:"flex",gap:6,alignItems:"center"}}>
-              <input type="number" min="1" value={newQte} onChange={e=>setNewQte(e.target.value)} style={{...S.input,width:70}}/>
-              <button onClick={()=>{if(!newProd)return;setCmdProduits(prev=>[...prev,{nom:newProd,qte:parseInt(newQte)||1}]);setNewProd("");setNewQte(1);setShowProdAdd(false);}} style={S.btn()}>+</button>
-              <button onClick={()=>setShowProdAdd(false)} style={S.btn("#F3F4F6","#374151")}>✕</button>
+
+      {/* PRODUITS - grille rapide */}
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Produits * <span style={{color:"#9CA3AF"}}>(entrez les quantités)</span></label>
+        
+        {/* Grouped by category */}
+        {["Canettes","Energy","Bouteilles","Eaux","Verre"].map(cat=>{
+          const prods = PRODUITS.filter(p=>p.categorie===cat);
+          return(
+            <div key={cat} style={{marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4,padding:"2px 0",borderBottom:"1px solid #F1F5F9"}}>{cat}</div>
+              <div style={{display:"grid",gap:3}}>
+                {prods.map(p=>{
+                  const existing = cmdProduits.find(x=>x.nom===p.nom);
+                  const qte = existing?.qte || 0;
+                  return(
+                    <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"3px 6px",borderRadius:6,background:qte>0?"#EFF6FF":"transparent"}}>
+                      <span style={{flex:1,fontSize:11,color:qte>0?"#1D4ED8":"#374151",fontWeight:qte>0?600:400}}>{p.nom}</span>
+                      {p.type_emballage==="VC"&&<span style={{fontSize:9,color:"#7C3AED",background:"#F5F3FF",padding:"1px 4px",borderRadius:3}}>VC</span>}
+                      <div style={{display:"flex",alignItems:"center",gap:3}}>
+                        <button onClick={()=>{
+                          if(qte<=0) return;
+                          if(qte===1) setCmdProduits(prev=>prev.filter(x=>x.nom!==p.nom));
+                          else setCmdProduits(prev=>prev.map(x=>x.nom===p.nom?{...x,qte:x.qte-1}:x));
+                        }} style={{width:22,height:22,border:"1px solid #E5E7EB",borderRadius:4,background:qte>0?"#DBEAFE":"#F9FAFB",cursor:"pointer",fontSize:12,fontWeight:700,color:qte>0?"#1D4ED8":"#9CA3AF",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                        <input type="number" min="0" value={qte||""} placeholder="0"
+                          onChange={e=>{
+                            const v=parseInt(e.target.value)||0;
+                            if(v===0) setCmdProduits(prev=>prev.filter(x=>x.nom!==p.nom));
+                            else if(existing) setCmdProduits(prev=>prev.map(x=>x.nom===p.nom?{...x,qte:v}:x));
+                            else setCmdProduits(prev=>[...prev,{nom:p.nom,qte:v}]);
+                          }}
+                          style={{width:36,textAlign:"center",padding:"2px 0",border:"1px solid #E5E7EB",borderRadius:4,fontSize:11,outline:"none",background:qte>0?"#EFF6FF":"#fff",color:qte>0?"#1D4ED8":"#374151",fontWeight:qte>0?700:400}}/>
+                        <button onClick={()=>{
+                          if(existing) setCmdProduits(prev=>prev.map(x=>x.nom===p.nom?{...x,qte:x.qte+1}:x));
+                          else setCmdProduits(prev=>[...prev,{nom:p.nom,qte:1}]);
+                        }} style={{width:22,height:22,border:"1px solid #E5E7EB",borderRadius:4,background:"#F0FDF4",cursor:"pointer",fontSize:12,fontWeight:700,color:"#16A34A",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Summary */}
+        {cmdProduits.length>0&&(
+          <div style={{background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,padding:"8px 10px",marginTop:8}}>
+            <div style={{fontSize:11,fontWeight:600,color:"#166534",marginBottom:4}}>
+              📦 {cmdProduits.reduce((s,p)=>s+p.qte,0)} caisses sélectionnées :
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {cmdProduits.map((p,i)=>(
+                <span key={i} style={{fontSize:10,background:"#DCFCE7",color:"#166534",padding:"2px 6px",borderRadius:4,fontWeight:500}}>
+                  {p.nom} ×{p.qte}
+                </span>
+              ))}
             </div>
           </div>
-        ):(
-          <button onClick={()=>setShowProdAdd(true)} style={{...S.btn("#F0FDF4","#16A34A"),width:"100%",marginTop:4}}>+ Ajouter produit</button>
         )}
       </div>
+
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
         <input value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} placeholder="Instructions spéciales..." style={S.input}/>
       </div>
+
       <button onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}
-        style={{...S.btn(),width:"100%",opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1}}>
-        {saving?"Sauvegarde...":editingCmd?"💾 Enregistrer modifications":"✅ Enregistrer la commande"}
+        style={{...S.btn(),width:"100%",opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1,fontSize:13}}>
+        {saving?"Sauvegarde...":editingCmd?"💾 Enregistrer modifications":`✅ Enregistrer la commande (${cmdProduits.reduce((s,p)=>s+p.qte,0)} caisses)`}
       </button>
     </div>
     <div>
