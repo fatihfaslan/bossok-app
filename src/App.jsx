@@ -1607,14 +1607,16 @@ function BossokApp({ session, onLogout }) {
       {/* CLIENT - liste déroulante */}
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Client *</label>
-        {cmdClientId?<ClientSelected
+        {cmdClientId ? (
+          <ClientSelected
             cl={clients.find(c=>c.id===cmdClientId)}
             lastCmd={[...commandes].reverse().find(c=>c.client_id===cmdClientId)}
             cmdProduits={cmdProduits}
             onClear={()=>{setCmdClientId(null);setSearchCmdClient("");setCmdProduits([]);}}
             onRepeat={(prods)=>setCmdProduits(prods)}
-            S={S} badge={S.badge} getChauffeur={getChauffeur}
+            S={S} getChauffeur={getChauffeur}
           />
+        )
         ):(
           <div style={{position:"relative"}}>
             <input value={searchCmdClient} 
