@@ -1576,13 +1576,20 @@ function BossokApp({ session, onLogout }) {
           </div>
         ):(
           <div style={{position:"relative"}}>
-            <input value={searchCmdClient} onChange={e=>setSearchCmdClient(e.target.value)}
-              placeholder="🔍 Taper pour rechercher..."
+            <input value={searchCmdClient} 
+              onChange={e=>setSearchCmdClient(e.target.value)}
+              onFocus={e=>{ if(!searchCmdClient) setSearchCmdClient(" "); }}
+              onBlur={e=>{ setTimeout(()=>setSearchCmdClient(""), 200); }}
+              placeholder="🔍 Cliquer ou taper pour rechercher..."
               style={S.input}/>
             {searchCmdClient&&(
-              <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 16px rgba(0,0,0,.12)",zIndex:50,maxHeight:220,overflowY:"auto"}}>
-                {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchCmdClient.toLowerCase())).slice(0,8).map(c=>(
-                  <div key={c.id} onClick={()=>{setCmdClientId(c.id);setSearchCmdClient("");}}
+              <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 16px rgba(0,0,0,.12)",zIndex:50,maxHeight:250,overflowY:"auto"}}>
+                {clientsActifs
+                  .filter(c=>searchCmdClient.trim()===""||c.nom?.toLowerCase().includes(searchCmdClient.trim().toLowerCase()))
+                  .sort((a,b)=>a.nom.localeCompare(b.nom))
+                  .slice(0,10)
+                  .map(c=>(
+                  <div key={c.id} onMouseDown={()=>{setCmdClientId(c.id);setSearchCmdClient("");}}
                     style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#F0F9FF"}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -1590,10 +1597,10 @@ function BossokApp({ session, onLogout }) {
                       <div style={{fontWeight:500}}>{c.nom}</div>
                       <div style={{fontSize:10,color:"#9CA3AF"}}>{c.region} · {c.type}</div>
                     </div>
-                    <span style={S.badge("#DBEAFE","#1D4ED8")}>{getChauffeur(c.region)}</span>
+                    <span style={S.badge("#DBEAFE","#1D4ED8")}>Ch. {getChauffeur(c.region)}</span>
                   </div>
                 ))}
-                {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchCmdClient.toLowerCase())).length===0&&(
+                {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchCmdClient.trim().toLowerCase())).length===0&&(
                   <div style={{padding:"12px",fontSize:12,color:"#9CA3AF",textAlign:"center"}}>Aucun client trouvé</div>
                 )}
               </div>
