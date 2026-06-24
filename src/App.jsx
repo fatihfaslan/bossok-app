@@ -1576,8 +1576,7 @@ function BossokApp({ session, onLogout }) {
       {/* CLIENT - liste déroulante */}
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Client *</label>
-        {cmdClientId?(
-          {(()=>{
+        {cmdClientId?(()=>{
             const cl = clients.find(c=>c.id===cmdClientId);
             const lastCmd = [...commandes].reverse().find(c=>c.client_id===cmdClientId);
             return(
@@ -1608,7 +1607,7 @@ function BossokApp({ session, onLogout }) {
                 )}
               </div>
             );
-          })()}
+          })()
         ):(
           <div style={{position:"relative"}}>
             <input value={searchCmdClient} 
@@ -2384,4 +2383,3 @@ function BossokApp({ session, onLogout }) {
     </div>
   );
 }
- 
