@@ -1587,7 +1587,6 @@ function BossokApp({ session, onLogout }) {
                 {clientsActifs
                   .filter(c=>searchCmdClient.trim()===""||c.nom?.toLowerCase().includes(searchCmdClient.trim().toLowerCase()))
                   .sort((a,b)=>a.nom.localeCompare(b.nom))
-                  .slice(0,10)
                   .map(c=>(
                   <div key={c.id} onMouseDown={()=>{setCmdClientId(c.id);setSearchCmdClient("");}}
                     style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}
