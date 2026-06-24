@@ -503,6 +503,37 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
 };
 
 
+function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, getChauffeur}) {
+  return(
+    <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div>
+          <div style={{fontWeight:600,fontSize:13}}>{cl?.nom}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>{cl?.region} · {cl?.type}</div>
+          <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 Chauffeur {getChauffeur(cl?.region||"")}</span>
+        </div>
+        <button onClick={onClear} style={{background:"none",border:"none",color:"#9CA3AF",cursor:"pointer",fontSize:16}}>✕</button>
+      </div>
+      {lastCmd&&cmdProduits.length===0&&(
+        <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #BFDBFE"}}>
+          <div style={{fontSize:11,color:"#6B7280",marginBottom:4}}>Dernière commande :</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:6}}>
+            {(lastCmd.produits||[]).map((p,i)=>(
+              <span key={i} style={{fontSize:10,background:"#DBEAFE",color:"#1D4ED8",padding:"2px 6px",borderRadius:4}}>
+                {p.nom} ×{p.qte}
+              </span>
+            ))}
+          </div>
+          <button onClick={()=>onRepeat(lastCmd.produits||[])}
+            style={{...S.btn("#1D4ED8"),padding:"3px 10px",fontSize:11,width:"100%"}}>
+            📋 Reprendre la dernière commande
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // LOGIN PAGE
 // ═══════════════════════════════════════════════════════════════════
@@ -1576,38 +1607,14 @@ function BossokApp({ session, onLogout }) {
       {/* CLIENT - liste déroulante */}
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Client *</label>
-        {cmdClientId?(()=>{
-            const cl = clients.find(c=>c.id===cmdClientId);
-            const lastCmd = [...commandes].reverse().find(c=>c.client_id===cmdClientId);
-            return(
-              <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div>
-                    <div style={{fontWeight:600,fontSize:13}}>{cl?.nom}</div>
-                    <div style={{fontSize:11,color:"#6B7280"}}>{cl?.region} · {cl?.type}</div>
-                    <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 Chauffeur {getChauffeur(cl?.region||"")}</span>
-                  </div>
-                  <button onClick={()=>{setCmdClientId(null);setSearchCmdClient("");setCmdProduits([]);}} style={{background:"none",border:"none",color:"#9CA3AF",cursor:"pointer",fontSize:16}}>✕</button>
-                </div>
-                {lastCmd&&cmdProduits.length===0&&(
-                  <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #BFDBFE"}}>
-                    <div style={{fontSize:11,color:"#6B7280",marginBottom:4}}>Dernière commande :</div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:6}}>
-                      {(lastCmd.produits||[]).map((p,i)=>(
-                        <span key={i} style={{fontSize:10,background:"#DBEAFE",color:"#1D4ED8",padding:"2px 6px",borderRadius:4}}>
-                          {p.nom} ×{p.qte}
-                        </span>
-                      ))}
-                    </div>
-                    <button onClick={()=>setCmdProduits(lastCmd.produits||[])}
-                      style={{...S.btn("#1D4ED8"),padding:"3px 10px",fontSize:11,width:"100%"}}>
-                      📋 Reprendre la dernière commande
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })()
+        {cmdClientId?<ClientSelected
+            cl={clients.find(c=>c.id===cmdClientId)}
+            lastCmd={[...commandes].reverse().find(c=>c.client_id===cmdClientId)}
+            cmdProduits={cmdProduits}
+            onClear={()=>{setCmdClientId(null);setSearchCmdClient("");setCmdProduits([]);}}
+            onRepeat={(prods)=>setCmdProduits(prods)}
+            S={S} badge={S.badge} getChauffeur={getChauffeur}
+          />
         ):(
           <div style={{position:"relative"}}>
             <input value={searchCmdClient} 
