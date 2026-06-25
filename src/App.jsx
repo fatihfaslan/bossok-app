@@ -1610,7 +1610,7 @@ function BossokApp({ session, onLogout }) {
         {cmdClientId ? (
           <ClientSelected
             cl={clients.find(c=>c.id===cmdClientId)}
-            lastCmd={[...commandes].reverse().find(c=>c.client_id===cmdClientId)}
+            lastCmd={[...commandes].sort((a,b)=>b.id-a.id).find(c=>c.client_id===cmdClientId)}
             cmdProduits={cmdProduits}
             onClear={()=>{setCmdClientId(null);setSearchCmdClient("");setCmdProduits([]);}}
             onRepeat={(prods)=>setCmdProduits(prods)}
