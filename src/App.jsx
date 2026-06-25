@@ -428,7 +428,8 @@ const detectRegionFromAddress = (adresse) => {
   
   // Extract postal code - find 4 consecutive digits
   let cp = 0;
-  const parts = adresse.replace(/[Ll]-/g, "").split(/[\s,]+/);
+  const cleaned = adresse.replace("L-","").replace("l-","");
+  const parts = cleaned.split(" ").concat(cleaned.split(",")).concat(cleaned.split("-"));
   for (const part of parts) {
     const n = parseInt(part);
     if (!isNaN(n) && part.length === 4) { cp = n; break; }
