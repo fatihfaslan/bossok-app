@@ -2844,7 +2844,7 @@ function BossokApp({ session, onLogout }) {
             style={{...S.input,borderColor:clientForm.region?"#059669":"#E5E7EB"}}>
             <option value="">-- Sélectionner --</option>
             {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande"].map(r=>(
-              <option key={r} value={r}>{r} {ZONE_SCHEDULE[r] ? `· ${ZONE_SCHEDULE[r].driver} (${ZONE_SCHEDULE[r].days.join(", ")})` : ""}</option>
+              <option key={r} value={r}>{r} {ZONE_SCHEDULE[r] ? " · " + ZONE_SCHEDULE[r].driver + " (" + (ZONE_SCHEDULE[r].days||[]).join(", ") + ")" : ""}</option>
             ))}
           </select>
           {clientForm.adresse && detectRegionFromAddress(clientForm.adresse) && (
