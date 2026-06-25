@@ -395,8 +395,6 @@ const ZONE_SPEED = {
 };
 
 const STOP_TIME = 20; // minutes per client
-const DEPOT = {lat:49.5281,lng:6.1450}; // Aspelt
-
 // Get suggested delivery day for a region
 const getSuggestedDay = (region) => {
   const days = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
@@ -428,11 +426,14 @@ const getDriverForDay = (region, dayIdx) => {
 const detectRegionFromAddress = (adresse) => {
   if (!adresse) return "";
   
-  // Extract postal code - Luxembourg format L-XXXX or just XXXX
-  const match = adresse.match(/[Ll]-?(\d{4})|(\d{4})\s+[A-Za-z]/);
-  if (!match) return "";
-  
-  const cp = parseInt(match[1] || match[2]);
+  // Extract postal code - find 4 consecutive digits
+  let cp = 0;
+  const parts = adresse.replace(/[Ll]-/g, "").split(/[\s,]+/);
+  for (const part of parts) {
+    const n = parseInt(part);
+    if (!isNaN(n) && part.length === 4) { cp = n; break; }
+  }
+  if (!cp) return "";
   
   // Luxembourg postal code mapping
   if (cp >= 1000 && cp <= 1999) return "Centre-ville";      // Luxembourg-Ville
