@@ -220,6 +220,250 @@ const smartDispatch = (commandes) => {
   };
 };
 
+// Driver names
+const DRIVERS = { A: "Sefa", B: "Mikail" };
+
+// Zone delivery schedule
+const ZONE_SCHEDULE = {
+  "Centre-ville": {days:["Lundi","Mercredi","Vendredi"], driver:"Sefa"},
+  "Nord":         {days:["Lundi","Mardi","Jeudi"],        driver:"Sefa"},
+  "Nord-ouest":   {days:["Mardi"],                        driver:"Sefa"},
+  "Nord-Est":     {days:["Mercredi"],                     driver:"Sefa"},
+  "Nord-est":     {days:["Mercredi"],                     driver:"Sefa"},
+  "Est":          {days:["Mardi","Jeudi"],                 driver:"Sefa"},
+  "Sud":          {days:["Lundi","Mardi","Jeudi"],         driver:"Mikail"},
+  "Sud-ouest":    {days:["Mercredi","Vendredi"],           driver:"Mikail"},
+  "Sud-Est":      {days:["Mardi"],                        driver:"Mikail"},
+  "Ouest":        {days:["Mercredi","Vendredi"],           driver:"Mikail"},
+  "Belgique":     {days:["Jeudi","Vendredi"],             driver:"Mikail"},
+  "France":       {days:["Lundi"],                        driver:"Mikail"},
+  "Hollande":     {days:["Jeudi"],                        driver:"Mikail"},
+};
+
+const generateOnePager = (clients) => {
+  const actifs = clients.filter(c => c.statut === "Actif");
+  
+  // Group by zone
+  const byZone = {};
+  actifs.forEach(c => {
+    const zone = c.region || "Non défini";
+    if (!byZone[zone]) byZone[zone] = [];
+    byZone[zone].push(c);
+  });
+
+  // Sort zones by driver then name
+  const sortedZones = Object.keys(byZone).sort((a,b) => {
+    const da = ZONE_SCHEDULE[a]?.driver || "Z";
+    const db = ZONE_SCHEDULE[b]?.driver || "Z";
+    if (da !== db) return da.localeCompare(db);
+    return a.localeCompare(b);
+  });
+
+  const zoneColors = {
+    "Sefa": "#0EA5E9",
+    "Mikail": "#8B5CF6",
+  };
+
+  const zonesHTML = sortedZones.map(zone => {
+    const clients = byZone[zone].sort((a,b) => a.nom.localeCompare(b.nom));
+    const schedule = ZONE_SCHEDULE[zone];
+    const driver = schedule?.driver || "?";
+    const days = schedule?.days?.join(", ") || "À définir";
+    const col = zoneColors[driver] || "#374151";
+
+    const rows = clients.map((c,i) => `
+      <tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+        <td style="padding:5px 8px;font-size:9pt;font-weight:600">${c.nom}</td>
+        <td style="padding:5px 8px;font-size:8.5pt;color:#555">${c.adresse||""}</td>
+        <td style="padding:5px 8px;font-size:8.5pt;color:#555">${c.telephone||""}</td>
+        <td style="padding:5px 8px;font-size:8.5pt;color:#555">${c.tva||""}</td>
+        <td style="padding:5px 8px;font-size:8.5pt;color:#555">${c.conditions||"30 jours"}</td>
+      </tr>
+    `).join("");
+
+    return `
+      <div style="margin-bottom:20px;page-break-inside:avoid">
+        <div style="background:${col};color:#fff;padding:8px 12px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <span style="font-size:12pt;font-weight:700">${zone}</span>
+            <span style="font-size:9pt;margin-left:10px;opacity:0.85">🚚 ${driver} — ${days}</span>
+          </div>
+          <span style="font-size:10pt;font-weight:700">${clients.length} client(s)</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;border:1px solid #ddd;border-top:none">
+          <thead>
+            <tr style="background:#f5f5f5">
+              <th style="padding:5px 8px;text-align:left;font-size:8pt;color:#555;width:22%">Nom</th>
+              <th style="padding:5px 8px;text-align:left;font-size:8pt;color:#555;width:35%">Adresse</th>
+              <th style="padding:5px 8px;text-align:left;font-size:8pt;color:#555;width:13%">Téléphone</th>
+              <th style="padding:5px 8px;text-align:left;font-size:8pt;color:#555;width:13%">TVA</th>
+              <th style="padding:5px 8px;text-align:left;font-size:8pt;color:#555;width:10%">Conditions</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Clients par Zone — BOSSOK Distribution</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:12mm 14mm; }
+    .no-print { position:fixed; top:8px; right:8px; z-index:999; }
+    .no-print button { padding:8px 16px; background:#1D4ED8; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; margin-left:6px; }
+    @media print { .no-print { display:none; } body { padding:8mm 10mm; } }
+  </style>
+</head>
+<body>
+
+<div class="no-print">
+  <button onclick="window.print()">🖨️ Imprimer</button>
+</div>
+
+<!-- HEADER -->
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid #111">
+  <div>
+    <h1 style="font-size:16pt;font-weight:800;color:#C0392B">BOSSOK DISTRIBUTION Sàrl</h1>
+    <p style="font-size:9pt;color:#555">71A Boulevard Robert Schuman · 8340 Olm · Tél: 661-620-620</p>
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:13pt;font-weight:700">Clients Actifs par Zone</div>
+    <div style="font-size:9pt;color:#555">Édité le ${new Date().toLocaleDateString('fr-LU')} · ${actifs.length} clients actifs</div>
+  </div>
+</div>
+
+<!-- PLANNING RECAP -->
+<div style="display:flex;gap:10px;margin-bottom:16px">
+  <div style="flex:1;background:#E0F2FE;border:1px solid #0EA5E9;border-radius:6px;padding:8px 12px">
+    <div style="font-weight:700;color:#0EA5E9;margin-bottom:4px;font-size:10pt">🚚 Sefa</div>
+    <div style="font-size:8pt;color:#0369A1;line-height:1.8">
+      <strong>Lundi :</strong> Centre-ville · Nord · France<br/>
+      <strong>Mardi :</strong> Nord · Nord-ouest · Est · Sud<br/>
+      <strong>Mercredi :</strong> Centre-ville · Nord-Est · Ouest · Sud-ouest<br/>
+      <strong>Jeudi :</strong> Nord · Est · Sud<br/>
+      <strong>Vendredi :</strong> Centre-ville · Ouest · Sud-ouest
+    </div>
+  </div>
+  <div style="flex:1;background:#EDE9FE;border:1px solid #8B5CF6;border-radius:6px;padding:8px 12px">
+    <div style="font-weight:700;color:#8B5CF6;margin-bottom:4px;font-size:10pt">🚚 Mikail</div>
+    <div style="font-size:8pt;color:#6D28D9;line-height:1.8">
+      <strong>Lundi :</strong> Sud · France<br/>
+      <strong>Mardi :</strong> Sud · Sud-Est<br/>
+      <strong>Mercredi :</strong> Ouest · Sud-ouest<br/>
+      <strong>Jeudi :</strong> Sud · Belgique · Hollande<br/>
+      <strong>Vendredi :</strong> Sud-ouest · Belgique
+    </div>
+  </div>
+</div>
+
+<!-- ZONES -->
+${zonesHTML}
+
+</body>
+</html>`;
+
+  const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "BOSSOK_Clients_par_Zone.html";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+};
+
+// Zone assignments per day (0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri)
+const DAILY_ZONES = {
+  0: { A: ["Centre-ville","Nord"],                    B: ["Sud","Sud-ouest","Belgique","France"] },
+  1: { A: ["Centre-ville","Nord","Nord-ouest"],        B: ["Sud","Ouest","Belgique"] },
+  2: { A: ["Est","Nord","Nord-ouest"],                 B: ["Centre-ville","Sud","Ouest","France"] },
+  3: { A: ["Centre-ville","Nord","Est"],               B: ["France","Sud","Ouest"] },
+  4: { A: ["Centre-ville","Nord","Est"],               B: ["Sud","Sud-ouest","Ouest","Belgique"] },
+};
+
+// Speed per zone (km/h)
+const ZONE_SPEED = {
+  "Centre-ville":25,"Sud-ouest":30,"Sud":50,"Nord":60,
+  "Nord-ouest":55,"Nord-est":65,"Nord-Est":65,"Est":60,
+  "Ouest":45,"Belgique":70,"France":70,"Sud-Est":55,"Hollande":80,
+};
+
+const STOP_TIME = 20; // minutes per client
+const DEPOT = {lat:49.5281,lng:6.1450}; // Aspelt
+
+// Get suggested delivery day for a region
+const getSuggestedDay = (region) => {
+  const days = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  for (let d = 0; d < 5; d++) {
+    if (DAILY_ZONES[d]?.A?.includes(region) || DAILY_ZONES[d]?.B?.includes(region)) {
+      // Find today's day and suggest next occurrence
+      const today = new Date().getDay(); // 0=Sun, 1=Mon...
+      const todayIdx = today === 0 ? 6 : today - 1; // convert to 0=Mon
+      const daysUntil = (d - todayIdx + 7) % 7 || 7;
+      const delivDate = new Date();
+      delivDate.setDate(delivDate.getDate() + daysUntil);
+      return { day: days[d], date: delivDate.toLocaleDateString('fr-LU'), dayIdx: d };
+    }
+  }
+  return { day: 'Lundi', date: '', dayIdx: 0 };
+};
+
+// Get driver for region on a given day
+const getDriverForDay = (region, dayIdx) => {
+  const zones = DAILY_ZONES[dayIdx] || DAILY_ZONES[0];
+  if (zones.A?.includes(region)) return "A";
+  if (zones.B?.includes(region)) return "B";
+  // Fallback: geographic
+  const southZones = ["Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande"];
+  return southZones.includes(region) ? "B" : "A";
+};
+
+// Auto-detect region from Luxembourg postal code
+const detectRegionFromAddress = (adresse) => {
+  if (!adresse) return "";
+  
+  // Extract postal code - Luxembourg format L-XXXX or just XXXX
+  const match = adresse.match(/[Ll]-?(\d{4})|(\d{4})\s+[A-Za-z]/);
+  if (!match) return "";
+  
+  const cp = parseInt(match[1] || match[2]);
+  
+  // Luxembourg postal code mapping
+  if (cp >= 1000 && cp <= 1999) return "Centre-ville";      // Luxembourg-Ville
+  if (cp >= 2000 && cp <= 2999) return "Centre-ville";      // Luxembourg-Ville (Kirchberg, Limpertsberg...)
+  if (cp >= 3000 && cp <= 3499) return "Sud";               // Hesperange, Bettembourg
+  if (cp >= 3500 && cp <= 3999) return "Sud";               // Dudelange, Kayl, Rumelange
+  if (cp >= 4000 && cp <= 4099) return "Sud";               // Esch-sur-Alzette
+  if (cp >= 4100 && cp <= 4499) return "Sud-ouest";         // Esch région, Sanem
+  if (cp >= 4500 && cp <= 4999) return "Sud-ouest";         // Differdange, Pétange
+  if (cp >= 5000 && cp <= 5499) return "Est";               // Sandweiler, Contern
+  if (cp >= 5500 && cp <= 5999) return "Est";               // Remich, Grevenmacher
+  if (cp >= 6000 && cp <= 6499) return "Est";               // Echternach région
+  if (cp >= 6500 && cp <= 6999) return "Nord-Est";          // Beaufort, Berdorf
+  if (cp >= 7000 && cp <= 7499) return "Ouest";             // Mersch, Lintgen
+  if (cp >= 7500 && cp <= 7999) return "Nord-ouest";        // Steinfort, Capellen
+  if (cp >= 8000 && cp <= 8499) return "Ouest";             // Mamer, Strassen
+  if (cp >= 8500 && cp <= 8999) return "Ouest";             // Redange, Préizerdaul
+  if (cp >= 9000 && cp <= 9299) return "Nord";              // Diekirch, Ettelbruck
+  if (cp >= 9300 && cp <= 9599) return "Nord";              // Vianden, Clervaux région
+  if (cp >= 9600 && cp <= 9999) return "Nord";              // Wiltz, Winseler
+  
+  // Belgian postal codes
+  if (cp >= 6700 && cp <= 6999) return "Belgique";
+  if (cp >= 5000 && cp <= 5999 && adresse.toLowerCase().includes('belg')) return "Belgique";
+  
+  // French postal codes (54, 57, 55...)
+  if (cp >= 54000 && cp <= 57999) return "France";
+  
+  return "";
+};
+
 const CHAUFFEUR_REGIONS = {
   A:["Centre-ville","Nord","Nord-ouest","Nord-Est","Nord-est","Est"],
   B:["Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande"],
@@ -1001,13 +1245,16 @@ function BossokApp({ session, onLogout }) {
         });
         setEditingCmd(null);
       } else {
-        await db.insert("commandes", {
+        const suggested = getSuggestedDay(client?.region||"");
+      await db.insert("commandes", {
           client_id: cmdClientId, client_nom: client?.nom||"",
           client_adresse: client?.adresse||"", client_region: client?.region||"",
           client_tel: client?.telephone||"",
           produits: cmdProduits, notes: cmdNotes, statut: "En attente",
-          chauffeur: getChauffeur(client?.region||""),
-          date_commande: today, date_livraison: tomorrow,
+          chauffeur: suggested.dayIdx <= 1 ? "A" : getChauffeur(client?.region||""),
+          date_commande: today, date_livraison: suggested.date||tomorrow,
+          jour_livraison: suggested.day,
+          jour_idx: suggested.dayIdx,
         });
       }
       await loadAll();
@@ -1171,9 +1418,10 @@ function BossokApp({ session, onLogout }) {
     {k:"stock",icon:"📦",label:"Stock"},
     {k:"consignes",icon:"♻️",label:"Consignes"},
     {k:"produits",icon:"🍺",label:"Produits"},
+    {k:"zones",icon:"🗺️",label:"Zones"},
   ];
 
-  const PAGE_TITLES = {dashboard:"Tableau de bord",clients:"Clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits"};
+  const PAGE_TITLES = {dashboard:"Tableau de bord",clients:"Clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F1F5F9",fontFamily:"Inter,system-ui,sans-serif"}}>
@@ -1735,7 +1983,10 @@ function BossokApp({ session, onLogout }) {
               <div>
                 <div style={{fontWeight:600,fontSize:13}}>{cmd.client_nom}</div>
                 <div style={{fontSize:11,color:"#6B7280"}}>📍 {cmd.client_adresse}</div>
-                <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 Chauffeur {cmd.chauffeur}</span>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:3}}>
+                  <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 {cmd.chauffeur==="A"?"Sefa":"Mikail"}</span>
+                  {cmd.jour_livraison&&<span style={S.badge("#FEF3C7","#92400E")}>📅 {cmd.jour_livraison}</span>}
+                </div>
                 <div style={{fontSize:11,marginTop:4}}>{(cmd.produits||[]).map((p,i)=><span key={i} style={{marginRight:6}}>📦 {p.nom} ×{p.qte}</span>)}</div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
@@ -1754,123 +2005,329 @@ function BossokApp({ session, onLogout }) {
 
 {/* ══ PLANNING ══════════════════════════════════════════════════ */}
 {page==="planning" && (()=>{
-  const pending = commandes.filter(c=>c.statut==="En attente");
-  const dispatch = smartDispatch(pending);
-  const totalCaisses = pending.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0);
+  const days = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  const today = new Date();
+  const todayDow = today.getDay() === 0 ? 6 : today.getDay() - 1; // 0=Mon
+  const [selectedDay, setSelectedDay] = useState(Math.min(todayDow, 4));
+
+  // Build week dates
+  const getWeekDate = (dayIdx) => {
+    const d = new Date();
+    const diff = dayIdx - todayDow;
+    d.setDate(d.getDate() + diff);
+    return d.toLocaleDateString('fr-LU', {day:'2-digit', month:'2-digit'});
+  };
+
+  // Get commandes for selected day
+  const dayCommandes = commandes.filter(c => {
+    if (c.statut === 'Livré') return false;
+    // Check if this commande's region belongs to selected day
+    const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
+    const allZones = [...(zones.A||[]), ...(zones.B||[])];
+    return allZones.includes(c.client_region) || !c.client_region;
+  });
+
+  // Split by driver with optimized order
+  const buildSchedule = (driver) => {
+    const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
+    const driverZones = zones[driver] || [];
+    const driverCmds = dayCommandes.filter(c => driverZones.includes(c.client_region));
+    
+    // Sort: Centre-ville first (before 10h constraint), then by zone order
+    const cvCmds = driverCmds.filter(c => c.client_region === 'Centre-ville');
+    const otherCmds = driverCmds.filter(c => c.client_region !== 'Centre-ville');
+    const zoneOrder = driverZones.filter(z => z !== 'Centre-ville');
+    
+    const sortedOthers = [...otherCmds].sort((a,b) => {
+      const ai = zoneOrder.indexOf(a.client_region);
+      const bi = zoneOrder.indexOf(b.client_region);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+
+    const ordered = [...cvCmds, ...sortedOthers];
+    
+    // Calculate distances for route info only
+    let schedule = [];
+    let prevRegion = null;
+    let totalKm = 0;
+    
+    for (const cmd of ordered) {
+      const region = cmd.client_region;
+      const coords = REGION_COORDS[region] || DEPOT;
+      const prevCoords = prevRegion ? (REGION_COORDS[prevRegion] || DEPOT) : DEPOT;
+      const dist = Math.round(distKm(prevCoords, coords));
+      totalKm += dist;
+      
+      schedule.push({
+        ...cmd,
+        dist,
+        isCv: region === 'Centre-ville',
+      });
+      prevRegion = region;
+    }
+    
+    // Return distance
+    const lastRegion = ordered.length > 0 ? ordered[ordered.length-1].client_region : null;
+    const lastCoords = lastRegion ? (REGION_COORDS[lastRegion] || DEPOT) : DEPOT;
+    const retDist = Math.round(distKm(lastCoords, DEPOT));
+    totalKm += retDist;
+    
+    return { schedule, retDist, totalKm };
+  };
+
+  const scheduleA = buildSchedule('A');
+  const scheduleB = buildSchedule('B');
+  const totalCaisses = dayCommandes.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0);
 
   return(
   <div>
-    {/* Header stats */}
+    {/* Day selector */}
+    <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
+      {days.map((day,i)=>{
+        const cmdsDay = commandes.filter(c=>{
+          if(c.statut==='Livré') return false;
+          const zones = DAILY_ZONES[i]||DAILY_ZONES[0];
+          return [...(zones.A||[]),...(zones.B||[])].includes(c.client_region)||!c.client_region;
+        });
+        const isToday = i === todayDow;
+        const isSelected = i === selectedDay;
+        return(
+          <div key={i} onClick={()=>setSelectedDay(i)}
+            style={{flex:1,minWidth:90,padding:"10px 8px",borderRadius:10,cursor:"pointer",textAlign:"center",
+              background:isSelected?"#1D4ED8":isToday?"#EFF6FF":"#fff",
+              border:`2px solid ${isSelected?"#1D4ED8":isToday?"#BFDBFE":"#E5E7EB"}`,
+              color:isSelected?"#fff":"#374151"}}>
+            <div style={{fontWeight:700,fontSize:13}}>{day}</div>
+            <div style={{fontSize:10,color:isSelected?"#BFDBFE":isToday?"#1D4ED8":"#9CA3AF"}}>{getWeekDate(i)}</div>
+            <div style={{fontSize:11,marginTop:4,fontWeight:600,color:isSelected?"#fff":cmdsDay.length>0?"#1D4ED8":"#9CA3AF"}}>
+              {cmdsDay.length} cmd{cmdsDay.length>1?"s":""}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    {/* Day stats */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
-        {l:"Commandes",v:pending.length,c:"#1D4ED8",icon:"📋"},
+        {l:"Commandes",v:dayCommandes.length,c:"#1D4ED8",icon:"📋"},
         {l:"Total caisses",v:totalCaisses,c:"#7C3AED",icon:"📦"},
-        {l:"Chauffeur A",v:(dispatch.statsA?.caisses||0)+" cs · "+(dispatch.statsA?.km||0)+"km",c:"#1D4ED8",icon:"🚚"},
-        {l:"Chauffeur B",v:(dispatch.statsB?.caisses||0)+" cs · "+(dispatch.statsB?.km||0)+"km",c:"#7C3AED",icon:"🚚"},
+        {l:"Sefa",v:scheduleA.schedule.length+" arrêts",c:"#0EA5E9",icon:"🚚",sub:scheduleA.totalKm+"km"},
+        {l:"Mikail",v:scheduleB.schedule.length+" arrêts",c:"#8B5CF6",icon:"🚚",sub:scheduleB.totalKm+"km"},
       ].map((s,i)=>(
         <div key={i} style={S.kpi(s.c)}>
-          <div style={{fontSize:16,marginBottom:2}}>{s.icon}</div>
+          <div style={{fontSize:16}}>{s.icon}</div>
           <div style={{fontSize:18,fontWeight:800,color:s.c}}>{s.v}</div>
-          <div style={{fontSize:11,color:"#6B7280"}}>{s.l}</div>
+          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
+          {s.sub&&<div style={{fontSize:10,color:s.c}}>Fin: {s.sub}</div>}
         </div>
       ))}
     </div>
 
-    {/* Equilibre indicator */}
-    {pending.length > 0 && dispatch.statsA && dispatch.statsB && (()=>{
-      const total = (dispatch.statsA.caisses + dispatch.statsB.caisses) || 1;
-      const pctA = Math.round(dispatch.statsA.caisses / total * 100);
-      const pctB = 100 - pctA;
-      const balanced = Math.abs(pctA - pctB) <= 10;
-      return(
-        <div style={{...S.card,marginBottom:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-            <span style={{fontSize:12,fontWeight:600,color:"#1D4ED8"}}>🚚 A : {dispatch.statsA.caisses} caisses ({pctA}%)</span>
-            <span style={{fontSize:12,fontWeight:600,color:balanced?"#059669":"#DC2626"}}>{balanced?"✅ Équilibré":"⚠️ Déséquilibré"}</span>
-            <span style={{fontSize:12,fontWeight:600,color:"#7C3AED"}}>🚚 B : {dispatch.statsB.caisses} caisses ({pctB}%)</span>
-          </div>
-          <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",background:"#E5E7EB"}}>
-            <div style={{width:pctA+"%",background:"#1D4ED8",transition:"width .3s"}}/>
-            <div style={{width:pctB+"%",background:"#7C3AED"}}/>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:10,color:"#9CA3AF"}}>
-            <span>Départ : Aspelt → {dispatch.statsA.km} km estimés</span>
-            <span>Départ : Aspelt → {dispatch.statsB.km} km estimés</span>
-          </div>
-        </div>
-      );
-    })()}
-
-    {pending.length===0?(
-      <div style={{...S.card,textAlign:"center",padding:"60px 0",color:"#9CA3AF"}}>
-        <div style={{fontSize:40,marginBottom:12}}>🚚</div>
-        <div>Aucune commande en attente</div>
-        <div style={{fontSize:12,marginTop:4}}>Enregistrez des commandes dans l'onglet Commandes</div>
+    {dayCommandes.length===0?(
+      <div style={{...S.card,textAlign:"center",padding:"48px 0",color:"#9CA3AF"}}>
+        <div style={{fontSize:40,marginBottom:12}}>📅</div>
+        <div style={{fontWeight:600,fontSize:14,marginBottom:4}}>Aucune commande pour {days[selectedDay]}</div>
+        <div style={{fontSize:12}}>Les commandes apparaissent selon la zone du client</div>
       </div>
     ):(
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        {["A","B"].map(ch=>{
-          const cmds = ch==="A" ? dispatch.A : dispatch.B;
-          const stats = ch==="A" ? dispatch.statsA : dispatch.statsB;
-          const col = ch==="A" ? "#1D4ED8" : "#7C3AED";
-          const bgCol = ch==="A" ? "#DBEAFE" : "#EDE9FE";
-          return(
-            <div key={ch} style={{...S.card,borderTop:`4px solid ${col}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:14,color:col}}>🚚 Chauffeur {ch}</div>
-                  <div style={{fontSize:11,color:"#6B7280"}}>{cmds.length} arrêt(s) · {stats?.km||0} km estimés</div>
+        {[{driver:"A",name:"Sefa",schedule:scheduleA,col:"#0EA5E9",bg:"#E0F2FE"},
+          {driver:"B",name:"Mikail",schedule:scheduleB,col:"#8B5CF6",bg:"#EDE9FE"}].map(({driver,name,schedule,col,bg})=>(
+          <div key={driver} style={{...S.card,borderTop:`4px solid ${col}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:15,color:col}}>🚚 {name}</div>
+                <div style={{fontSize:11,color:"#6B7280"}}>
+                  Départ Aspelt 8h00 · {schedule.schedule.length} arrêt(s) · {schedule.retDist}km retour
                 </div>
-                <span style={{...S.badge(bgCol,col),fontSize:12,padding:"4px 10px"}}>{stats?.caisses||0} caisses</span>
               </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:11,color:"#6B7280"}}>Distance totale</div>
+                <div style={{fontWeight:700,color:col,fontSize:14}}>~{schedule.totalKm} km</div>
+              </div>
+            </div>
 
-              {cmds.length===0?(
-                <div style={{textAlign:"center",color:"#9CA3AF",fontSize:12,padding:"20px 0"}}>Aucune livraison assignée</div>
-              ):(
-                <div>
-                  <div style={{fontSize:10,color:"#9CA3AF",marginBottom:6}}>📍 Ordre optimisé depuis Aspelt :</div>
-                  {cmds.map((cmd,idx)=>(
-                    <div key={cmd.id} style={{padding:"8px 10px",background:"#F8FAFC",borderRadius:8,marginBottom:6,borderLeft:`3px solid ${col}`}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                        <div style={{flex:1}}>
-                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
-                            <span style={{background:col,color:"#fff",borderRadius:"50%",width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,flexShrink:0}}>{idx+1}</span>
-                            <span style={{fontWeight:600,fontSize:12}}>{cmd.client_nom}</span>
-                            <span style={{...S.badge(bgCol,col),fontSize:9}}>{cmd.client_region}</span>
+            {schedule.schedule.length===0?(
+              <div style={{textAlign:"center",color:"#9CA3AF",fontSize:12,padding:"20px 0"}}>
+                Aucune livraison ce jour
+              </div>
+            ):(
+              <div>
+                {/* Timeline */}
+                <div style={{position:"relative",paddingLeft:32}}>
+                  {/* Departure */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,position:"relative"}}>
+                    <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>🏠</div>
+                    <div style={{flex:1,padding:"6px 10px",background:"#F8FAFC",borderRadius:6}}>
+                      <div style={{fontWeight:600,fontSize:11,color:col}}>🏠 Départ — Aspelt</div>
+                    </div>
+                  </div>
+
+                  {schedule.schedule.map((stop,idx)=>(
+                    <div key={stop.id} style={{marginBottom:10,position:"relative"}}>
+                      {/* Timeline line */}
+                      <div style={{position:"absolute",left:-22,top:0,bottom:-10,width:2,background:"#E5E7EB"}}/>
+                      {/* Number bubble */}
+                      <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:stop.isLate?"#DC2626":col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>{idx+1}</div>
+                      
+                      <div style={{padding:"8px 10px",background:stop.isCv?"#FFF7ED":stop.isLate?"#FEF2F2":"#F8FAFC",borderRadius:8,border:`1px solid ${stop.isLate?"#FECACA":stop.isCv?"#FED7AA":"#E5E7EB"}`}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                          <div style={{display:"flex",alignItems:"center",gap:4}}>
+                            <span style={{fontWeight:700,color:col,fontSize:11}}>Arrêt #{idx+1}</span>
+                            {stop.isCv&&<span style={{fontSize:9,background:"#FED7AA",color:"#92400E",padding:"1px 4px",borderRadius:3}}>⏰ Centre-ville en 1er</span>}
                           </div>
-                          <div style={{fontSize:11,color:"#6B7280",marginLeft:24}}>{cmd.client_adresse}</div>
-                          <div style={{fontSize:11,marginLeft:24,marginTop:3,display:"flex",flexWrap:"wrap",gap:4}}>
-                            {(cmd.produits||[]).map((p,i)=>(
-                              <span key={i} style={{background:"#F1F5F9",padding:"1px 6px",borderRadius:4,fontSize:10}}>📦 {p.nom} ×{p.qte}</span>
-                            ))}
-                          </div>
-                          {cmd.notes&&<div style={{fontSize:10,color:"#F59E0B",marginLeft:24,marginTop:2}}>💬 {cmd.notes}</div>}
+                          <span style={{fontSize:9,color:"#9CA3AF"}}>~{stop.dist}km depuis étape précédente</span>
                         </div>
-                        <div style={{display:"flex",gap:3,flexShrink:0,marginLeft:8}}>
-                          <button onClick={()=>marquerLivre(cmd.id)} disabled={saving}
-                            style={{...S.btn("#059669"),padding:"4px 6px",fontSize:10}}>✓</button>
-                          <button onClick={()=>{openEditCmd(cmd);setPage("commandes");}}
-                            style={{...S.btn("#1D4ED8"),padding:"4px 6px",fontSize:10}}>✏️</button>
-                          <button onClick={()=>supprimerCommande(cmd.id)}
-                            style={{...S.btn("#EF4444"),padding:"4px 6px",fontSize:10}}>🗑️</button>
+                        <div style={{fontWeight:600,fontSize:12,marginBottom:2}}>{stop.client_nom}</div>
+                        <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>📍 {stop.client_adresse}</div>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:6}}>
+                          {(stop.produits||[]).map((p,i)=>(
+                            <span key={i} style={{fontSize:9,background:bg,color:col,padding:"1px 5px",borderRadius:3}}>
+                              📦 {p.nom} ×{p.qte}
+                            </span>
+                          ))}
+                        </div>
+                        <div style={{display:"flex",gap:4}}>
+                          <button onClick={()=>marquerLivre(stop.id)} disabled={saving}
+                            style={{...S.btn("#059669"),padding:"3px 8px",fontSize:10}}>✓ Livré</button>
+                          <button onClick={()=>{openEditCmd(stop);setPage("commandes");}}
+                            style={{...S.btn("#1D4ED8"),padding:"3px 8px",fontSize:10}}>✏️</button>
+                          <button onClick={()=>supprimerCommande(stop.id)}
+                            style={{...S.btn("#EF4444"),padding:"3px 8px",fontSize:10}}>🗑️</button>
                         </div>
                       </div>
                     </div>
                   ))}
-                  <div style={{borderTop:"1px solid #E5E7EB",paddingTop:8,marginTop:4,display:"flex",justifyContent:"space-between",fontSize:11,color:"#6B7280"}}>
-                    <span>🏁 Retour Aspelt</span>
-                    <span style={{fontWeight:600}}>Total : {stats?.caisses||0} caisses · ~{stats?.km||0} km</span>
+
+                  {/* Return */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,position:"relative"}}>
+                    <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:"#059669",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9}}>🏠</div>
+                    <div style={{flex:1,padding:"6px 10px",background:"#F0FDF4",borderRadius:6,border:"1px solid #86EFAC"}}>
+                      <div style={{fontWeight:600,fontSize:11,color:"#059669"}}>🏠 Retour Aspelt (~{schedule.retDist}km)</div>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                {/* Total */}
+                <div style={{borderTop:"1px solid #E5E7EB",marginTop:12,paddingTop:8,display:"flex",justifyContent:"space-between",fontSize:11,color:"#6B7280"}}>
+                  <span>📦 {schedule.schedule.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0)} caisses</span>
+                  <span>🗺️ Total : ~{schedule.totalKm} km</span>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     )}
   </div>
   );
 })()}
+      </div>
+    )}
+  </div>
+  );
+})()}
+
+{/* ══ ZONES ════════════════════════════════════════════════════ */}
+{page==="zones" && (
+  <div>
+    {/* Header */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <div style={{fontSize:13,color:"#6B7280"}}>Clients actifs organisés par zone de livraison</div>
+      <button onClick={()=>generateOnePager(clients)}
+        style={{...S.btn("#C0392B"),padding:"8px 16px",fontSize:13}}>
+        🖨️ Exporter One Pager PDF
+      </button>
+    </div>
+
+    {/* Planning recap cards */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+      {[
+        {name:"Sefa",col:"#0EA5E9",bg:"#E0F2FE",schedule:[
+          {day:"Lundi",zones:"Centre-ville · Nord · France"},
+          {day:"Mardi",zones:"Nord · Nord-ouest · Est"},
+          {day:"Mercredi",zones:"Centre-ville · Nord-Est"},
+          {day:"Jeudi",zones:"Nord · Est"},
+          {day:"Vendredi",zones:"Centre-ville · Ouest"},
+        ]},
+        {name:"Mikail",col:"#8B5CF6",bg:"#EDE9FE",schedule:[
+          {day:"Lundi",zones:"Sud · France"},
+          {day:"Mardi",zones:"Sud · Sud-Est"},
+          {day:"Mercredi",zones:"Ouest · Sud-ouest"},
+          {day:"Jeudi",zones:"Sud · Belgique"},
+          {day:"Vendredi",zones:"Sud-ouest · Belgique"},
+        ]},
+      ].map(driver=>(
+        <div key={driver.name} style={{...S.card,borderTop:`4px solid ${driver.col}`}}>
+          <div style={{fontWeight:700,color:driver.col,fontSize:14,marginBottom:10}}>🚚 {driver.name}</div>
+          {driver.schedule.map(s=>(
+            <div key={s.day} style={{display:"flex",gap:8,padding:"4px 0",borderBottom:"1px solid #F1F5F9",fontSize:12}}>
+              <span style={{fontWeight:600,width:70,color:"#374151"}}>{s.day}</span>
+              <span style={{color:"#6B7280"}}>{s.zones}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+
+    {/* Clients by zone */}
+    {Object.entries(
+      clients.filter(c=>c.statut==="Actif").reduce((acc,c)=>{
+        const z = c.region||"Non défini";
+        if(!acc[z]) acc[z]=[];
+        acc[z].push(c);
+        return acc;
+      },{})
+    ).sort(([a],[b])=>{
+      const da = ZONE_SCHEDULE[a]?.driver||"Z";
+      const db = ZONE_SCHEDULE[b]?.driver||"Z";
+      return da!==db ? da.localeCompare(db) : a.localeCompare(b);
+    }).map(([zone, zClients])=>{
+      const schedule = ZONE_SCHEDULE[zone];
+      const driver = schedule?.driver;
+      const col = driver==="Sefa"?"#0EA5E9":driver==="Mikail"?"#8B5CF6":"#6B7280";
+      const bg = driver==="Sefa"?"#E0F2FE":driver==="Mikail"?"#EDE9FE":"#F3F4F6";
+      return(
+        <div key={zone} style={{...S.card,marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,padding:"8px 10px",background:col,borderRadius:8,color:"#fff"}}>
+            <div>
+              <span style={{fontWeight:700,fontSize:13}}>📍 {zone}</span>
+              <span style={{fontSize:11,opacity:0.85,marginLeft:8}}>
+                🚚 {driver||"?"} · {schedule?.days?.join(", ")||"À définir"}
+              </span>
+            </div>
+            <span style={{fontWeight:700,fontSize:12}}>{zClients.length} client(s)</span>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+              <thead>
+                <tr style={{background:"#F9FAFB"}}>
+                  {["Nom","Adresse","Téléphone","TVA","Type","Conditions"].map(h=>(
+                    <th key={h} style={{padding:"5px 8px",textAlign:"left",color:"#6B7280",fontWeight:600,fontSize:10,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {zClients.sort((a,b)=>a.nom.localeCompare(b.nom)).map((c,i)=>(
+                  <tr key={c.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFAFA",cursor:"pointer"}}
+                    onClick={()=>{setSelClient(c);setClientTab("info");setPage("clients");}}>
+                    <td style={{padding:"5px 8px",fontWeight:600,color:"#1D4ED8"}}>{c.nom}</td>
+                    <td style={{padding:"5px 8px",color:"#6B7280",fontSize:10}}>{c.adresse}</td>
+                    <td style={{padding:"5px 8px",whiteSpace:"nowrap"}}>{c.telephone}</td>
+                    <td style={{padding:"5px 8px",color:"#6B7280",fontSize:10}}>{c.tva}</td>
+                    <td style={{padding:"5px 8px"}}><span style={S.badge(tc(c.type).bg,tc(c.type).text)}>{c.type}</span></td>
+                    <td style={{padding:"5px 8px",color:"#6B7280"}}>{c.conditions}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+)}
 
 {/* ══ STOCK ══════════════════════════════════════════════════════ */}
 {page==="stock" && (
@@ -2363,12 +2820,40 @@ function BossokApp({ session, onLogout }) {
         <button onClick={()=>setShowClientForm(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
       <div style={{display:"grid",gap:10}}>
-        {[["Nom *","nom","text"],["Adresse","adresse","text"],["Téléphone","telephone","text"],["Email","email","email"],["N° TVA","tva","text"],["Région","region","text"]].map(([l,k,t])=>(
+        {[["Nom *","nom","text"],["Adresse","adresse","text"],["Téléphone","telephone","text"],["Email","email","email"],["N° TVA","tva","text"]].map(([l,k,t])=>(
           <div key={k}>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{l}</label>
-            <input type={t} value={clientForm[k]||""} onChange={e=>setClientForm(p=>({...p,[k]:e.target.value}))} style={S.input}/>
+            <input type={t} value={clientForm[k]||""} onChange={e=>{
+            const val = e.target.value;
+            const updates = {...clientForm, [k]: val};
+            // Auto-detect region from address
+            if (k === "adresse" && val.length > 5) {
+              const detected = detectRegionFromAddress(val);
+              if (detected && !clientForm.region) updates.region = detected;
+            }
+            setClientForm(updates);
+          }} style={S.input}/>
           </div>
         ))}
+        {/* Region with auto-detection */}
+        <div style={{marginBottom:0}}>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Région</label>
+          <select value={clientForm.region||""} onChange={e=>setClientForm(p=>({...p,region:e.target.value}))}
+            style={{...S.input,borderColor:clientForm.region?"#059669":"#E5E7EB"}}>
+            <option value="">-- Sélectionner --</option>
+            {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande"].map(r=>(
+              <option key={r} value={r}>{r} {ZONE_SCHEDULE[r] ? `· ${ZONE_SCHEDULE[r].driver} (${ZONE_SCHEDULE[r].days.join(", ")})` : ""}</option>
+            ))}
+          </select>
+          {clientForm.adresse && detectRegionFromAddress(clientForm.adresse) && (
+            <div style={{fontSize:10,color:"#059669",marginTop:3}}>
+              ✅ Région auto-détectée depuis l'adresse : <strong>{detectRegionFromAddress(clientForm.adresse)}</strong>
+              {!clientForm.region && <button onClick={()=>setClientForm(p=>({...p,region:detectRegionFromAddress(p.adresse)}))}
+                style={{...S.btn("#059669"),padding:"1px 6px",fontSize:9,marginLeft:6}}>Appliquer</button>}
+            </div>
+          )}
+        </div>
+
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[["Type","type",["Snack","Restaurant","Café","Market","Administrative","Creche","Distributor"]],["Statut","statut",["Actif","Passif"]],["Conditions","conditions",["Comptant","7 jours","15 jours","30 jours","45 jours","60 jours"]]].map(([l,k,opts])=>(
             <div key={k}>
