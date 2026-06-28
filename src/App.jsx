@@ -975,6 +975,17 @@ function BossokApp({ session, onLogout }) {
   const [retourQtes, setRetourQtes] = useState({});
   const [stockCat, setStockCat] = useState("Tous");
 
+  // Dashboard filters
+  const [dashPeriod, setDashPeriod] = useState("mois");
+  const [dashDateFrom, setDashDateFrom] = useState(() => {
+    const d = new Date(); d.setDate(1); return d.toISOString().split("T")[0];
+  });
+  const [dashDateTo, setDashDateTo] = useState(() => new Date().toISOString().split("T")[0]);
+  const [dashClient, setDashClient] = useState("");
+  const [dashZone, setDashZone] = useState("");
+  const [dashChauffeur, setDashChauffeur] = useState("");
+  const [dashProduit, setDashProduit] = useState("");
+
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now()+86400000).toISOString().split("T")[0];
 
@@ -1499,69 +1510,305 @@ function BossokApp({ session, onLogout }) {
         <div style={S.page}>
 
 {/* ══ DASHBOARD ══════════════════════════════════════════════════ */}
-{page==="dashboard" && (
+{page==="dashboard" && (()=>{
+
+  const applyPeriod = (p) => {
+    const now = new Date();
+    if (p==="semaine") {
+      const mon = new Date(now); mon.setDate(now.getDate()-now.getDay()+1);
+      setDashDateFrom(mon.toISOString().split("T")[0]);
+      setDashDateTo(now.toISOString().split("T")[0]);
+    } else if (p==="mois") {
+      setDashDateFrom(new Date(now.getFullYear(),now.getMonth(),1).toISOString().split("T")[0]);
+      setDashDateTo(now.toISOString().split("T")[0]);
+    } else if (p==="trimestre") {
+      const q=Math.floor(now.getMonth()/3)*3;
+      setDashDateFrom(new Date(now.getFullYear(),q,1).toISOString().split("T")[0]);
+      setDashDateTo(now.toISOString().split("T")[0]);
+    } else if (p==="annee") {
+      setDashDateFrom(new Date(now.getFullYear(),0,1).toISOString().split("T")[0]);
+      setDashDateTo(now.toISOString().split("T")[0]);
+    }
+    setDashPeriod(p);
+  };
+
+  const dashFacts = factures.filter(f=>{
+    if (f.notes==="Import historique") return false;
+    if (dashDateFrom && f.date < dashDateFrom) return false;
+    if (dashDateTo && f.date > dashDateTo) return false;
+    if (dashClient && f.client_id !== dashClient) return false;
+    if (dashZone) { const cl=clients.find(c=>c.id===f.client_id); if(cl?.region!==dashZone) return false; }
+    return true;
+  });
+
+  const dashCmds = commandes.filter(c=>{
+    if (dashDateFrom && (c.date_livraison||c.date_commande) < dashDateFrom) return false;
+    if (dashDateTo && (c.date_livraison||c.date_commande) > dashDateTo) return false;
+    if (dashClient && c.client_id !== dashClient) return false;
+    if (dashZone && c.client_region !== dashZone) return false;
+    if (dashChauffeur && c.chauffeur !== dashChauffeur) return false;
+    return true;
+  });
+
+  const COUT_RATIO = 0.72;
+  const factActives = dashFacts.filter(f=>f.statut!=="Avoir"&&f.statut!=="Annulée");
+  const ca = factActives.reduce((s,f)=>s+totalFact(f.lignes).total,0);
+  const caPayee = dashFacts.filter(f=>f.statut==="Payée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
+  const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
+  const marge = ca*(1-COUT_RATIO);
+  const margePct = ca>0?Math.round(marge/ca*100):0;
+  const panierMoyen = factActives.length>0?ca/factActives.length:0;
+  const nbClients = new Set(factActives.map(f=>f.client_id)).size;
+  const sefaCmds = dashCmds.filter(c=>c.chauffeur==="A"&&c.statut==="Livré").length;
+  const mikailCmds = dashCmds.filter(c=>c.chauffeur==="B"&&c.statut==="Livré").length;
+
+  const prodStats = {};
+  factActives.forEach(f=>{
+    (f.lignes||[]).filter(l=>!l.isCredit&&(!dashProduit||l.nom===dashProduit)).forEach(l=>{
+      if(!prodStats[l.nom]) prodStats[l.nom]={nom:l.nom,qte:0,ca:0};
+      prodStats[l.nom].qte+=l.qte; prodStats[l.nom].ca+=l.qte*l.pu;
+    });
+  });
+  const topProduits = Object.values(prodStats).sort((a,b)=>b.qte-a.qte).slice(0,8);
+
+  const zoneStats = {};
+  factActives.forEach(f=>{
+    const cl=clients.find(c=>c.id===f.client_id);
+    const z=cl?.region||"Inconnu";
+    if(!zoneStats[z]) zoneStats[z]={zone:z,ca:0,nb:0};
+    zoneStats[z].ca+=totalFact(f.lignes).total; zoneStats[z].nb++;
+  });
+  const topZones = Object.values(zoneStats).sort((a,b)=>b.ca-a.ca).slice(0,6);
+
+  const monthlyMap = {};
+  factActives.forEach(f=>{
+    const m=f.date?.slice(0,7)||"";
+    if(!monthlyMap[m]) monthlyMap[m]={label:m,paye:0,impaye:0};
+    if(f.statut==="Payée") monthlyMap[m].paye+=totalFact(f.lignes).total;
+    else monthlyMap[m].impaye+=totalFact(f.lignes).total;
+  });
+  const chartData = Object.values(monthlyMap).sort((a,b)=>a.label.localeCompare(b.label));
+
+  const impayeMap = {};
+  factures.filter(f=>f.statut==="Impayée"&&f.notes!=="Import historique").forEach(f=>{
+    const m=f.date?.slice(0,7)||"";
+    if(!impayeMap[m]) impayeMap[m]={label:m,v:0};
+    impayeMap[m].v+=totalFact(f.lignes).total;
+  });
+  const impayeChart = Object.values(impayeMap).sort((a,b)=>a.label.localeCompare(b.label)).slice(-6);
+
+  const exportDash = () => {
+    const rows = [["N°","Date","Client","Zone","Statut","Montant HT","Consignes","Total TTC"]];
+    dashFacts.forEach(f=>{
+      const cl=clients.find(c=>c.id===f.client_id);
+      const {prod,cons,total}=totalFact(f.lignes);
+      rows.push([f.numero,f.date,f.client_nom,cl?.region||"",f.statut,prod.toFixed(2),cons.toFixed(2),total.toFixed(2)]);
+    });
+    const csv = rows.map(r=>r.map(v=>'"'+v+'"').join(";")).join("\n");
+    const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url; a.download="dashboard_bossok.csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+
+  return(
   <div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+    {/* Filtres */}
+    <div style={{...S.card,marginBottom:14}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
+        {[["semaine","Semaine"],["mois","Mois"],["trimestre","Trimestre"],["annee","Année"]].map(([k,l])=>(
+          <button key={k} onClick={()=>applyPeriod(k)}
+            style={{...S.btn(dashPeriod===k?"#1D4ED8":"#F1F5F9",dashPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12}}>
+            {l}
+          </button>
+        ))}
+        <input type="date" value={dashDateFrom} onChange={e=>{setDashDateFrom(e.target.value);setDashPeriod("custom");}}
+          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
+        <span style={{color:"#9CA3AF"}}>→</span>
+        <input type="date" value={dashDateTo} onChange={e=>{setDashDateTo(e.target.value);setDashPeriod("custom");}}
+          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
+        <button onClick={exportDash} style={{...S.btn("#059669"),padding:"5px 12px",fontSize:12,marginLeft:"auto"}}>📥 Export CSV</button>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        <select value={dashClient} onChange={e=>setDashClient(e.target.value)}
+          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:180}}>
+          <option value="">Tous les clients</option>
+          {clients.sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=><option key={c.id} value={c.id}>{c.nom}</option>)}
+        </select>
+        <select value={dashZone} onChange={e=>setDashZone(e.target.value)}
+          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
+          <option value="">Toutes zones</option>
+          {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France"].map(z=>(
+            <option key={z} value={z}>{z}</option>
+          ))}
+        </select>
+        <select value={dashChauffeur} onChange={e=>setDashChauffeur(e.target.value)}
+          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
+          <option value="">Sefa + Mikail</option>
+          <option value="A">Sefa</option>
+          <option value="B">Mikail</option>
+        </select>
+        <select value={dashProduit} onChange={e=>setDashProduit(e.target.value)}
+          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:200}}>
+          <option value="">Tous produits</option>
+          {PRODUITS.map(p=><option key={p.id} value={p.nom}>{p.nom}</option>)}
+        </select>
+        {(dashClient||dashZone||dashChauffeur||dashProduit)&&(
+          <button onClick={()=>{setDashClient("");setDashZone("");setDashChauffeur("");setDashProduit("");}}
+            style={{...S.btn("#F3F4F6","#374151"),padding:"5px 10px",fontSize:12}}>✕ Reset</button>
+        )}
+        <span style={{fontSize:11,color:"#6B7280",marginLeft:"auto"}}>
+          {factActives.length} factures · {fmtFull(ca)}
+        </span>
+      </div>
+    </div>
+
+    {/* KPIs Row 1 */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
       {[
-        {l:"CA Total 13 mois",v:fmt(1156901),c:"#1D4ED8",icon:"💶",sub:"Juin 2025 → Juin 2026"},
-        {l:"Clients actifs",v:clientsActifs.length,c:"#059669",icon:"👥",sub:`sur ${clients.length} total`},
-        {l:"Factures ce mois",v:factures.length,c:"#7C3AED",icon:"🧾",sub:"créées dans l'app"},
-        {l:"Impayées",v:factures.filter(f=>f.statut==="Impayée").length,c:"#DC2626",icon:"⚠️",sub:fmt(factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0))},
+        {l:"CA Total",v:fmtFull(ca),c:"#1D4ED8",icon:"💶",sub:factActives.length+" factures"},
+        {l:"Marge estimée",v:fmtFull(marge),c:"#059669",icon:"📈",sub:margePct+"% du CA"},
+        {l:"Encaissé",v:fmtFull(caPayee),c:"#0EA5E9",icon:"✅",sub:dashFacts.filter(f=>f.statut==="Payée").length+" payées"},
+        {l:"Impayés",v:fmtFull(impaye),c:"#DC2626",icon:"⚠️",sub:dashFacts.filter(f=>f.statut==="Impayée").length+" factures"},
       ].map((s,i)=>(
         <div key={i} style={S.kpi(s.c)}>
-          <div style={{fontSize:18,marginBottom:4}}>{s.icon}</div>
-          <div style={{fontSize:20,fontWeight:800,color:s.c}}>{s.v}</div>
-          <div style={{fontSize:11,color:"#374151",fontWeight:600,marginTop:2}}>{s.l}</div>
-          <div style={{fontSize:11,color:"#9CA3AF",marginTop:2}}>{s.sub}</div>
+          <div style={{fontSize:18,marginBottom:2}}>{s.icon}</div>
+          <div style={{fontSize:17,fontWeight:800,color:s.c}}>{s.v}</div>
+          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
+          <div style={{fontSize:10,color:"#9CA3AF"}}>{s.sub}</div>
         </div>
       ))}
     </div>
 
-    <div style={{...S.card,marginBottom:14}}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>CA mensuel historique — 13 mois</div>
-      <ResponsiveContainer width="100%" height={220}>
-        <BarChart data={MONTHLY_DATA} margin={{top:0,right:10,left:0,bottom:0}}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
-          <XAxis dataKey="label" tick={{fontSize:10}}/>
-          <YAxis tick={{fontSize:10}} tickFormatter={v=>(v/1000)+"k"}/>
-          <Tooltip formatter={(v,n)=>[fmt(v),n==="paye"?"Encaissé":"Impayé"]}/>
-          <Bar dataKey="paye" stackId="a" fill="#1D4ED8" name="paye"/>
-          <Bar dataKey="impaye" stackId="a" fill="#EF4444" radius={[4,4,0,0]} name="impaye"/>
-        </BarChart>
-      </ResponsiveContainer>
+    {/* KPIs Row 2 */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+      {[
+        {l:"Clients actifs",v:nbClients,c:"#7C3AED",icon:"👥",sub:"sur la période"},
+        {l:"Panier moyen",v:fmtFull(panierMoyen),c:"#F59E0B",icon:"🛒",sub:"par facture"},
+        {l:"Livraisons Sefa",v:sefaCmds,c:"#0EA5E9",icon:"🚚",sub:"livrées"},
+        {l:"Livraisons Mikail",v:mikailCmds,c:"#8B5CF6",icon:"🚚",sub:"livrées"},
+      ].map((s,i)=>(
+        <div key={i} style={S.kpi(s.c)}>
+          <div style={{fontSize:18,marginBottom:2}}>{s.icon}</div>
+          <div style={{fontSize:17,fontWeight:800,color:s.c}}>{s.v}</div>
+          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
+          <div style={{fontSize:10,color:"#9CA3AF"}}>{s.sub}</div>
+        </div>
+      ))}
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+    {/* Graphiques row 1 */}
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Commandes en attente</div>
-        {commandes.filter(c=>c.statut==="En attente").length===0?(
-          <div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune commande en attente</div>
-        ):(
-          commandes.filter(c=>c.statut==="En attente").slice(0,5).map(c=>(
-            <div key={c.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:"1px solid #F1F5F9"}}>
-              <span style={{fontWeight:500}}>{c.client_nom}</span>
-              <span style={S.badge("#DBEAFE","#1D4ED8")}>Ch. {c.chauffeur}</span>
-            </div>
-          ))
-        )}
+        <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>📊 CA mensuel (payé vs impayé)</div>
+        {chartData.length>0?(
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={chartData} margin={{top:0,right:10,left:0,bottom:0}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
+              <XAxis dataKey="label" tick={{fontSize:9}}/>
+              <YAxis tick={{fontSize:9}} tickFormatter={v=>(v/1000).toFixed(0)+"k"}/>
+              <Tooltip formatter={(v,n)=>[fmtFull(v),n==="paye"?"Encaissé":"Impayé"]}/>
+              <Bar dataKey="paye" stackId="a" fill="#1D4ED8" name="paye"/>
+              <Bar dataKey="impaye" stackId="a" fill="#EF4444" radius={[3,3,0,0]} name="impaye"/>
+            </BarChart>
+          </ResponsiveContainer>
+        ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"50px 0",fontSize:12}}>Aucune donnée</div>}
       </div>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Dernières factures</div>
-        {factures.slice(0,5).map(f=>{
-          const {total}=totalFact(f.lignes);
+        <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>⚠️ Impayés par mois</div>
+        {impayeChart.length>0?(
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={impayeChart} margin={{top:0,right:5,left:0,bottom:0}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
+              <XAxis dataKey="label" tick={{fontSize:8}}/>
+              <YAxis tick={{fontSize:8}} tickFormatter={v=>(v/1000).toFixed(0)+"k"}/>
+              <Tooltip formatter={(v)=>[fmtFull(v),"Impayé"]}/>
+              <Bar dataKey="v" fill="#EF4444" radius={[3,3,0,0]}/>
+            </BarChart>
+          </ResponsiveContainer>
+        ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"50px 0",fontSize:12}}>Aucun impayé</div>}
+      </div>
+    </div>
+
+    {/* Graphiques row 2 */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🍺 Top produits vendus (caisses)</div>
+        {topProduits.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
+        topProduits.map((p,i)=>{
+          const maxQ=topProduits[0].qte;
           return(
-            <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"5px 0",borderBottom:"1px solid #F1F5F9"}}>
-              <span style={{fontWeight:500}}>{f.client_nom}</span>
-              <span style={{fontWeight:700}}>{fmtFull(total)}</span>
-              <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2",f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
+            <div key={p.nom} style={{marginBottom:6}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
+                <span style={{fontWeight:i===0?700:400,color:i===0?"#1D4ED8":"#374151",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200}}>
+                  {i===0?"🥇 ":i===1?"🥈 ":i===2?"🥉 ":""}{p.nom}
+                </span>
+                <span style={{color:"#6B7280",whiteSpace:"nowrap",marginLeft:4}}>{p.qte} cs</span>
+              </div>
+              <div style={{height:5,background:"#F1F5F9",borderRadius:3}}>
+                <div style={{height:5,background:i===0?"#1D4ED8":i<3?"#60A5FA":"#BAE6FD",borderRadius:3,width:(p.qte/maxQ*100)+"%"}}/>
+              </div>
             </div>
           );
         })}
-        {factures.length===0&&<div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune facture</div>}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>📍 CA par zone</div>
+        {topZones.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
+        topZones.map((z,i)=>{
+          const maxCA=topZones[0].ca;
+          const driver=ZONE_SCHEDULE[z.zone]?.driver||"?";
+          const col=driver==="Sefa"?"#0EA5E9":driver==="Mikail"?"#8B5CF6":"#6B7280";
+          return(
+            <div key={z.zone} style={{marginBottom:6}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
+                <span style={{fontWeight:600}}>{z.zone} <span style={{fontSize:9,color:col}}>({driver})</span></span>
+                <span style={{color:"#6B7280"}}>{z.nb} · {fmtFull(z.ca)}</span>
+              </div>
+              <div style={{height:5,background:"#F1F5F9",borderRadius:3}}>
+                <div style={{height:5,background:col,borderRadius:3,width:(z.ca/maxCA*100)+"%"}}/>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+
+    {/* Bottom row */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🧾 Dernières factures</div>
+        {dashFacts.slice(-6).reverse().map(f=>{
+          const {total}=totalFact(f.lignes);
+          return(
+            <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #F1F5F9",fontSize:11}}>
+              <span style={{color:"#9CA3AF",width:55}}>{f.date}</span>
+              <span style={{fontWeight:500,flex:1,marginLeft:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.client_nom}</span>
+              <span style={{fontWeight:700,marginRight:6,whiteSpace:"nowrap"}}>{fmtFull(total)}</span>
+              <span style={S.badge(f.statut==="Payée"?"#DCFCE7":f.statut==="Avoir"?"#EDE9FE":"#FEE2E2",f.statut==="Payée"?"#166534":f.statut==="Avoir"?"#6D28D9":"#DC2626")}>{f.statut}</span>
+            </div>
+          );
+        })}
+        {dashFacts.length===0&&<div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune facture</div>}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>📋 Commandes en attente</div>
+        {commandes.filter(c=>c.statut==="En attente").length===0?(
+          <div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune commande</div>
+        ):commandes.filter(c=>c.statut==="En attente").slice(0,6).map(c=>(
+          <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #F1F5F9",fontSize:11}}>
+            <span style={{fontWeight:500,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.client_nom}</span>
+            <span style={{fontSize:10,color:"#6B7280",marginRight:6}}>{c.client_region}</span>
+            <span style={S.badge(c.chauffeur==="A"?"#E0F2FE":"#EDE9FE",c.chauffeur==="A"?"#0EA5E9":"#8B5CF6")}>{c.chauffeur==="A"?"Sefa":"Mikail"}</span>
+          </div>
+        ))}
       </div>
     </div>
   </div>
-)}
+  );
+})()}
 
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && (
