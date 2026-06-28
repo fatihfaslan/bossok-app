@@ -1407,7 +1407,7 @@ function BossokApp({ session, onLogout }) {
     modal:{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16},
     modalBox:{background:"#fff",borderRadius:16,padding:24,maxWidth:640,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"},
     tab:(a)=>({padding:"7px 14px",border:"none",borderBottom:a?"2px solid #1D4ED8":"2px solid transparent",background:"transparent",cursor:"pointer",fontSize:12,fontWeight:a?700:400,color:a?"#1D4ED8":"#6B7280"}),
-    kpi:(c)=>({background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:"14px 16px",borderLeft:`4px solid ${c}`}),
+    kpi:(c)=>({background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:"14px 16px",borderLeft:"4px solid "+c}),
     navItem:(a)=>({display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,cursor:"pointer",marginBottom:2,background:a?"#1D4ED8":"transparent",color:a?"#fff":"#94A3B8",fontSize:13,fontWeight:a?600:400}),
   };
 
@@ -1593,7 +1593,7 @@ function BossokApp({ session, onLogout }) {
       {filteredClients.map(c=>{
         const imp=clientImpayees(c.id);
         return(
-          <div key={c.id} onClick={()=>{setSelClient(c);setClientTab("info");}} style={{...S.card,cursor:"pointer",borderLeft:`3px solid ${tc(c.type).text}`}}
+          <div key={c.id} onClick={()=>{setSelClient(c);setClientTab("info");}} style={{...S.card,cursor:"pointer",borderLeft:"3px solid "+tc(c.type).text}}
             onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,.08)"}
             onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
             <div style={{display:"flex",gap:10}}>
@@ -1980,7 +1980,7 @@ function BossokApp({ session, onLogout }) {
         </div>
       ):(
         commandes.filter(c=>c.statut==="En attente").map(cmd=>(
-          <div key={cmd.id} style={{...S.card,marginBottom:8,borderLeft:`3px solid #F59E0B`}}>
+          <div key={cmd.id} style={{...S.card,marginBottom:8,borderLeft:"3px solid #F59E0B"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
                 <div style={{fontWeight:600,fontSize:13}}>{cmd.client_nom}</div>
@@ -2097,7 +2097,7 @@ function BossokApp({ session, onLogout }) {
           <div key={i} onClick={()=>setSelectedDay(i)}
             style={{flex:1,minWidth:90,padding:"10px 8px",borderRadius:10,cursor:"pointer",textAlign:"center",
               background:isSelected?"#1D4ED8":isToday?"#EFF6FF":"#fff",
-              border:`2px solid ${isSelected?"#1D4ED8":isToday?"#BFDBFE":"#E5E7EB"}`,
+              border:(isSelected?"2px solid #1D4ED8":isToday?"2px solid #BFDBFE":"2px solid #E5E7EB"),
               color:isSelected?"#fff":"#374151"}}>
             <div style={{fontWeight:700,fontSize:13}}>{day}</div>
             <div style={{fontSize:10,color:isSelected?"#BFDBFE":isToday?"#1D4ED8":"#9CA3AF"}}>{getWeekDate(i)}</div>
@@ -2136,7 +2136,7 @@ function BossokApp({ session, onLogout }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         {[{driver:"A",name:"Sefa",schedule:scheduleA,col:"#0EA5E9",bg:"#E0F2FE"},
           {driver:"B",name:"Mikail",schedule:scheduleB,col:"#8B5CF6",bg:"#EDE9FE"}].map(({driver,name,schedule,col,bg})=>(
-          <div key={driver} style={{...S.card,borderTop:`4px solid ${col}`}}>
+          <div key={driver} style={{...S.card,borderTop:"4px solid "+col}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div>
                 <div style={{fontWeight:700,fontSize:15,color:col}}>🚚 {name}</div>
@@ -2173,7 +2173,7 @@ function BossokApp({ session, onLogout }) {
                       {/* Number bubble */}
                       <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:stop.isLate?"#DC2626":col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>{idx+1}</div>
                       
-                      <div style={{padding:"8px 10px",background:stop.isCv?"#FFF7ED":stop.isLate?"#FEF2F2":"#F8FAFC",borderRadius:8,border:`1px solid ${stop.isLate?"#FECACA":stop.isCv?"#FED7AA":"#E5E7EB"}`}}>
+                      <div style={{padding:"8px 10px",background:stop.isCv?"#FFF7ED":stop.isLate?"#FEF2F2":"#F8FAFC",borderRadius:8,border:(stop.isLate?"1px solid #FECACA":stop.isCv?"1px solid #FED7AA":"1px solid #E5E7EB")}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",gap:4}}>
                             <span style={{fontWeight:700,color:col,fontSize:11}}>Arrêt #{idx+1}</span>
@@ -2225,11 +2225,6 @@ function BossokApp({ session, onLogout }) {
   </div>
   );
 })()}
-      </div>
-    )}
-  </div>
-  );
-})()}
 
 {/* ══ ZONES ════════════════════════════════════════════════════ */}
 {page==="zones" && (
@@ -2261,7 +2256,7 @@ function BossokApp({ session, onLogout }) {
           {day:"Vendredi",zones:"Sud-ouest · Belgique"},
         ]},
       ].map(driver=>(
-        <div key={driver.name} style={{...S.card,borderTop:`4px solid ${driver.col}`}}>
+        <div key={driver.name} style={{...S.card,borderTop:"4px solid "+driver.col}}>
           <div style={{fontWeight:700,color:driver.col,fontSize:14,marginBottom:10}}>🚚 {driver.name}</div>
           {driver.schedule.map(s=>(
             <div key={s.day} style={{display:"flex",gap:8,padding:"4px 0",borderBottom:"1px solid #F1F5F9",fontSize:12}}>
@@ -2611,7 +2606,7 @@ function BossokApp({ session, onLogout }) {
                   <span style={{fontSize:11,color:"#9CA3AF",width:60}}>{fmtFull(standard)}</span>
                   <input type="number" step="0.01" placeholder={standard.toFixed(2)} value={perso!==undefined?perso:""}
                     onChange={e=>updatePrixIndividuel(selClient.id,p.id,e.target.value)}
-                    style={{width:72,padding:"3px 6px",border:`1px solid ${perso!==undefined?"#7C3AED":"#E5E7EB"}`,borderRadius:6,fontSize:11,outline:"none",background:perso!==undefined?"#F5F3FF":"#fff"}}/>
+                    style={{width:72,padding:"3px 6px",border:(perso!==undefined?"1px solid #7C3AED":"1px solid #E5E7EB"),borderRadius:6,fontSize:11,outline:"none",background:perso!==undefined?"#F5F3FF":"#fff"}}/>
                   {perso!==undefined&&<button onClick={()=>updatePrixIndividuel(selClient.id,p.id,"")} style={{background:"none",border:"none",color:"#9CA3AF",cursor:"pointer"}}>✕</button>}
                 </div>
               );
