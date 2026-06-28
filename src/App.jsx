@@ -978,7 +978,8 @@ function BossokApp({ session, onLogout }) {
   // Dashboard filters
   const [dashPeriod, setDashPeriod] = useState("mois");
   const [dashDateFrom, setDashDateFrom] = useState(() => {
-    const d = new Date(); d.setDate(1); return d.toISOString().split("T")[0];
+    const now = new Date();
+    return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
   });
   const [dashDateTo, setDashDateTo] = useState(() => new Date().toISOString().split("T")[0]);
   const [dashClient, setDashClient] = useState("");
@@ -1526,7 +1527,8 @@ function BossokApp({ session, onLogout }) {
       setDashDateFrom(new Date(now.getFullYear(),q,1).toISOString().split("T")[0]);
       setDashDateTo(now.toISOString().split("T")[0]);
     } else if (p==="annee") {
-      setDashDateFrom(new Date(now.getFullYear(),0,1).toISOString().split("T")[0]);
+      const yr = now.getFullYear();
+      setDashDateFrom(yr+"-01-01");
       setDashDateTo(now.toISOString().split("T")[0]);
     }
     setDashPeriod(p);
@@ -1534,6 +1536,7 @@ function BossokApp({ session, onLogout }) {
 
   const dashFacts = factures.filter(f=>{
     if (f.notes==="Import historique") return false;
+    if (!f.date) return false;
     if (dashDateFrom && f.date < dashDateFrom) return false;
     if (dashDateTo && f.date > dashDateTo) return false;
     if (dashClient && f.client_id !== dashClient) return false;
@@ -1708,7 +1711,7 @@ function BossokApp({ session, onLogout }) {
             <BarChart data={chartData} margin={{top:0,right:10,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
               <XAxis dataKey="label" tick={{fontSize:9}}/>
-              <YAxis tick={{fontSize:9}} tickFormatter={v=>(v/1000).toFixed(0)+"k"}/>
+              <YAxis tick={{fontSize:9}} tickFormatter={v=>v>=1000?(v/1000).toFixed(1)+"k":v.toFixed(0)+"€"} width={45}/>
               <Tooltip formatter={(v,n)=>[fmtFull(v),n==="paye"?"Encaissé":"Impayé"]}/>
               <Bar dataKey="paye" stackId="a" fill="#1D4ED8" name="paye"/>
               <Bar dataKey="impaye" stackId="a" fill="#EF4444" radius={[3,3,0,0]} name="impaye"/>
@@ -1723,7 +1726,7 @@ function BossokApp({ session, onLogout }) {
             <BarChart data={impayeChart} margin={{top:0,right:5,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
               <XAxis dataKey="label" tick={{fontSize:8}}/>
-              <YAxis tick={{fontSize:8}} tickFormatter={v=>(v/1000).toFixed(0)+"k"}/>
+              <YAxis tick={{fontSize:8}} tickFormatter={v=>v>=1000?(v/1000).toFixed(1)+"k":v.toFixed(0)+"€"} width={40}/>
               <Tooltip formatter={(v)=>[fmtFull(v),"Impayé"]}/>
               <Bar dataKey="v" fill="#EF4444" radius={[3,3,0,0]}/>
             </BarChart>
