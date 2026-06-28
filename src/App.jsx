@@ -1549,7 +1549,6 @@ function BossokApp({ session, onLogout }) {
 
   // Filter factures
   const dashFacts = factures.filter(f=>{
-    if (f.notes==="Import historique") return false;
     if (!f.date) return false;
     if (activeFrom && f.date < activeFrom) return false;
     if (activeTo && f.date > activeTo) return false;
@@ -1636,7 +1635,7 @@ function BossokApp({ session, onLogout }) {
 
   // Impayés by month (all time)
   const impayeMap = {};
-  factures.filter(f=>f.statut==="Impayée"&&f.notes!=="Import historique"&&f.date).forEach(f=>{
+  dashFacts.filter(f=>f.statut==="Impayée").forEach(f=>{
     const m=f.date.slice(0,7);
     if(!impayeMap[m]) impayeMap[m]={label:m,v:0};
     impayeMap[m].v+=totalFact(f.lignes).total;
