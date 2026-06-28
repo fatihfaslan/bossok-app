@@ -1513,48 +1513,64 @@ function BossokApp({ session, onLogout }) {
 {/* ══ DASHBOARD ══════════════════════════════════════════════════ */}
 {page==="dashboard" && (()=>{
 
-  const applyPeriod = (p) => {
+  // Compute date range from period
+  const getPeriodDates = (p) => {
     const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
     if (p==="semaine") {
-      const mon = new Date(now); mon.setDate(now.getDate()-now.getDay()+1);
-      setDashDateFrom(mon.toISOString().split("T")[0]);
-      setDashDateTo(now.toISOString().split("T")[0]);
+      const mon = new Date(now); mon.setDate(now.getDate()-(now.getDay()||7)+1);
+      return [mon.toISOString().split("T")[0], now.toISOString().split("T")[0]];
     } else if (p==="mois") {
-      setDashDateFrom(new Date(now.getFullYear(),now.getMonth(),1).toISOString().split("T")[0]);
-      setDashDateTo(now.toISOString().split("T")[0]);
+      return [y+"-"+String(m+1).padStart(2,"0")+"-01", now.toISOString().split("T")[0]];
     } else if (p==="trimestre") {
-      const q=Math.floor(now.getMonth()/3)*3;
-      setDashDateFrom(new Date(now.getFullYear(),q,1).toISOString().split("T")[0]);
-      setDashDateTo(now.toISOString().split("T")[0]);
+      const q=Math.floor(m/3)*3;
+      return [new Date(y,q,1).toISOString().split("T")[0], now.toISOString().split("T")[0]];
     } else if (p==="annee") {
-      const yr = now.getFullYear();
-      setDashDateFrom(yr+"-01-01");
-      setDashDateTo(now.toISOString().split("T")[0]);
+      return [y+"-01-01", now.toISOString().split("T")[0]];
+    } else if (p==="13mois") {
+      const d = new Date(now); d.setMonth(d.getMonth()-13);
+      return [d.toISOString().split("T")[0], now.toISOString().split("T")[0]];
     }
-    setDashPeriod(p);
+    return [dashDateFrom, dashDateTo];
   };
 
+  // Active date range
+  const [activeFrom, activeTo] = dashPeriod==="custom" ? [dashDateFrom, dashDateTo] : getPeriodDates(dashPeriod);
+
+  const applyPeriod = (p) => {
+    setDashPeriod(p);
+    if (p!=="custom") {
+      const [f,t] = getPeriodDates(p);
+      setDashDateFrom(f);
+      setDashDateTo(t);
+    }
+  };
+
+  // Filter factures
   const dashFacts = factures.filter(f=>{
     if (f.notes==="Import historique") return false;
     if (!f.date) return false;
-    if (dashDateFrom && f.date < dashDateFrom) return false;
-    if (dashDateTo && f.date > dashDateTo) return false;
+    if (activeFrom && f.date < activeFrom) return false;
+    if (activeTo && f.date > activeTo) return false;
     if (dashClient && f.client_id !== dashClient) return false;
     if (dashZone) { const cl=clients.find(c=>c.id===f.client_id); if(cl?.region!==dashZone) return false; }
     return true;
   });
 
+  // Filter commandes
   const dashCmds = commandes.filter(c=>{
-    if (dashDateFrom && (c.date_livraison||c.date_commande) < dashDateFrom) return false;
-    if (dashDateTo && (c.date_livraison||c.date_commande) > dashDateTo) return false;
+    const d = c.date_livraison||c.date_commande||"";
+    if (activeFrom && d < activeFrom) return false;
+    if (activeTo && d > activeTo) return false;
     if (dashClient && c.client_id !== dashClient) return false;
     if (dashZone && c.client_region !== dashZone) return false;
     if (dashChauffeur && c.chauffeur !== dashChauffeur) return false;
     return true;
   });
 
-  const COUT_RATIO = 0.72;
   const factActives = dashFacts.filter(f=>f.statut!=="Avoir"&&f.statut!=="Annulée");
+  const COUT_RATIO = 0.72;
   const ca = factActives.reduce((s,f)=>s+totalFact(f.lignes).total,0);
   const caPayee = dashFacts.filter(f=>f.statut==="Payée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
   const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
@@ -1565,6 +1581,7 @@ function BossokApp({ session, onLogout }) {
   const sefaCmds = dashCmds.filter(c=>c.chauffeur==="A"&&c.statut==="Livré").length;
   const mikailCmds = dashCmds.filter(c=>c.chauffeur==="B"&&c.statut==="Livré").length;
 
+  // Product stats
   const prodStats = {};
   factActives.forEach(f=>{
     (f.lignes||[]).filter(l=>!l.isCredit&&(!dashProduit||l.nom===dashProduit)).forEach(l=>{
@@ -1574,15 +1591,40 @@ function BossokApp({ session, onLogout }) {
   });
   const topProduits = Object.values(prodStats).sort((a,b)=>b.qte-a.qte).slice(0,8);
 
+  // Zone stats
   const zoneStats = {};
   factActives.forEach(f=>{
     const cl=clients.find(c=>c.id===f.client_id);
     const z=cl?.region||"Inconnu";
-    if(!zoneStats[z]) zoneStats[z]={zone:z,ca:0,nb:0};
-    zoneStats[z].ca+=totalFact(f.lignes).total; zoneStats[z].nb++;
+    if(!zoneStats[z]) zoneStats[z]={zone:z,ca:0,marge:0,nb:0};
+    const t=totalFact(f.lignes).total;
+    zoneStats[z].ca+=t; zoneStats[z].marge+=t*(1-COUT_RATIO); zoneStats[z].nb++;
   });
   const topZones = Object.values(zoneStats).sort((a,b)=>b.ca-a.ca).slice(0,6);
 
+  // Client stats
+  const clientStats = {};
+  factActives.forEach(f=>{
+    const cl=clients.find(c=>c.id===f.client_id);
+    const cid=f.client_id;
+    if(!clientStats[cid]) clientStats[cid]={id:cid,nom:f.client_nom,type:cl?.type||"",region:cl?.region||"",ca:0,marge:0,nb:0};
+    const t=totalFact(f.lignes).total;
+    clientStats[cid].ca+=t; clientStats[cid].marge+=t*(1-COUT_RATIO); clientStats[cid].nb++;
+  });
+  const topClients = Object.values(clientStats).sort((a,b)=>b.ca-a.ca).slice(0,8);
+
+  // Type client marge
+  const typeStats = {};
+  factActives.forEach(f=>{
+    const cl=clients.find(c=>c.id===f.client_id);
+    const t=cl?.type||"Autre";
+    if(!typeStats[t]) typeStats[t]={type:t,ca:0,marge:0,nb:0};
+    const total=totalFact(f.lignes).total;
+    typeStats[t].ca+=total; typeStats[t].marge+=total*(1-COUT_RATIO); typeStats[t].nb++;
+  });
+  const topTypes = Object.values(typeStats).sort((a,b)=>b.ca-a.ca);
+
+  // Monthly chart
   const monthlyMap = {};
   factActives.forEach(f=>{
     const m=f.date?.slice(0,7)||"";
@@ -1592,22 +1634,25 @@ function BossokApp({ session, onLogout }) {
   });
   const chartData = Object.values(monthlyMap).sort((a,b)=>a.label.localeCompare(b.label));
 
+  // Impayés by month (all time)
   const impayeMap = {};
-  factures.filter(f=>f.statut==="Impayée"&&f.notes!=="Import historique").forEach(f=>{
-    const m=f.date?.slice(0,7)||"";
+  factures.filter(f=>f.statut==="Impayée"&&f.notes!=="Import historique"&&f.date).forEach(f=>{
+    const m=f.date.slice(0,7);
     if(!impayeMap[m]) impayeMap[m]={label:m,v:0};
     impayeMap[m].v+=totalFact(f.lignes).total;
   });
-  const impayeChart = Object.values(impayeMap).sort((a,b)=>a.label.localeCompare(b.label)).slice(-6);
+  const impayeChart = Object.values(impayeMap).sort((a,b)=>a.label.localeCompare(b.label)).slice(-8);
 
+  // Export CSV
   const exportDash = () => {
-    const rows = [["N°","Date","Client","Zone","Statut","Montant HT","Consignes","Total TTC"]];
-    dashFacts.forEach(f=>{
+    const rows = [["N°","Date","Client","Type","Zone","Statut","Montant HT","Consignes","Total TTC","Marge est."]];
+    factActives.forEach(f=>{
       const cl=clients.find(c=>c.id===f.client_id);
       const {prod,cons,total}=totalFact(f.lignes);
-      rows.push([f.numero,f.date,f.client_nom,cl?.region||"",f.statut,prod.toFixed(2),cons.toFixed(2),total.toFixed(2)]);
+      rows.push([f.numero,f.date,f.client_nom,cl?.type||"",cl?.region||"",f.statut,
+        prod.toFixed(2),cons.toFixed(2),total.toFixed(2),(total*(1-COUT_RATIO)).toFixed(2)]);
     });
-    const csv = rows.map(r=>r.map(v=>'"'+v+'"').join(";")).join("\n");
+    const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\n");
     const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1616,33 +1661,37 @@ function BossokApp({ session, onLogout }) {
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
 
+  const fmt2 = v => v>=1000?(v/1000).toFixed(1)+"k€":Math.round(v)+"€";
+
   return(
   <div>
-    {/* Filtres */}
-    <div style={{...S.card,marginBottom:14}}>
+    {/* ── Filtres ── */}
+    <div style={{...S.card,marginBottom:14,padding:"12px 16px"}}>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
-        {[["semaine","Semaine"],["mois","Mois"],["trimestre","Trimestre"],["annee","Année"]].map(([k,l])=>(
+        {[["semaine","Semaine"],["mois","Mois"],["trimestre","Trimestre"],["annee","Année"],["13mois","13 mois"]].map(([k,l])=>(
           <button key={k} onClick={()=>applyPeriod(k)}
-            style={{...S.btn(dashPeriod===k?"#1D4ED8":"#F1F5F9",dashPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12}}>
+            style={{...S.btn(dashPeriod===k?"#1D4ED8":"#F1F5F9",dashPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:dashPeriod===k?700:400}}>
             {l}
           </button>
         ))}
-        <input type="date" value={dashDateFrom} onChange={e=>{setDashDateFrom(e.target.value);setDashPeriod("custom");}}
-          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
-        <span style={{color:"#9CA3AF"}}>→</span>
-        <input type="date" value={dashDateTo} onChange={e=>{setDashDateTo(e.target.value);setDashPeriod("custom");}}
-          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
+        <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:8}}>
+          <input type="date" value={dashDateFrom} onChange={e=>{setDashDateFrom(e.target.value);setDashPeriod("custom");}}
+            style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
+          <span style={{color:"#9CA3AF",fontSize:12}}>→</span>
+          <input type="date" value={dashDateTo} onChange={e=>{setDashDateTo(e.target.value);setDashPeriod("custom");}}
+            style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
+        </div>
         <button onClick={exportDash} style={{...S.btn("#059669"),padding:"5px 12px",fontSize:12,marginLeft:"auto"}}>📥 Export CSV</button>
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
         <select value={dashClient} onChange={e=>setDashClient(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:180}}>
           <option value="">Tous les clients</option>
-          {clients.sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=><option key={c.id} value={c.id}>{c.nom}</option>)}
+          {[...clients].sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=><option key={c.id} value={c.id}>{c.nom}</option>)}
         </select>
         <select value={dashZone} onChange={e=>setDashZone(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
-          <option value="">Toutes zones</option>
+          <option value="">Toutes les zones</option>
           {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France"].map(z=>(
             <option key={z} value={z}>{z}</option>
           ))}
@@ -1655,20 +1704,20 @@ function BossokApp({ session, onLogout }) {
         </select>
         <select value={dashProduit} onChange={e=>setDashProduit(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:200}}>
-          <option value="">Tous produits</option>
+          <option value="">Tous les produits</option>
           {PRODUITS.map(p=><option key={p.id} value={p.nom}>{p.nom}</option>)}
         </select>
         {(dashClient||dashZone||dashChauffeur||dashProduit)&&(
           <button onClick={()=>{setDashClient("");setDashZone("");setDashChauffeur("");setDashProduit("");}}
-            style={{...S.btn("#F3F4F6","#374151"),padding:"5px 10px",fontSize:12}}>✕ Reset</button>
+            style={{...S.btn("#FEE2E2","#DC2626"),padding:"5px 10px",fontSize:12}}>✕ Reset filtres</button>
         )}
-        <span style={{fontSize:11,color:"#6B7280",marginLeft:"auto"}}>
-          {factActives.length} factures · {fmtFull(ca)}
+        <span style={{fontSize:11,color:"#6B7280",marginLeft:"auto",fontWeight:600}}>
+          {factActives.length} factures · {activeFrom} → {activeTo}
         </span>
       </div>
     </div>
 
-    {/* KPIs Row 1 */}
+    {/* ── KPIs Row 1 ── */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
       {[
         {l:"CA Total",v:fmtFull(ca),c:"#1D4ED8",icon:"💶",sub:factActives.length+" factures"},
@@ -1685,7 +1734,7 @@ function BossokApp({ session, onLogout }) {
       ))}
     </div>
 
-    {/* KPIs Row 2 */}
+    {/* ── KPIs Row 2 ── */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Clients actifs",v:nbClients,c:"#7C3AED",icon:"👥",sub:"sur la période"},
@@ -1702,7 +1751,7 @@ function BossokApp({ session, onLogout }) {
       ))}
     </div>
 
-    {/* Graphiques row 1 */}
+    {/* ── Charts row 1 ── */}
     <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>📊 CA mensuel (payé vs impayé)</div>
@@ -1711,22 +1760,22 @@ function BossokApp({ session, onLogout }) {
             <BarChart data={chartData} margin={{top:0,right:10,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
               <XAxis dataKey="label" tick={{fontSize:9}}/>
-              <YAxis tick={{fontSize:9}} tickFormatter={v=>v>=1000?(v/1000).toFixed(1)+"k":v.toFixed(0)+"€"} width={45}/>
+              <YAxis tick={{fontSize:9}} tickFormatter={fmt2} width={48}/>
               <Tooltip formatter={(v,n)=>[fmtFull(v),n==="paye"?"Encaissé":"Impayé"]}/>
-              <Bar dataKey="paye" stackId="a" fill="#1D4ED8" name="paye"/>
-              <Bar dataKey="impaye" stackId="a" fill="#EF4444" radius={[3,3,0,0]} name="impaye"/>
+              <Bar dataKey="paye" stackId="a" fill="#1D4ED8" name="paye" radius={[0,0,0,0]}/>
+              <Bar dataKey="impaye" stackId="a" fill="#EF4444" name="impaye" radius={[3,3,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
-        ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"50px 0",fontSize:12}}>Aucune donnée</div>}
+        ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"50px 0",fontSize:12}}>Aucune donnée sur la période</div>}
       </div>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>⚠️ Impayés par mois</div>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>⚠️ Impayés cumulés</div>
         {impayeChart.length>0?(
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={impayeChart} margin={{top:0,right:5,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
               <XAxis dataKey="label" tick={{fontSize:8}}/>
-              <YAxis tick={{fontSize:8}} tickFormatter={v=>v>=1000?(v/1000).toFixed(1)+"k":v.toFixed(0)+"€"} width={40}/>
+              <YAxis tick={{fontSize:8}} tickFormatter={fmt2} width={45}/>
               <Tooltip formatter={(v)=>[fmtFull(v),"Impayé"]}/>
               <Bar dataKey="v" fill="#EF4444" radius={[3,3,0,0]}/>
             </BarChart>
@@ -1735,20 +1784,20 @@ function BossokApp({ session, onLogout }) {
       </div>
     </div>
 
-    {/* Graphiques row 2 */}
+    {/* ── Charts row 2: Top produits + CA par zone ── */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🍺 Top produits vendus (caisses)</div>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🍺 Top produits (caisses vendues)</div>
         {topProduits.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
         topProduits.map((p,i)=>{
           const maxQ=topProduits[0].qte;
           return(
-            <div key={p.nom} style={{marginBottom:6}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
-                <span style={{fontWeight:i===0?700:400,color:i===0?"#1D4ED8":"#374151",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200}}>
+            <div key={p.nom} style={{marginBottom:5}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:1}}>
+                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200,fontWeight:i<3?600:400,color:i===0?"#1D4ED8":"#374151"}}>
                   {i===0?"🥇 ":i===1?"🥈 ":i===2?"🥉 ":""}{p.nom}
                 </span>
-                <span style={{color:"#6B7280",whiteSpace:"nowrap",marginLeft:4}}>{p.qte} cs</span>
+                <span style={{color:"#6B7280",whiteSpace:"nowrap",marginLeft:4}}>{p.qte} cs · {fmtFull(p.ca)}</span>
               </div>
               <div style={{height:5,background:"#F1F5F9",borderRadius:3}}>
                 <div style={{height:5,background:i===0?"#1D4ED8":i<3?"#60A5FA":"#BAE6FD",borderRadius:3,width:(p.qte/maxQ*100)+"%"}}/>
@@ -1757,6 +1806,7 @@ function BossokApp({ session, onLogout }) {
           );
         })}
       </div>
+
       <div style={S.card}>
         <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>📍 CA par zone</div>
         {topZones.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
@@ -1765,10 +1815,10 @@ function BossokApp({ session, onLogout }) {
           const driver=ZONE_SCHEDULE[z.zone]?.driver||"?";
           const col=driver==="Sefa"?"#0EA5E9":driver==="Mikail"?"#8B5CF6":"#6B7280";
           return(
-            <div key={z.zone} style={{marginBottom:6}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
+            <div key={z.zone} style={{marginBottom:5}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:1}}>
                 <span style={{fontWeight:600}}>{z.zone} <span style={{fontSize:9,color:col}}>({driver})</span></span>
-                <span style={{color:"#6B7280"}}>{z.nb} · {fmtFull(z.ca)}</span>
+                <span style={{color:"#6B7280"}}>{z.nb} fact. · {fmtFull(z.ca)} · marge {fmtFull(z.marge)}</span>
               </div>
               <div style={{height:5,background:"#F1F5F9",borderRadius:3}}>
                 <div style={{height:5,background:col,borderRadius:3,width:(z.ca/maxCA*100)+"%"}}/>
@@ -1779,34 +1829,97 @@ function BossokApp({ session, onLogout }) {
       </div>
     </div>
 
-    {/* Bottom row */}
+    {/* ── Row 3: Top clients + Marge par type ── */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+      <div style={S.card}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontWeight:700,fontSize:13}}>🏆 Top clients par CA</div>
+        </div>
+        {topClients.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+          <thead>
+            <tr style={{borderBottom:"1px solid #E5E7EB"}}>
+              {["Client","Type","Zone","CA","Marge","Nb"].map(h=>(
+                <th key={h} style={{padding:"4px 6px",textAlign:h==="CA"||h==="Marge"||h==="Nb"?"right":"left",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {topClients.map((c,i)=>(
+              <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB",background:i%2===0?"#fff":"#FAFAFA"}}>
+                <td style={{padding:"4px 6px",fontWeight:600,color:i===0?"#1D4ED8":"#374151"}}>
+                  {i===0?"🥇 ":i===1?"🥈 ":i===2?"🥉 ":""}{c.nom}
+                </td>
+                <td style={{padding:"4px 6px",color:"#6B7280"}}>{c.type}</td>
+                <td style={{padding:"4px 6px",color:"#6B7280"}}>{c.region}</td>
+                <td style={{padding:"4px 6px",textAlign:"right",fontWeight:600}}>{fmtFull(c.ca)}</td>
+                <td style={{padding:"4px 6px",textAlign:"right",color:"#059669"}}>{fmtFull(c.marge)}</td>
+                <td style={{padding:"4px 6px",textAlign:"right",color:"#6B7280"}}>{c.nb}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>}
+      </div>
+
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>📊 Marge par type de client</div>
+        {topTypes.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
+        <div>
+          {topTypes.map((t,i)=>{
+            const maxCA=topTypes[0].ca;
+            const {bg,text}=tc(t.type);
+            const margPct=t.ca>0?Math.round(t.marge/t.ca*100):0;
+            return(
+              <div key={t.type} style={{marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={S.badge(bg,text)}>{t.type}</span>
+                    <span style={{fontSize:10,color:"#6B7280"}}>{t.nb} fact.</span>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <span style={{fontSize:11,fontWeight:600,color:"#374151"}}>{fmtFull(t.ca)}</span>
+                    <span style={{fontSize:10,color:"#059669",marginLeft:6}}>+{fmtFull(t.marge)} ({margPct}%)</span>
+                  </div>
+                </div>
+                <div style={{height:6,background:"#F1F5F9",borderRadius:3}}>
+                  <div style={{height:6,background:text,borderRadius:3,width:(t.ca/maxCA*100)+"%",opacity:0.7}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>}
+      </div>
+    </div>
+
+    {/* ── Bottom row ── */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
       <div style={S.card}>
         <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🧾 Dernières factures</div>
-        {dashFacts.slice(-6).reverse().map(f=>{
+        {dashFacts.length===0?<div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune facture sur la période</div>:
+        [...dashFacts].reverse().slice(0,6).map(f=>{
           const {total}=totalFact(f.lignes);
           return(
             <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #F1F5F9",fontSize:11}}>
-              <span style={{color:"#9CA3AF",width:55}}>{f.date}</span>
+              <span style={{color:"#9CA3AF",width:55,flexShrink:0}}>{f.date}</span>
               <span style={{fontWeight:500,flex:1,marginLeft:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.client_nom}</span>
               <span style={{fontWeight:700,marginRight:6,whiteSpace:"nowrap"}}>{fmtFull(total)}</span>
               <span style={S.badge(f.statut==="Payée"?"#DCFCE7":f.statut==="Avoir"?"#EDE9FE":"#FEE2E2",f.statut==="Payée"?"#166534":f.statut==="Avoir"?"#6D28D9":"#DC2626")}>{f.statut}</span>
             </div>
           );
         })}
-        {dashFacts.length===0&&<div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune facture</div>}
       </div>
       <div style={S.card}>
         <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>📋 Commandes en attente</div>
-        {commandes.filter(c=>c.statut==="En attente").length===0?(
-          <div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune commande</div>
-        ):commandes.filter(c=>c.statut==="En attente").slice(0,6).map(c=>(
-          <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #F1F5F9",fontSize:11}}>
-            <span style={{fontWeight:500,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.client_nom}</span>
-            <span style={{fontSize:10,color:"#6B7280",marginRight:6}}>{c.client_region}</span>
-            <span style={S.badge(c.chauffeur==="A"?"#E0F2FE":"#EDE9FE",c.chauffeur==="A"?"#0EA5E9":"#8B5CF6")}>{c.chauffeur==="A"?"Sefa":"Mikail"}</span>
-          </div>
-        ))}
+        {commandes.filter(c=>c.statut==="En attente").length===0?
+          <div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune commande</div>:
+          commandes.filter(c=>c.statut==="En attente").slice(0,6).map(c=>(
+            <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #F1F5F9",fontSize:11}}>
+              <span style={{fontWeight:500,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.client_nom}</span>
+              <span style={{fontSize:10,color:"#6B7280",marginRight:6}}>{c.client_region}</span>
+              <span style={S.badge(c.chauffeur==="A"?"#E0F2FE":"#EDE9FE",c.chauffeur==="A"?"#0EA5E9":"#8B5CF6")}>{c.chauffeur==="A"?"Sefa":"Mikail"}</span>
+            </div>
+          ))
+        }
       </div>
     </div>
   </div>
