@@ -46,6 +46,8 @@ const sb = async (path, method = "GET", body = null) => {
       "Authorization": `Bearer ${getSession()?.access_token || SUPABASE_KEY}`,
       "Content-Type": "application/json",
       "Prefer": "return=representation",
+      "Range-Unit": "items",
+      "Range": "0-9999",
     },
     body: body ? JSON.stringify(body) : null,
   });
@@ -1019,11 +1021,13 @@ function BossokApp({ session, onLogout }) {
   // ── DERIVED ────────────────────────────────────────────────────
   const clientsActifs = clients.filter(c=>c.statut==="Actif");
   const filteredClients = useMemo(()=>clients.filter(c=>{
-    const q=searchC.toLowerCase();
-    return (!searchC||c.nom?.toLowerCase().includes(q)||c.adresse?.toLowerCase().includes(q)||c.tva?.toLowerCase().includes(q))
+    const q=searchC.toLowerCase().trim();
+    const nom = c.nom?.toLowerCase()||"";
+    const matchSearch = !searchC || nom.startsWith(q) || nom.includes(q) || c.adresse?.toLowerCase().includes(q) || c.tva?.toLowerCase().includes(q);
+    return matchSearch
       &&(filterType==="Tous"||c.type===filterType)
       &&(filterStatut==="Tous"||c.statut===filterStatut);
-  }),[clients,searchC,filterType,filterStatut]);
+  }).sort((a,b)=>(a.nom||"").localeCompare(b.nom||"")),[clients,searchC,filterType,filterStatut]);
 
   const clientFactures = (cid) => factures.filter(f=>f.client_id===cid);
   const clientImpayees = (cid) => clientFactures(cid).filter(f=>f.statut==="Impayée");
@@ -1957,7 +1961,7 @@ function BossokApp({ session, onLogout }) {
       ))}
     </div>
     <div style={{...S.card,marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
-      <input value={searchC} onChange={e=>setSearchC(e.target.value)} placeholder="🔍 Rechercher..." style={{...S.input,flex:1,minWidth:160}}/>
+      <input value={searchC} onChange={e=>setSearchC(e.target.value)} placeholder="🔍 Rechercher un client..." style={{...S.input,flex:1,minWidth:160}}/>
       <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
         {["Tous","Snack","Restaurant","Café","Market","Administrative","Creche","Distributor"].map(t=><option key={t}>{t}</option>)}
       </select>
@@ -1988,6 +1992,20 @@ function BossokApp({ session, onLogout }) {
           </div>
         );
       })}
+    </div>
+    {/* Alphabet quick-filter */}
+    <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:10}}>
+      {["Tous","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"].map(l=>(
+        <button key={l} onClick={()=>setSearchC(l==="Tous"?"":l)}
+          style={{...S.btn(searchC.toUpperCase()===l||(!searchC&&l==="Tous")?"#1D4ED8":"#F1F5F9",
+            searchC.toUpperCase()===l||(!searchC&&l==="Tous")?"#fff":"#374151"),
+            padding:"3px 7px",fontSize:11,minWidth:24,fontWeight:600}}>
+          {l}
+        </button>
+      ))}
+      <span style={{fontSize:11,color:"#6B7280",marginLeft:6,alignSelf:"center"}}>{filteredClients.length} client(s)</span>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
       {filteredClients.length===0&&(
         <div style={{gridColumn:"1/-1",...S.card,textAlign:"center",padding:"48px 0",color:"#9CA3AF"}}>
           <div style={{fontSize:40,marginBottom:12}}>👥</div>
