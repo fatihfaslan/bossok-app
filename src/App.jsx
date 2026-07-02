@@ -3362,6 +3362,7 @@ function BossokApp({ session, onLogout }) {
     </div>
   </div>
 )}
+</div>
 
 {/* ══ MODAL IMPRIMER APRES CREATION ══════════════════════════════ */}
 {lastFacture && (
@@ -3386,10 +3387,6 @@ function BossokApp({ session, onLogout }) {
     </div>
   </div>
 )}
-
-        </div>
-      </div>
-    </div>
 
 {/* ══ MODAL CLIENT FORM ══════════════════════════════════════════ */}
 {showClientForm&&(
