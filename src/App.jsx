@@ -1557,15 +1557,18 @@ function BossokApp({ session, onLogout }) {
     const y = now.getFullYear();
     const m = now.getMonth();
     if (p==="semaine") {
-      const mon = new Date(now); mon.setDate(now.getDate()-(now.getDay()||7)+1);
-      return [mon.toISOString().split("T")[0], now.toISOString().split("T")[0]];
+      const dow = now.getDay()===0?7:now.getDay(); // 1=Mon, 7=Sun
+      const mon = new Date(now); mon.setDate(now.getDate()-dow+1);
+      const sun = new Date(mon); sun.setDate(mon.getDate()+6);
+      return [mon.toISOString().split("T")[0], sun.toISOString().split("T")[0]];
     } else if (p==="mois") {
-      return [y+"-"+String(m+1).padStart(2,"0")+"-01", now.toISOString().split("T")[0]];
+      const lastDay = new Date(y, m+1, 0).getDate();
+      return [y+"-"+String(m+1).padStart(2,"0")+"-01", y+"-"+String(m+1).padStart(2,"0")+"-"+String(lastDay).padStart(2,"0")];
     } else if (p==="trimestre") {
-      const q=Math.floor(m/3)*3;
-      return [new Date(y,q,1).toISOString().split("T")[0], now.toISOString().split("T")[0]];
+      const d3 = new Date(now); d3.setMonth(d3.getMonth()-3); d3.setDate(1);
+      return [d3.toISOString().split("T")[0], now.toISOString().split("T")[0]];
     } else if (p==="annee") {
-      return [y+"-01-01", now.toISOString().split("T")[0]];
+      return [y+"-01-01", y+"-12-31"];
     } else if (p==="13mois") {
       const d = new Date(now); d.setMonth(d.getMonth()-13);
       return [d.toISOString().split("T")[0], now.toISOString().split("T")[0]];
@@ -2042,14 +2045,16 @@ function BossokApp({ session, onLogout }) {
 {page==="factures" && (()=>{
   const today = new Date().toISOString().split("T")[0];
   const moisDispos = ["Tous",...Array.from(new Set(factures.map(f=>f.date?f.date.slice(0,7):"").filter(Boolean))).sort().reverse()];
-  const clientsDispos = ["Tous",...Array.from(new Set(factures.map(f=>f.client_nom||"").filter(Boolean))).sort()];
+  const clientsDispos = ["Tous",...[...clients].sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=>c.nom)];
 
   // Filter
   let ff = factures.filter(f=>{
     const matchStatut = factFilterStatut==="Tous" || f.statut===factFilterStatut;
     const matchSearch = !factFilterSearch || f.client_nom?.toLowerCase().includes(factFilterSearch.toLowerCase()) || String(f.numero||"").toLowerCase().includes(factFilterSearch.toLowerCase());
     const matchMois = factFilterMois==="Tous" || (f.date && f.date.startsWith(factFilterMois));
-    const matchClient = !factFilterClient || factFilterClient==="Tous" || f.client_nom===factFilterClient;
+    const matchClient = !factFilterClient || factFilterClient==="Tous" || 
+      f.client_nom===factFilterClient || 
+      f.client_nom?.toLowerCase().includes(factFilterClient.toLowerCase());
     const matchFrom = !factFilterDateFrom || (f.date && f.date >= factFilterDateFrom);
     const matchTo = !factFilterDateTo || (f.date && f.date <= factFilterDateTo);
     return matchStatut && matchSearch && matchMois && matchClient && matchFrom && matchTo;
