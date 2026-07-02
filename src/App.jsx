@@ -1505,7 +1505,6 @@ function BossokApp({ session, onLogout }) {
   );
 
   return (
-    <React.Fragment>
     <div style={S.app}>
       {/* SIDEBAR */}
       <div style={S.sidebar}>
@@ -3009,8 +3008,8 @@ function BossokApp({ session, onLogout }) {
   </div>
 )}
 
-{/* ══ MODAL CLIENT DETAIL ══════════════════════════════════════ */}
-{selClient&&(
+  {/* ══ MODAL CLIENT DETAIL ══════════════════════════════════════ */}
+  {selClient&&(
   <div style={S.modal} onClick={()=>setSelClient(null)}>
     <div style={{...S.modalBox,maxWidth:680}} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
@@ -3326,8 +3325,8 @@ function BossokApp({ session, onLogout }) {
   </div>
 )}
 
-{/* ══ MODAL RETOUR CONSIGNES ══════════════════════════════════════ */}
-{showRetour&&(
+  {/* ══ MODAL RETOUR CONSIGNES ══════════════════════════════════════ */}
+  {showRetour&&(
   <div style={S.modal} onClick={()=>setShowRetour(null)}>
     <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
@@ -3362,11 +3361,10 @@ function BossokApp({ session, onLogout }) {
       })()}
     </div>
   </div>
-)}
-</div>
+  )}
 
-{/* ══ MODAL IMPRIMER APRES CREATION ══════════════════════════════ */}
-{lastFacture && (
+  {/* ══ MODAL IMPRIMER APRES CREATION ══════════════════════════════ */}
+  {lastFacture && (
   <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div style={{background:"#fff",borderRadius:16,padding:28,maxWidth:420,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
       <div style={{fontSize:48,marginBottom:12}}>✅</div>
@@ -3389,8 +3387,8 @@ function BossokApp({ session, onLogout }) {
   </div>
 )}
 
-{/* ══ MODAL CLIENT FORM ══════════════════════════════════════════ */}
-{showClientForm&&(
+  {/* ══ MODAL CLIENT FORM ══════════════════════════════════════════ */}
+  {showClientForm&&(
   <div style={S.modal} onClick={()=>setShowClientForm(false)}>
     <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
@@ -3449,8 +3447,8 @@ function BossokApp({ session, onLogout }) {
       </div>
     </div>
   </div>
-)}
+  )}
 
-    </React.Fragment>
+  </div>
   );
 }
