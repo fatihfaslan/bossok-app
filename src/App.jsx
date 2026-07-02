@@ -38,17 +38,20 @@ const getSession = () => {
   } catch { return null; }
 };
 
-const sb = async (path, method = "GET", body = null) => {
+const sb = async (path, method = "GET", body = null, rangeFrom = null, rangeTo = null) => {
+  const headers = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": `Bearer ${getSession()?.access_token || SUPABASE_KEY}`,
+    "Content-Type": "application/json",
+    "Prefer": "return=representation",
+  };
+  if (rangeFrom !== null && rangeTo !== null) {
+    headers["Range-Unit"] = "items";
+    headers["Range"] = `${rangeFrom}-${rangeTo}`;
+  }
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     method,
-    headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${getSession()?.access_token || SUPABASE_KEY}`,
-      "Content-Type": "application/json",
-      "Prefer": "return=representation",
-      "Range-Unit": "items",
-      "Range": "0-9999",
-    },
+    headers,
     body: body ? JSON.stringify(body) : null,
   });
   if (!res.ok) {
@@ -996,9 +999,28 @@ function BossokApp({ session, onLogout }) {
   const loadAll = useCallback(async () => {
     try {
       setLoading(true);
+
+      // Fetch all factures with pagination (bypass Supabase 1000 row limit)
+      const fetchAllFactures = async () => {
+        const pageSize = 1000;
+        let all = [];
+        let page = 0;
+        let keepGoing = true;
+        while (keepGoing) {
+          const from = page * pageSize;
+          const to = from + pageSize - 1;
+          const batch = await sb("factures?select=*&order=id.asc", "GET", null, from, to);
+          if (!batch || batch.length === 0) { keepGoing = false; break; }
+          all = all.concat(batch);
+          if (batch.length < pageSize) { keepGoing = false; break; }
+          page++;
+        }
+        return all.reverse();
+      };
+
       const [cls, facts, cmds, stk] = await Promise.all([
         db.get("clients"),
-        db.get("factures"),
+        fetchAllFactures(),
         db.get("commandes"),
         db.get("stock"),
       ]);
