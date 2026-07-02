@@ -948,6 +948,10 @@ function BossokApp({ session, onLogout }) {
   const [showVisiteForm, setShowVisiteForm] = useState(false);
   const [visiteDate, setVisiteDate] = useState("");
   const [visiteNote, setVisiteNote] = useState("");
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const dow = new Date().getDay();
+    return dow === 0 ? 0 : Math.min(dow - 1, 4);
+  });
   const [searchC, setSearchC] = useState("");
   const [filterType, setFilterType] = useState("Tous");
   const [filterStatut, setFilterStatut] = useState("Tous");
@@ -2449,7 +2453,6 @@ function BossokApp({ session, onLogout }) {
   const days = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
   const today = new Date();
   const todayDow = today.getDay() === 0 ? 6 : today.getDay() - 1; // 0=Mon
-  const [selectedDay, setSelectedDay] = useState(Math.min(todayDow, 4));
 
   // Build week dates
   const getWeekDate = (dayIdx) => {
