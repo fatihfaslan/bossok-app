@@ -1042,7 +1042,7 @@ function BossokApp({ session, onLogout }) {
   const filteredClients = useMemo(()=>clients.filter(c=>{
     const q=searchC.toLowerCase().trim();
     const nom = c.nom?.toLowerCase()||"";
-    const matchSearch = !searchC || nom.startsWith(q) || nom.includes(q) || c.adresse?.toLowerCase().includes(q) || c.tva?.toLowerCase().includes(q);
+    const matchSearch = !searchC || nom.startsWith(q);
     return matchSearch
       &&(filterType==="Tous"||c.type===filterType)
       &&(filterStatut==="Tous"||c.statut===filterStatut);
@@ -1559,6 +1559,10 @@ function BossokApp({ session, onLogout }) {
       return [mon.toISOString().split("T")[0], now.toISOString().split("T")[0]];
     } else if (p==="mois") {
       return [y+"-"+String(m+1).padStart(2,"0")+"-01", now.toISOString().split("T")[0]];
+    } else if (p==="mois_dernier") {
+      const dm = new Date(now); dm.setDate(0); // last day of prev month
+      const dm1 = new Date(dm.getFullYear(), dm.getMonth(), 1);
+      return [dm1.toISOString().split("T")[0], dm.toISOString().split("T")[0]];
     } else if (p==="trimestre") {
       const d3 = new Date(now); d3.setMonth(d3.getMonth()-3); d3.setDate(1);
       return [d3.toISOString().split("T")[0], now.toISOString().split("T")[0]];
