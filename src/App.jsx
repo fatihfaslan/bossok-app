@@ -945,9 +945,13 @@ function BossokApp({ session, onLogout }) {
   // UI
   const [selClient, setSelClient] = useState(null);
   const [clientTab, setClientTab] = useState("info");
+  const [showVisiteForm, setShowVisiteForm] = useState(false);
+  const [visiteDate, setVisiteDate] = useState("");
+  const [visiteNote, setVisiteNote] = useState("");
   const [searchC, setSearchC] = useState("");
   const [filterType, setFilterType] = useState("Tous");
   const [filterStatut, setFilterStatut] = useState("Tous");
+  const [filterZone, setFilterZone] = useState("Tous");
   const [showClientForm, setShowClientForm] = useState(false);
   const [editClient, setEditClient] = useState(null);
   const [clientForm, setClientForm] = useState({});
@@ -1045,8 +1049,9 @@ function BossokApp({ session, onLogout }) {
     const matchSearch = !searchC || nom.startsWith(q);
     return matchSearch
       &&(filterType==="Tous"||c.type===filterType)
-      &&(filterStatut==="Tous"||c.statut===filterStatut);
-  }).sort((a,b)=>(a.nom||"").localeCompare(b.nom||"")),[clients,searchC,filterType,filterStatut]);
+      &&(filterStatut==="Tous"||c.statut===filterStatut)
+      &&(filterZone==="Tous"||c.region===filterZone);
+  }).sort((a,b)=>(a.nom||"").localeCompare(b.nom||"")),[clients,searchC,filterType,filterStatut,filterZone]);
 
   const clientFactures = (cid) => factures.filter(f=>f.client_id===cid);
   const clientImpayees = (cid) => clientFactures(cid).filter(f=>f.statut==="Impayée");
@@ -1989,11 +1994,22 @@ function BossokApp({ session, onLogout }) {
     <div style={{...S.card,marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
       <input value={searchC} onChange={e=>setSearchC(e.target.value)} placeholder="🔍 Rechercher un client..." style={{...S.input,flex:1,minWidth:160}}/>
       <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
-        {["Tous","Snack","Restaurant","Café","Market","Administrative","Creche","Distributor"].map(t=><option key={t}>{t}</option>)}
+        <option value="Tous">Type : Tous</option>
+        {["Snack","Restaurant","Café","Market","Administrative","Creche","Distributor"].map(t=><option key={t} value={t}>{t}</option>)}
       </select>
       <select value={filterStatut} onChange={e=>setFilterStatut(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
-        <option>Tous</option><option>Actif</option><option>Passif</option>
+        <option value="Tous">Statut : Tous</option>
+        <option value="Actif">✅ Actif</option>
+        <option value="Passif">⛔ Passif</option>
       </select>
+      <select value={filterZone} onChange={e=>setFilterZone(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
+        <option value="Tous">Zone : Toutes</option>
+        {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France"].map(z=><option key={z} value={z}>{z}</option>)}
+      </select>
+      {(filterType!=="Tous"||filterStatut!=="Tous"||filterZone!=="Tous"||searchC)&&(
+        <button onClick={()=>{setFilterType("Tous");setFilterStatut("Tous");setFilterZone("Tous");setSearchC("");}}
+          style={{...S.btn("#FEE2E2","#DC2626"),padding:"6px 10px",fontSize:12}}>✕ Reset</button>
+      )}
     </div>
     <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{filteredClients.length} client(s)</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
@@ -2945,13 +2961,13 @@ function BossokApp({ session, onLogout }) {
         </div>
       </div>
       <div style={{display:"flex",gap:0,borderBottom:"1px solid #E5E7EB",marginBottom:14}}>
-        {[["info","Infos"],["factures","Factures"],["consignes","Consignes"],["prix","Prix perso"]].map(([k,l])=>(
+        {[["info","Infos"],["factures","Factures"],["visites","Visites"],["consignes","Consignes"],["prix","Prix perso"]].map(([k,l])=>(
           <button key={k} style={S.tab(clientTab===k)} onClick={()=>setClientTab(k)}>{l}</button>
         ))}
       </div>
       {clientTab==="info"&&(
         <div style={{display:"grid",gap:8}}>
-          {[["Adresse",selClient.adresse],["Téléphone",selClient.telephone],["Email",selClient.email||"—"],["N° TVA",selClient.tva||"—"],["Région",selClient.region],["Conditions",selClient.conditions],["Statut",selClient.statut]].map(([l,v])=>(
+          {[["Adresse",selClient.adresse],["Téléphone",selClient.telephone],["Email",selClient.email||"—"],["Contact",selClient.contact||"—"],["N° TVA",selClient.tva||"—"],["Région",selClient.region],["Conditions",selClient.conditions],["Statut",selClient.statut]].map(([l,v])=>(
             <div key={l} style={{display:"flex",gap:12,fontSize:13}}>
               <span style={{color:"#9CA3AF",width:100,flexShrink:0}}>{l}</span>
               <span style={{fontWeight:500}}>{v}</span>
@@ -2993,6 +3009,80 @@ function BossokApp({ session, onLogout }) {
           )}
         </div>
       )}
+      {clientTab==="visites"&&(()=>{
+        const visites = (selClient.visites||[]).sort((a,b)=>b.date.localeCompare(a.date));
+        const saveVisite = async () => {
+          if (!visiteDate) return;
+          const newVisites = [...(selClient.visites||[]), {date:visiteDate, note:visiteNote, id:Date.now()}];
+          await db.update("clients", selClient.id, {visites:newVisites});
+          setSelClient({...selClient, visites:newVisites});
+          setClients(prev=>prev.map(c=>c.id===selClient.id?{...c,visites:newVisites}:c));
+          setVisiteDate(""); setVisiteNote(""); setShowVisiteForm(false);
+        };
+        const deleteVisite = async (vid) => {
+          const newVisites = (selClient.visites||[]).filter(v=>v.id!==vid);
+          await db.update("clients", selClient.id, {visites:newVisites});
+          setSelClient({...selClient, visites:newVisites});
+          setClients(prev=>prev.map(c=>c.id===selClient.id?{...c,visites:newVisites}:c));
+        };
+        return(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontWeight:600,fontSize:13}}>Historique des visites commerciales</div>
+              <button onClick={()=>{setShowVisiteForm(true);setVisiteDate(new Date().toISOString().split("T")[0]);setVisiteNote("");}}
+                style={{...S.btn("#1D4ED8"),padding:"5px 12px",fontSize:12}}>+ Ajouter une visite</button>
+            </div>
+            {showVisiteForm&&(
+              <div style={{background:"#F0F9FF",border:"1px solid #BFDBFE",borderRadius:8,padding:12,marginBottom:12}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                  <div>
+                    <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:3}}>Date de la visite</label>
+                    <input type="date" value={visiteDate} onChange={e=>setVisiteDate(e.target.value)} style={S.input}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:3}}>Commercial</label>
+                    <input value="f.aslan@bossok.lu" readOnly style={{...S.input,background:"#F9FAFB",color:"#6B7280"}}/>
+                  </div>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:3}}>Remarques / Compte-rendu</label>
+                  <textarea value={visiteNote} onChange={e=>setVisiteNote(e.target.value)}
+                    placeholder="Résumé de la visite, commande prévue, points à suivre..."
+                    style={{...S.input,height:80,resize:"vertical",fontFamily:"inherit"}}/>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={saveVisite} style={{...S.btn("#059669"),padding:"6px 16px",fontSize:12}}>💾 Enregistrer</button>
+                  <button onClick={()=>setShowVisiteForm(false)} style={{...S.btn("#F3F4F6","#374151"),padding:"6px 12px",fontSize:12}}>Annuler</button>
+                </div>
+              </div>
+            )}
+            {visites.length===0?(
+              <div style={{textAlign:"center",color:"#9CA3AF",padding:"32px 0",fontSize:13}}>
+                <div style={{fontSize:32,marginBottom:8}}>📋</div>
+                Aucune visite enregistrée
+              </div>
+            ):(
+              <div>
+                {visites.map((v,i)=>(
+                  <div key={v.id||i} style={{padding:"10px 12px",background:i%2===0?"#fff":"#FAFAFA",borderRadius:8,marginBottom:6,border:"1px solid #F1F5F9"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div style={{flex:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                          <span style={{fontWeight:700,color:"#1D4ED8",fontSize:13}}>📅 {v.date}</span>
+                          <span style={{fontSize:10,color:"#9CA3AF"}}>f.aslan@bossok.lu</span>
+                        </div>
+                        {v.note&&<div style={{fontSize:12,color:"#374151",lineHeight:1.5}}>{v.note}</div>}
+                      </div>
+                      <button onClick={()=>deleteVisite(v.id||i)} style={{...S.btn("#FEE2E2","#DC2626"),padding:"3px 8px",fontSize:10,marginLeft:8}}>🗑️</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {clientTab==="consignes"&&(
         <div>
           {creditConsignes(selClient.id)>0&&(
@@ -3240,7 +3330,7 @@ function BossokApp({ session, onLogout }) {
         <button onClick={()=>setShowClientForm(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
       <div style={{display:"grid",gap:10}}>
-        {[["Nom *","nom","text"],["Adresse","adresse","text"],["Téléphone","telephone","text"],["Email","email","email"],["N° TVA","tva","text"]].map(([l,k,t])=>(
+        {[["Nom *","nom","text"],["Adresse","adresse","text"],["Téléphone","telephone","text"],["Email","email","email"],["N° TVA","tva","text"],["Personne de contact","contact","text"]].map(([l,k,t])=>(
           <div key={k}>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{l}</label>
             <input type={t} value={clientForm[k]||""} onChange={e=>{
