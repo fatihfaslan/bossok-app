@@ -952,6 +952,7 @@ function BossokApp({ session, onLogout }) {
     const dow = new Date().getDay();
     return dow === 0 ? 0 : Math.min(dow - 1, 4);
   });
+  const [planningWeekOffset, setPlanningWeekOffset] = useState(0); // 0=current, -1=last week, etc.
   const [searchC, setSearchC] = useState("");
   const [filterType, setFilterType] = useState("Tous");
   const [filterStatut, setFilterStatut] = useState("Tous");
@@ -2416,56 +2417,104 @@ function BossokApp({ session, onLogout }) {
       </button>
     </div>
     <div>
-      <div style={{fontWeight:600,fontSize:13,marginBottom:8}}>En attente ({commandes.filter(c=>c.statut==="En attente").length})</div>
-      {commandes.filter(c=>c.statut==="En attente").length===0?(
-        <div style={{...S.card,textAlign:"center",padding:"40px 0",color:"#9CA3AF",fontSize:13}}>
-          <div style={{fontSize:32,marginBottom:8}}>📋</div>Aucune commande
-        </div>
-      ):(
-        commandes.filter(c=>c.statut==="En attente").map(cmd=>(
-          <div key={cmd.id} style={{...S.card,marginBottom:8,borderLeft:"3px solid #F59E0B"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-              <div>
-                <div style={{fontWeight:600,fontSize:13}}>{cmd.client_nom}</div>
-                <div style={{fontSize:11,color:"#6B7280"}}>📍 {cmd.client_adresse}</div>
-                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:3}}>
-                  <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 {cmd.chauffeur==="A"?"Sefa":"Mikail"}</span>
-                  {cmd.jour_livraison&&<span style={S.badge("#FEF3C7","#92400E")}>📅 {cmd.jour_livraison}</span>}
-                </div>
-                <div style={{fontSize:11,marginTop:4}}>{(cmd.produits||[]).map((p,i)=><span key={i} style={{marginRight:6}}>📦 {p.nom} ×{p.qte}</span>)}</div>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
-                <button onClick={()=>marquerLivre(cmd.id)} style={{...S.btn("#059669"),padding:"4px 10px",fontSize:11}}>✓ Livré</button>
-                <button onClick={()=>openEditCmd(cmd)} style={{...S.btn("#1D4ED8"),padding:"4px 10px",fontSize:11}}>✏️ Modifier</button>
-                <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
-                <button onClick={()=>supprimerCommande(cmd.id)} style={{...S.btn("#EF4444"),padding:"4px 10px",fontSize:11}}>🗑️ Supprimer</button>
-              </div>
-            </div>
+      {(()=>{
+        const [cmdView, setCmdView] = React.useState("attente");
+        const cmdList = cmdView==="attente"
+          ? commandes.filter(c=>c.statut==="En attente")
+          : cmdView==="livrees"
+          ? [...commandes].filter(c=>c.statut==="Livré").sort((a,b)=>(b.date_commande||"").localeCompare(a.date_commande||"")).slice(0,100)
+          : [...commandes].sort((a,b)=>(b.date_commande||"").localeCompare(a.date_commande||""));
+        return(<>
+          <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+            {[["attente","⏳ En attente",commandes.filter(c=>c.statut==="En attente").length],
+              ["livrees","✅ Livrées",commandes.filter(c=>c.statut==="Livré").length],
+              ["toutes","📋 Toutes",commandes.length]
+            ].map(([k,l,n])=>(
+              <button key={k} onClick={()=>setCmdView(k)}
+                style={{...S.btn(cmdView===k?"#1D4ED8":"#F1F5F9",cmdView===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:cmdView===k?700:400}}>
+                {l} ({n})
+              </button>
+            ))}
           </div>
-        ))
-      )}
+          {cmdList.length===0?(
+            <div style={{...S.card,textAlign:"center",padding:"40px 0",color:"#9CA3AF",fontSize:13}}>
+              <div style={{fontSize:32,marginBottom:8}}>📋</div>Aucune commande
+            </div>
+          ):(
+            cmdList.map(cmd=>(
+              <div key={cmd.id} style={{...S.card,marginBottom:8,borderLeft:"3px solid "+(cmd.statut==="Livré"?"#059669":"#F59E0B")}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div>
+                    <div style={{fontWeight:600,fontSize:13}}>{cmd.client_nom}</div>
+                    <div style={{fontSize:11,color:"#6B7280"}}>📍 {cmd.client_adresse}</div>
+                    <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:3}}>
+                      <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 {cmd.chauffeur==="A"?"Sefa":"Mikail"}</span>
+                      {cmd.jour_livraison&&<span style={S.badge("#FEF3C7","#92400E")}>📅 {cmd.jour_livraison}</span>}
+                      {cmd.date_commande&&<span style={S.badge("#F3F4F6","#6B7280")}>🗓️ {cmd.date_commande}</span>}
+                      {cmd.statut==="Livré"&&<span style={S.badge("#DCFCE7","#166534")}>✅ Livré</span>}
+                    </div>
+                    <div style={{fontSize:11,marginTop:4,display:"flex",flexWrap:"wrap",gap:4}}>
+                      {(cmd.produits||[]).map((p,i)=>(
+                        <span key={i} style={{background:"#F1F5F9",padding:"1px 6px",borderRadius:4,fontSize:10}}>📦 {p.nom} ×{p.qte}</span>
+                      ))}
+                    </div>
+                    {cmd.notes&&<div style={{fontSize:11,color:"#F59E0B",marginTop:3}}>💬 {cmd.notes}</div>}
+                  </div>
+                  {cmd.statut!=="Livré"&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+                      <button onClick={()=>marquerLivre(cmd.id)} style={{...S.btn("#059669"),padding:"4px 10px",fontSize:11}}>✓ Livré</button>
+                      <button onClick={()=>openEditCmd(cmd)} style={{...S.btn("#1D4ED8"),padding:"4px 10px",fontSize:11}}>✏️ Modifier</button>
+                      <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
+                      <button onClick={()=>supprimerCommande(cmd.id)} style={{...S.btn("#EF4444"),padding:"4px 10px",fontSize:11}}>🗑️ Supprimer</button>
+                    </div>
+                  )}
+                  {cmd.statut==="Livré"&&(
+                    <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </>);
+      })()}
     </div>
-  </div>
-)}
-
 {/* ══ PLANNING ══════════════════════════════════════════════════ */}
 {page==="planning" && (()=>{
   const days = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
   const today = new Date();
   const todayDow = today.getDay() === 0 ? 6 : today.getDay() - 1; // 0=Mon
+  
+  // Week navigation
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - todayDow + planningWeekOffset * 7);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 4);
+  const isCurrentWeek = planningWeekOffset === 0;
+  const weekLabel = planningWeekOffset === 0 ? "Semaine courante" :
+    planningWeekOffset === -1 ? "Semaine dernière" :
+    `Semaine du ${weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})}`;
 
   // Build week dates
   const getWeekDate = (dayIdx) => {
-    const d = new Date();
-    const diff = dayIdx - todayDow;
-    d.setDate(d.getDate() + diff);
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + dayIdx);
     return d.toLocaleDateString('fr-LU', {day:'2-digit', month:'2-digit'});
   };
+  const getDayDate = (dayIdx) => {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + dayIdx);
+    return d.toISOString().split('T')[0];
+  };
 
-  // Get commandes for selected day
+  // Get commandes for selected day - use date if available, else zone
+  const selectedDate = getDayDate(selectedDay);
   const dayCommandes = commandes.filter(c => {
-    if (c.statut === 'Livré') return false;
-    // Check if this commande's region belongs to selected day
+    // If commande has a delivery date, filter by date
+    if (c.date_livraison) {
+      return c.date_livraison === selectedDate || c.jour_livraison === days[selectedDay];
+    }
+    // Else filter by zone (for commandes without date)
+    if (isCurrentWeek && c.statut === 'Livré') return false;
     const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
     const allZones = [...(zones.A||[]), ...(zones.B||[])];
     return allZones.includes(c.client_region) || !c.client_region;
@@ -2525,6 +2574,23 @@ function BossokApp({ session, onLogout }) {
 
   return(
   <div>
+    {/* Week navigation */}
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,...S.card,padding:"10px 16px"}}>
+      <button onClick={()=>setPlanningWeekOffset(w=>w-1)}
+        style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>‹ Semaine préc.</button>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontWeight:700,fontSize:14,color:"#1D4ED8"}}>{weekLabel}</div>
+        <div style={{fontSize:11,color:"#9CA3AF"}}>
+          {weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})} → {weekEnd.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit',year:'numeric'})}
+        </div>
+      </div>
+      <button onClick={()=>setPlanningWeekOffset(w=>Math.min(0,w+1))}
+        disabled={isCurrentWeek}
+        style={{...S.btn(isCurrentWeek?"#F9FAFB":"#F1F5F9",isCurrentWeek?"#D1D5DB":"#374151"),padding:"6px 14px",fontSize:13,opacity:isCurrentWeek?0.5:1}}>
+        Semaine suiv. ›
+      </button>
+    </div>
+
     {/* Day selector */}
     <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
       {days.map((day,i)=>{
