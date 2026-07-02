@@ -3449,6 +3449,5 @@ function BossokApp({ session, onLogout }) {
   </div>
 )}
 
-    </div>
   );
 }
