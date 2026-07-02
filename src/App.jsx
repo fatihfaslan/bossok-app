@@ -1505,7 +1505,7 @@ function BossokApp({ session, onLogout }) {
   );
 
   return (
-    <>
+    <React.Fragment>
     <div style={S.app}>
       {/* SIDEBAR */}
       <div style={S.sidebar}>
@@ -3363,6 +3363,7 @@ function BossokApp({ session, onLogout }) {
     </div>
   </div>
 )}
+</div>
 
 {/* ══ MODAL IMPRIMER APRES CREATION ══════════════════════════════ */}
 {lastFacture && (
@@ -3450,6 +3451,6 @@ function BossokApp({ session, onLogout }) {
   </div>
 )}
 
-    </>
+    </React.Fragment>
   );
 }
