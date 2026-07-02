@@ -1505,6 +1505,7 @@ function BossokApp({ session, onLogout }) {
   );
 
   return (
+    <>
     <div style={S.app}>
       {/* SIDEBAR */}
       <div style={S.sidebar}>
@@ -3449,5 +3450,6 @@ function BossokApp({ session, onLogout }) {
   </div>
 )}
 
+    </>
   );
 }
