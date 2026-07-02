@@ -3387,6 +3387,10 @@ function BossokApp({ session, onLogout }) {
   </div>
 )}
 
+        </div>
+      </div>
+    </div>
+
 {/* ══ MODAL CLIENT FORM ══════════════════════════════════════════ */}
 {showClientForm&&(
   <div style={S.modal} onClick={()=>setShowClientForm(false)}>
