@@ -986,11 +986,7 @@ function BossokApp({ session, onLogout }) {
     const now = new Date();
     return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
   });
-  const [dashDateTo, setDashDateTo] = useState(() => {
-    const now = new Date();
-    const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
-    return last.toISOString().split("T")[0];
-  });
+  const [dashDateTo, setDashDateTo] = useState(() => new Date().toISOString().split("T")[0]);
   const [dashClient, setDashClient] = useState("");
   const [dashZone, setDashZone] = useState("");
   const [dashChauffeur, setDashChauffeur] = useState("");
@@ -1004,20 +1000,17 @@ function BossokApp({ session, onLogout }) {
     try {
       setLoading(true);
 
-      // Fetch all factures with pagination (bypass Supabase 1000 row limit)
+      // Fetch all factures with pagination (offset/limit to bypass 1000 row limit)
       const fetchAllFactures = async () => {
         const pageSize = 1000;
         let all = [];
-        let page = 0;
-        let keepGoing = true;
-        while (keepGoing) {
-          const from = page * pageSize;
-          const to = from + pageSize - 1;
-          const batch = await sb("factures?select=*&order=id.asc", "GET", null, from, to);
-          if (!batch || batch.length === 0) { keepGoing = false; break; }
+        let offset = 0;
+        while (true) {
+          const batch = await sb("factures?select=*&order=id.asc&limit="+pageSize+"&offset="+offset);
+          if (!batch || batch.length === 0) break;
           all = all.concat(batch);
-          if (batch.length < pageSize) { keepGoing = false; break; }
-          page++;
+          if (batch.length < pageSize) break;
+          offset += pageSize;
         }
         return all.reverse();
       };
@@ -1561,21 +1554,17 @@ function BossokApp({ session, onLogout }) {
     const y = now.getFullYear();
     const m = now.getMonth();
     if (p==="semaine") {
-      const dow = now.getDay()===0?7:now.getDay(); // 1=Mon, 7=Sun
+      const dow = now.getDay()===0?7:now.getDay();
       const mon = new Date(now); mon.setDate(now.getDate()-dow+1);
-      const sun = new Date(mon); sun.setDate(mon.getDate()+6);
-      return [mon.toISOString().split("T")[0], sun.toISOString().split("T")[0]];
+      return [mon.toISOString().split("T")[0], now.toISOString().split("T")[0]];
     } else if (p==="mois") {
-      const lastDay = new Date(y, m+1, 0).getDate();
-      return [y+"-"+String(m+1).padStart(2,"0")+"-01", y+"-"+String(m+1).padStart(2,"0")+"-"+String(lastDay).padStart(2,"0")];
+      return [y+"-"+String(m+1).padStart(2,"0")+"-01", now.toISOString().split("T")[0]];
     } else if (p==="trimestre") {
       const d3 = new Date(now); d3.setMonth(d3.getMonth()-3); d3.setDate(1);
       return [d3.toISOString().split("T")[0], now.toISOString().split("T")[0]];
     } else if (p==="annee") {
-      return [y+"-01-01", y+"-12-31"];
-    } else if (p==="2mois") {
-      const d2 = new Date(now); d2.setMonth(d2.getMonth()-2);
-      return [d2.toISOString().split("T")[0], now.toISOString().split("T")[0]];
+      // Show current calendar year
+      return [y+"-01-01", (y)+"-12-31"];
     } else if (p==="13mois") {
       const dFrom = new Date(now); dFrom.setMonth(dFrom.getMonth()-13);
       const dTo = new Date(now); dTo.setMonth(dTo.getMonth()+1);
@@ -1716,7 +1705,7 @@ function BossokApp({ session, onLogout }) {
     {/* ── Filtres ── */}
     <div style={{...S.card,marginBottom:14,padding:"12px 16px"}}>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
-        {[["semaine","Semaine"],["mois","Mois"],["2mois","2 mois"],["trimestre","Trimestre"],["annee","Année"],["13mois","13 mois"]].map(([k,l])=>(
+        {[["semaine","Semaine"],["mois","Mois"],["trimestre","Trimestre"],["annee","Année"],["13mois","13 mois"]].map(([k,l])=>(
           <button key={k} onClick={()=>applyPeriod(k)}
             style={{...S.btn(dashPeriod===k?"#1D4ED8":"#F1F5F9",dashPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:dashPeriod===k?700:400}}>
             {l}
