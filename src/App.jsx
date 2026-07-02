@@ -976,10 +976,10 @@ function BossokApp({ session, onLogout }) {
   const [stockCat, setStockCat] = useState("Tous");
 
   // Dashboard filters
-  const [dashPeriod, setDashPeriod] = useState("mois");
+  const [dashPeriod, setDashPeriod] = useState("13mois");
   const [dashDateFrom, setDashDateFrom] = useState(() => {
-    const now = new Date();
-    return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
+    const d = new Date(); d.setMonth(d.getMonth()-13);
+    return d.toISOString().split("T")[0];
   });
   const [dashDateTo, setDashDateTo] = useState(() => new Date().toISOString().split("T")[0]);
   const [dashClient, setDashClient] = useState("");
@@ -1285,6 +1285,18 @@ function BossokApp({ session, onLogout }) {
 
       // Mark as delivered
       await db.update("commandes", id, {statut:"Livré"});
+      
+      // Update stock - reduce quantities
+      for (const p of (cmd.produits||[])) {
+        const prod = PRODUITS.find(x=>x.nom===p.nom);
+        if (!prod) continue;
+        const current = stock.find(s=>s.produit_id===prod.id);
+        const currentQte = current?.quantite||0;
+        const newQte = Math.max(0, currentQte - p.qte);
+        if (current) {
+          await db.update("stock", prod.id, {quantite:newQte, updated_at:new Date().toISOString()});
+        }
+      }
 
       // Create invoice automatically
       const client = clients.find(c=>c.id===cmd.client_id);
@@ -1685,8 +1697,10 @@ function BossokApp({ session, onLogout }) {
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
         <select value={dashClient} onChange={e=>setDashClient(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:180}}>
-          <option value="">Tous les clients</option>
-          {[...clients].sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=><option key={c.id} value={c.id}>{c.nom}</option>)}
+          <option value="">Tous les clients ({clients.length})</option>
+          {[...clients].filter(c=>c.statut==="Actif").sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=>(
+            <option key={c.id} value={c.id}>{c.nom}</option>
+          ))}
         </select>
         <select value={dashZone} onChange={e=>setDashZone(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
@@ -1705,6 +1719,7 @@ function BossokApp({ session, onLogout }) {
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:200}}>
           <option value="">Tous les produits</option>
           {PRODUITS.map(p=><option key={p.id} value={p.nom}>{p.nom}</option>)}
+          {dashProduit&&<option value={dashProduit}>{dashProduit}</option>}
         </select>
         {(dashClient||dashZone||dashChauffeur||dashProduit)&&(
           <button onClick={()=>{setDashClient("");setDashZone("");setDashChauffeur("");setDashProduit("");}}
