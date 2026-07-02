@@ -953,6 +953,7 @@ function BossokApp({ session, onLogout }) {
     return dow === 0 ? 0 : Math.min(dow - 1, 4);
   });
   const [planningWeekOffset, setPlanningWeekOffset] = useState(0); // 0=current, -1=last week, etc.
+  const [cmdView, setCmdView] = useState("attente");
   const [searchC, setSearchC] = useState("");
   const [filterType, setFilterType] = useState("Tous");
   const [filterStatut, setFilterStatut] = useState("Tous");
@@ -2418,7 +2419,6 @@ function BossokApp({ session, onLogout }) {
     </div>
     <div>
       {(()=>{
-        const [cmdView, setCmdView] = React.useState("attente");
         const cmdList = cmdView==="attente"
           ? commandes.filter(c=>c.statut==="En attente")
           : cmdView==="livrees"
@@ -3007,9 +3007,6 @@ function BossokApp({ session, onLogout }) {
     </div>
   </div>
 )}
-
-        </div>
-      </div>
 
 {/* ══ MODAL CLIENT DETAIL ══════════════════════════════════════ */}
 {selClient&&(
