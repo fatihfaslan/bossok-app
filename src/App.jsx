@@ -2286,7 +2286,7 @@ function BossokApp({ session, onLogout }) {
           </div>
         )}
       </div>
-    )}
+  )}
   </div>
   );
 })()}
@@ -2729,7 +2729,7 @@ function BossokApp({ session, onLogout }) {
           </div>
         ))}
       </div>
-    )}
+  )}
   </div>
   );
 })()}
@@ -3385,7 +3385,7 @@ function BossokApp({ session, onLogout }) {
       </div>
     </div>
   </div>
-)}
+  )}
 
   {/* ══ MODAL CLIENT FORM ══════════════════════════════════════════ */}
   {showClientForm&&(
@@ -3448,7 +3448,6 @@ function BossokApp({ session, onLogout }) {
     </div>
   </div>
   )}
-
   </div>
   );
 }
