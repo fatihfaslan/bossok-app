@@ -981,12 +981,16 @@ function BossokApp({ session, onLogout }) {
   const [stockCat, setStockCat] = useState("Tous");
 
   // Dashboard filters
-  const [dashPeriod, setDashPeriod] = useState("13mois");
+  const [dashPeriod, setDashPeriod] = useState("mois");
   const [dashDateFrom, setDashDateFrom] = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth()-13);
-    return d.toISOString().split("T")[0];
+    const now = new Date();
+    return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
   });
-  const [dashDateTo, setDashDateTo] = useState(() => new Date().toISOString().split("T")[0]);
+  const [dashDateTo, setDashDateTo] = useState(() => {
+    const now = new Date();
+    const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
+    return last.toISOString().split("T")[0];
+  });
   const [dashClient, setDashClient] = useState("");
   const [dashZone, setDashZone] = useState("");
   const [dashChauffeur, setDashChauffeur] = useState("");
@@ -1569,9 +1573,13 @@ function BossokApp({ session, onLogout }) {
       return [d3.toISOString().split("T")[0], now.toISOString().split("T")[0]];
     } else if (p==="annee") {
       return [y+"-01-01", y+"-12-31"];
+    } else if (p==="2mois") {
+      const d2 = new Date(now); d2.setMonth(d2.getMonth()-2);
+      return [d2.toISOString().split("T")[0], now.toISOString().split("T")[0]];
     } else if (p==="13mois") {
-      const d = new Date(now); d.setMonth(d.getMonth()-13);
-      return [d.toISOString().split("T")[0], now.toISOString().split("T")[0]];
+      const dFrom = new Date(now); dFrom.setMonth(dFrom.getMonth()-13);
+      const dTo = new Date(now); dTo.setMonth(dTo.getMonth()+1);
+      return [dFrom.toISOString().split("T")[0], dTo.toISOString().split("T")[0]];
     }
     return [dashDateFrom, dashDateTo];
   };
@@ -1708,7 +1716,7 @@ function BossokApp({ session, onLogout }) {
     {/* ── Filtres ── */}
     <div style={{...S.card,marginBottom:14,padding:"12px 16px"}}>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
-        {[["semaine","Semaine"],["mois","Mois"],["trimestre","Trimestre"],["annee","Année"],["13mois","13 mois"]].map(([k,l])=>(
+        {[["semaine","Semaine"],["mois","Mois"],["2mois","2 mois"],["trimestre","Trimestre"],["annee","Année"],["13mois","13 mois"]].map(([k,l])=>(
           <button key={k} onClick={()=>applyPeriod(k)}
             style={{...S.btn(dashPeriod===k?"#1D4ED8":"#F1F5F9",dashPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:dashPeriod===k?700:400}}>
             {l}
