@@ -1505,8 +1505,7 @@ function BossokApp({ session, onLogout }) {
   );
 
   return (
-    <React.Fragment>
-      <div style={S.app}>
+    <div style={S.app}>
       {/* SIDEBAR */}
       <div style={S.sidebar}>
         <div style={{padding:"16px",borderBottom:"1px solid #1E293B"}}>
@@ -2288,7 +2287,6 @@ function BossokApp({ session, onLogout }) {
         )}
       </div>
   )}
-    </React.Fragment>
   );
 })()}
 {/* ══ COMMANDES ══════════════════════════════════════════════════ */}
@@ -2731,7 +2729,6 @@ function BossokApp({ session, onLogout }) {
         ))}
       </div>
   )}
-    </React.Fragment>
   );
 })()}
 
@@ -3388,10 +3385,9 @@ function BossokApp({ session, onLogout }) {
   </div>
   )}
 
-    </div>
 
-    {/* ══ MODAL CLIENT FORM ══════════════════════════════════════════ */}
-    {showClientForm&&(
+  {/* ══ MODAL CLIENT FORM ══════════════════════════════════════════ */}
+  {showClientForm&&(
   <div style={S.modal} onClick={()=>setShowClientForm(false)}>
     <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
@@ -3451,6 +3447,6 @@ function BossokApp({ session, onLogout }) {
     </div>
   </div>
   )}
-    </React.Fragment>
+  </div>
   );
 }
