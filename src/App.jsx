@@ -780,7 +780,7 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
             📋 Reprendre la dernière commande
           </button>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -2408,7 +2408,7 @@ function BossokApp({ session, onLogout }) {
               ))}
             </div>
           </div>
-        ))}
+        )}
       </div>
 
       <div style={{marginBottom:12}}>
@@ -2836,7 +2836,7 @@ function BossokApp({ session, onLogout }) {
       );
     })}
   </div>
-))}
+)}
 
 {/* ══ STOCK ══════════════════════════════════════════════════════ */}
 {page==="stock" && (
@@ -2890,7 +2890,7 @@ function BossokApp({ session, onLogout }) {
       </table>
     </div>
   </div>
-))}
+)}
 
 {/* ══ CONSIGNES ══════════════════════════════════════════════════ */}
 {page==="consignes" && (
@@ -3010,7 +3010,7 @@ function BossokApp({ session, onLogout }) {
       </table>
     </div>
   </div>
-))}
+)}
 
   {/* ══ MODAL CLIENT DETAIL ══════════════════════════════════════ */}
   {selClient&&(
@@ -3044,7 +3044,7 @@ function BossokApp({ session, onLogout }) {
             </div>
           ))}
         </div>
-      ))}
+      )}
       {clientTab==="factures"&&(
         <div>
           {clientImpayees(selClient.id).length>0&&(
@@ -3057,7 +3057,7 @@ function BossokApp({ session, onLogout }) {
                 </div>
               ))}
             </div>
-          ))}
+          )}
           {clientFactures(selClient.id).length===0?(
             <div style={{textAlign:"center",color:"#9CA3AF",padding:"30px 0",fontSize:13}}>Aucune facture</div>
           ):(
@@ -3076,9 +3076,9 @@ function BossokApp({ session, onLogout }) {
                 </div>
               );
             })
-          ))}
+          )}
         </div>
-      ))}
+      )}
       {clientTab==="visites"&&(()=>{
         const visites = (selClient.visites||[]).sort((a,b)=>b.date.localeCompare(a.date));
         const saveVisite = async () => {
@@ -3148,7 +3148,7 @@ function BossokApp({ session, onLogout }) {
                   </div>
                 ))}
               </div>
-            ))}
+            )}
           </div>
         );
       })()}
@@ -3173,9 +3173,9 @@ function BossokApp({ session, onLogout }) {
                 <span style={{fontWeight:700,color:"#7C3AED"}}>{r.solde} cs · {fmtFull(r.solde*r.consigne)}</span>
               </div>
             ))
-          ))}
+          )}
         </div>
-      ))}
+      )}
       {clientTab==="prix"&&(
         <div>
           <div style={{fontSize:12,color:"#6B7280",marginBottom:8}}>Tarif standard : {selClient.type}. Entrez un prix pour personnaliser.</div>
@@ -3230,9 +3230,9 @@ function BossokApp({ session, onLogout }) {
                     </div>
                   ))}
                 </div>
-              ))}
+              )}
             </div>
-          ))}
+          )}
         </div>
         <div>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>N° Facture</label>
@@ -3276,7 +3276,7 @@ function BossokApp({ session, onLogout }) {
             Total dû : {fmtFull(clientImpayees(factClientId).reduce((s,f)=>s+totalFact(f.lignes).total,0))}
           </div>
         </div>
-      ))}
+      )}
       {factClientId&&(
         <div style={{marginBottom:12}}>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:4}}>Produits</label>
@@ -3314,7 +3314,7 @@ function BossokApp({ session, onLogout }) {
             <span style={{fontWeight:700}}>Total : <b>{fmtFull(factLignes.reduce((s,l)=>s+l.qte*(l.pu+(l.consigne||0)),0))}</b></span>
           </div>
         </div>
-      ))}
+      )}
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
         <input value={factNotes} onChange={e=>setFactNotes(e.target.value)} placeholder="Notes optionnelles..." style={S.input}/>
@@ -3327,7 +3327,7 @@ function BossokApp({ session, onLogout }) {
       </div>
     </div>
   </div>
-))}
+)}
 
   {/* ══ MODAL RETOUR CONSIGNES ══════════════════════════════════════ */}
   {showRetour&&(
@@ -3452,7 +3452,7 @@ function BossokApp({ session, onLogout }) {
       </div>
     </div>
   </div>
-  ))}
+  )}
   </div>
   );
 }
