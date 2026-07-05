@@ -785,6 +785,7 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
   );
 }
 
+
 // ═══════════════════════════════════════════════════════════════════
 // LOGIN PAGE
 // ═══════════════════════════════════════════════════════════════════
@@ -911,6 +912,7 @@ function LoginPage({ onLogin }) {
   );
 }
 
+
 // ═══════════════════════════════════════════════════════════════════
 // MAIN APP WRAPPER
 // ═══════════════════════════════════════════════════════════════════
@@ -925,6 +927,7 @@ export default function AppWrapper() {
     </div>
   );
 }
+
 
 function App({ session, onLogout }) {
   // renamed internally
@@ -1979,7 +1982,8 @@ function BossokApp({ session, onLogout }) {
     </div>
   </div>
   );
-})()}
+}
+)()}
 
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && (
@@ -2288,7 +2292,8 @@ function BossokApp({ session, onLogout }) {
       </div>
   )}
   );
-})()}
+}
+)()}
 {/* ══ COMMANDES ══════════════════════════════════════════════════ */}
 {page==="commandes" && (
   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
@@ -2730,7 +2735,8 @@ function BossokApp({ session, onLogout }) {
       </div>
   )}
   );
-})()}
+}
+)()}
 
 {/* ══ ZONES ════════════════════════════════════════════════════ */}
 {page==="zones" && (
@@ -3446,7 +3452,7 @@ function BossokApp({ session, onLogout }) {
       </div>
     </div>
   </div>
-  )}
+  ))}
   </div>
   );
 }
