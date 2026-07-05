@@ -1983,7 +1983,6 @@ function BossokApp({ session, onLogout }) {
   </div>
   );
 }
-)()}
 
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && (
@@ -2293,7 +2292,6 @@ function BossokApp({ session, onLogout }) {
   )}
   );
 }
-)()}
 {/* ══ COMMANDES ══════════════════════════════════════════════════ */}
 {page==="commandes" && (
   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
@@ -2736,7 +2734,6 @@ function BossokApp({ session, onLogout }) {
   )}
   );
 }
-)()}
 
 {/* ══ ZONES ════════════════════════════════════════════════════ */}
 {page==="zones" && (
