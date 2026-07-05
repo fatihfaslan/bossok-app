@@ -1728,7 +1728,7 @@ function BossokApp({ session, onLogout }) {
             style={{...S.btn(dashPeriod===k?"#1D4ED8":"#F1F5F9",dashPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:dashPeriod===k?700:400}}>
             {l}
           </button>
-        )))}
+        ))}
         <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:8}}>
           <input type="date" value={dashDateFrom} onChange={e=>{setDashDateFrom(e.target.value);setDashPeriod("custom");}}
             style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
