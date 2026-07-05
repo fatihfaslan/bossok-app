@@ -1744,7 +1744,7 @@ function BossokApp({ session, onLogout }) {
           <option value="">Tous les clients ({clients.length})</option>
           {[...clients].filter(c=>c.statut==="Actif").sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=>(
             <option key={c.id} value={c.id}>{c.nom}</option>
-          )}
+          ))}
         </select>
         <select value={dashZone} onChange={e=>setDashZone(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
