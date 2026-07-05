@@ -773,7 +773,7 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
               <span key={i} style={{fontSize:10,background:"#DBEAFE",color:"#1D4ED8",padding:"2px 6px",borderRadius:4}}>
                 {p.nom} ×{p.qte}
               </span>
-            ))}
+            )))}
           </div>
           <button onClick={()=>onRepeat(lastCmd.produits||[])}
             style={{...S.btn("#1D4ED8"),padding:"3px 10px",fontSize:11,width:"100%"}}>
@@ -1525,7 +1525,7 @@ function BossokApp({ session, onLogout }) {
             <div key={n.k} style={S.navItem(page===n.k)} onClick={()=>setPage(n.k)}>
               <span>{n.icon}</span><span>{n.label}</span>
             </div>
-          ))}
+          )))}
         </div>
         <div style={{padding:"12px",borderTop:"1px solid #1E293B",fontSize:11,color:"#475569"}}>
           {saving && <span style={{color:"#60A5FA"}}>💾 Sauvegarde...</span>}
@@ -1728,7 +1728,7 @@ function BossokApp({ session, onLogout }) {
             style={{...S.btn(dashPeriod===k?"#1D4ED8":"#F1F5F9",dashPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:dashPeriod===k?700:400}}>
             {l}
           </button>
-        )}
+        )))}
         <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:8}}>
           <input type="date" value={dashDateFrom} onChange={e=>{setDashDateFrom(e.target.value);setDashPeriod("custom");}}
             style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
