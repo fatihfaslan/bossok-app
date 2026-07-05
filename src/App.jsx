@@ -2482,23 +2482,25 @@ function BossokApp({ session, onLogout }) {
         </>);
       })()}
     </div>
+  </div>
+)}
+
 {/* ══ PLANNING ══════════════════════════════════════════════════ */}
 {page==="planning" && (()=>{
   const days = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
   const today = new Date();
-  const todayDow = today.getDay() === 0 ? 6 : today.getDay() - 1; // 0=Mon
-  
-  // Week navigation
+  const todayDow = today.getDay() === 0 ? 6 : today.getDay() - 1;
+
   const weekStart = new Date(today);
   weekStart.setDate(today.getDate() - todayDow + planningWeekOffset * 7);
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 4);
   const isCurrentWeek = planningWeekOffset === 0;
+  const isPastWeek = planningWeekOffset < 0;
   const weekLabel = planningWeekOffset === 0 ? "Semaine courante" :
     planningWeekOffset === -1 ? "Semaine dernière" :
     `Semaine du ${weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})}`;
 
-  // Build week dates
   const getWeekDate = (dayIdx) => {
     const d = new Date(weekStart);
     d.setDate(weekStart.getDate() + dayIdx);
@@ -2510,31 +2512,39 @@ function BossokApp({ session, onLogout }) {
     return d.toISOString().split('T')[0];
   };
 
-  // Get commandes for selected day - use date if available, else zone
   const selectedDate = getDayDate(selectedDay);
-  const dayCommandes = commandes.filter(c => {
-    // If commande has a delivery date, filter by date
-    if (c.date_livraison) {
-      return c.date_livraison === selectedDate || c.jour_livraison === days[selectedDay];
-    }
-    // Else filter by zone (for commandes without date)
-    if (isCurrentWeek && c.statut === 'Livré') return false;
-    const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
-    const allZones = [...(zones.A||[]), ...(zones.B||[])];
-    return allZones.includes(c.client_region) || !c.client_region;
-  });
 
-  // Split by driver with optimized order
+  const getCmdMontant = (cmd) => {
+    const fact = factures.find(f => f.notes === `Commande #${cmd.id}`);
+    return fact ? totalFact(fact.lignes).total : null;
+  };
+
+  const dayCommandes = isPastWeek
+    ? commandes.filter(c => c.statut === 'Livré' &&
+        (c.date_livraison === selectedDate || (!c.date_livraison && c.jour_livraison === days[selectedDay])))
+    : commandes.filter(c => {
+        if (c.date_livraison) {
+          return c.date_livraison === selectedDate || c.jour_livraison === days[selectedDay];
+        }
+        if (c.statut === 'Livré') return false;
+        const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
+        const allZones = [...(zones.A||[]), ...(zones.B||[])];
+        return allZones.includes(c.client_region) || !c.client_region;
+      });
+
   const buildSchedule = (driver) => {
+    if (isPastWeek) {
+      const driverCmds = dayCommandes.filter(c => c.chauffeur === driver || getChauffeur(c.client_region) === driver);
+      return { schedule: driverCmds, retDist: 0, totalKm: 0 };
+    }
     const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
     const driverZones = zones[driver] || [];
     const driverCmds = dayCommandes.filter(c => driverZones.includes(c.client_region));
-    
-    // Sort: Centre-ville first (before 10h constraint), then by zone order
+
     const cvCmds = driverCmds.filter(c => c.client_region === 'Centre-ville');
     const otherCmds = driverCmds.filter(c => c.client_region !== 'Centre-ville');
     const zoneOrder = driverZones.filter(z => z !== 'Centre-ville');
-    
+
     const sortedOthers = [...otherCmds].sort((a,b) => {
       const ai = zoneOrder.indexOf(a.client_region);
       const bi = zoneOrder.indexOf(b.client_region);
@@ -2542,50 +2552,43 @@ function BossokApp({ session, onLogout }) {
     });
 
     const ordered = [...cvCmds, ...sortedOthers];
-    
-    // Calculate distances for route info only
-    let schedule = [];
-    let prevRegion = null;
-    let totalKm = 0;
-    
+    let schedule = [], prevRegion = null, totalKm = 0;
+
     for (const cmd of ordered) {
       const region = cmd.client_region;
       const coords = REGION_COORDS[region] || DEPOT;
       const prevCoords = prevRegion ? (REGION_COORDS[prevRegion] || DEPOT) : DEPOT;
       const dist = Math.round(distKm(prevCoords, coords));
       totalKm += dist;
-      
-      schedule.push({
-        ...cmd,
-        dist,
-        isCv: region === 'Centre-ville',
-      });
+      schedule.push({...cmd, dist, isCv: region === 'Centre-ville'});
       prevRegion = region;
     }
-    
-    // Return distance
+
     const lastRegion = ordered.length > 0 ? ordered[ordered.length-1].client_region : null;
     const lastCoords = lastRegion ? (REGION_COORDS[lastRegion] || DEPOT) : DEPOT;
     const retDist = Math.round(distKm(lastCoords, DEPOT));
     totalKm += retDist;
-    
+
     return { schedule, retDist, totalKm };
   };
 
   const scheduleA = buildSchedule('A');
   const scheduleB = buildSchedule('B');
   const totalCaisses = dayCommandes.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0);
+  const totalCA = isPastWeek ? dayCommandes.reduce((s,c)=>s+(getCmdMontant(c)||0),0) : 0;
 
   return(
   <div>
-    {/* Week navigation */}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,...S.card,padding:"10px 16px"}}>
       <button onClick={()=>setPlanningWeekOffset(w=>w-1)}
         style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>‹ Semaine préc.</button>
       <div style={{textAlign:"center"}}>
-        <div style={{fontWeight:700,fontSize:14,color:"#1D4ED8"}}>{weekLabel}</div>
+        <div style={{fontWeight:700,fontSize:14,color:isPastWeek?"#6B7280":"#1D4ED8"}}>
+          {isPastWeek?"📜 ":""}{weekLabel}
+        </div>
         <div style={{fontSize:11,color:"#9CA3AF"}}>
           {weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})} → {weekEnd.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit',year:'numeric'})}
+          {isPastWeek&&<span style={{color:"#D97706",fontWeight:600,marginLeft:6}}>Mode historique</span>}
         </div>
       </div>
       <button onClick={()=>setPlanningWeekOffset(w=>Math.min(0,w+1))}
@@ -2595,39 +2598,40 @@ function BossokApp({ session, onLogout }) {
       </button>
     </div>
 
-    {/* Day selector */}
     <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
       {days.map((day,i)=>{
-        const cmdsDay = commandes.filter(c=>{
-          if(c.statut==='Livré') return false;
-          const zones = DAILY_ZONES[i]||DAILY_ZONES[0];
-          return [...(zones.A||[]),...(zones.B||[])].includes(c.client_region)||!c.client_region;
-        });
-        const isToday = i === todayDow;
+        const dDate = getDayDate(i);
+        const cmdsDay = isPastWeek
+          ? commandes.filter(c=>c.statut==='Livré' && (c.date_livraison===dDate || (!c.date_livraison && c.jour_livraison===day)))
+          : commandes.filter(c=>{
+              if(c.statut==='Livré') return false;
+              const zones = DAILY_ZONES[i]||DAILY_ZONES[0];
+              return [...(zones.A||[]),...(zones.B||[])].includes(c.client_region)||!c.client_region;
+            });
+        const isToday = i === todayDow && isCurrentWeek;
         const isSelected = i === selectedDay;
         return(
           <div key={i} onClick={()=>setSelectedDay(i)}
             style={{flex:1,minWidth:90,padding:"10px 8px",borderRadius:10,cursor:"pointer",textAlign:"center",
-              background:isSelected?"#1D4ED8":isToday?"#EFF6FF":"#fff",
-              border:(isSelected?"2px solid #1D4ED8":isToday?"2px solid #BFDBFE":"2px solid #E5E7EB"),
+              background:isSelected?(isPastWeek?"#6B7280":"#1D4ED8"):isToday?"#EFF6FF":"#fff",
+              border:(isSelected?"2px solid "+(isPastWeek?"#6B7280":"#1D4ED8"):isToday?"2px solid #BFDBFE":"2px solid #E5E7EB"),
               color:isSelected?"#fff":"#374151"}}>
             <div style={{fontWeight:700,fontSize:13}}>{day}</div>
-            <div style={{fontSize:10,color:isSelected?"#BFDBFE":isToday?"#1D4ED8":"#9CA3AF"}}>{getWeekDate(i)}</div>
-            <div style={{fontSize:11,marginTop:4,fontWeight:600,color:isSelected?"#fff":cmdsDay.length>0?"#1D4ED8":"#9CA3AF"}}>
-              {cmdsDay.length} cmd{cmdsDay.length>1?"s":""}
+            <div style={{fontSize:10,color:isSelected?"#E5E7EB":isToday?"#1D4ED8":"#9CA3AF"}}>{getWeekDate(i)}</div>
+            <div style={{fontSize:11,marginTop:4,fontWeight:600,color:isSelected?"#fff":cmdsDay.length>0?(isPastWeek?"#059669":"#1D4ED8"):"#9CA3AF"}}>
+              {cmdsDay.length} {isPastWeek?"livrée"+(cmdsDay.length>1?"s":""):"cmd"+(cmdsDay.length>1?"s":"")}
             </div>
           </div>
         );
       })}
     </div>
 
-    {/* Day stats */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
-        {l:"Commandes",v:dayCommandes.length,c:"#1D4ED8",icon:"📋"},
+        {l:isPastWeek?"Livrées":"Commandes",v:dayCommandes.length,c:"#1D4ED8",icon:isPastWeek?"✅":"📋"},
         {l:"Total caisses",v:totalCaisses,c:"#7C3AED",icon:"📦"},
-        {l:"Sefa",v:scheduleA.schedule.length+" arrêts",c:"#0EA5E9",icon:"🚚",sub:scheduleA.totalKm+"km"},
-        {l:"Mikail",v:scheduleB.schedule.length+" arrêts",c:"#8B5CF6",icon:"🚚",sub:scheduleB.totalKm+"km"},
+        {l:"Sefa",v:scheduleA.schedule.length+(isPastWeek?" livrées":" arrêts"),c:"#0EA5E9",icon:"🚚",sub:isPastWeek?null:scheduleA.totalKm+"km"},
+        {l:"Mikail",v:scheduleB.schedule.length+(isPastWeek?" livrées":" arrêts"),c:"#8B5CF6",icon:"🚚",sub:isPastWeek?null:scheduleB.totalKm+"km"},
       ].map((s,i)=>(
         <div key={i} style={S.kpi(s.c)}>
           <div style={{fontSize:16}}>{s.icon}</div>
@@ -2638,11 +2642,19 @@ function BossokApp({ session, onLogout }) {
       ))}
     </div>
 
+    {isPastWeek&&dayCommandes.length>0&&(
+      <div style={{...S.kpi("#059669"),marginBottom:14,textAlign:"center"}}>
+        <div style={{fontSize:11,color:"#374151",fontWeight:600}}>💶 Chiffre d'affaires livré ce jour</div>
+        <div style={{fontSize:22,fontWeight:800,color:"#059669"}}>{fmtFull(totalCA)}</div>
+      </div>
+    )}
+
     {dayCommandes.length===0?(
       <div style={{...S.card,textAlign:"center",padding:"48px 0",color:"#9CA3AF"}}>
-        <div style={{fontSize:40,marginBottom:12}}>📅</div>
-        <div style={{fontWeight:600,fontSize:14,marginBottom:4}}>Aucune commande pour {days[selectedDay]}</div>
-        <div style={{fontSize:12}}>Les commandes apparaissent selon la zone du client</div>
+        <div style={{fontSize:40,marginBottom:12}}>{isPastWeek?"📜":"📅"}</div>
+        <div style={{fontWeight:600,fontSize:14,marginBottom:4}}>
+          {isPastWeek?`Aucune livraison effectuée le ${days[selectedDay]}`:`Aucune commande pour ${days[selectedDay]}`}
+        </div>
       </div>
     ):(
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
@@ -2653,24 +2665,57 @@ function BossokApp({ session, onLogout }) {
               <div>
                 <div style={{fontWeight:700,fontSize:15,color:col}}>🚚 {name}</div>
                 <div style={{fontSize:11,color:"#6B7280"}}>
-                  Départ Aspelt 8h00 · {schedule.schedule.length} arrêt(s) · {schedule.retDist}km retour
+                  {isPastWeek
+                    ? `${schedule.schedule.length} livraison(s) effectuée(s)`
+                    : `Départ Aspelt 8h00 · ${schedule.schedule.length} arrêt(s) · ${schedule.retDist}km retour`}
                 </div>
               </div>
-              <div style={{textAlign:"right"}}>
-                <div style={{fontSize:11,color:"#6B7280"}}>Distance totale</div>
-                <div style={{fontWeight:700,color:col,fontSize:14}}>~{schedule.totalKm} km</div>
-              </div>
+              {!isPastWeek&&(
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:11,color:"#6B7280"}}>Distance totale</div>
+                  <div style={{fontWeight:700,color:col,fontSize:14}}>~{schedule.totalKm} km</div>
+                </div>
+              )}
             </div>
 
             {schedule.schedule.length===0?(
               <div style={{textAlign:"center",color:"#9CA3AF",fontSize:12,padding:"20px 0"}}>
-                Aucune livraison ce jour
+                {isPastWeek?"Aucune livraison ce jour":"Aucune livraison ce jour"}
+              </div>
+            ): isPastWeek ? (
+              <div>
+                {schedule.schedule.map((stop)=>{
+                  const montant = getCmdMontant(stop);
+                  return(
+                    <div key={stop.id} style={{padding:"8px 10px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,marginBottom:6}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:600,fontSize:12}}>✅ {stop.client_nom}</div>
+                          <div style={{fontSize:10,color:"#6B7280"}}>📍 {stop.client_adresse}</div>
+                          <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:4}}>
+                            {(stop.produits||[]).map((p,i)=>(
+                              <span key={i} style={{fontSize:9,background:bg,color:col,padding:"1px 5px",borderRadius:3}}>
+                                {p.nom} ×{p.qte}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{textAlign:"right",marginLeft:8}}>
+                          {stop.date_livraison&&<div style={{fontSize:9,color:"#9CA3AF"}}>{stop.date_livraison}</div>}
+                          {montant!=null&&<div style={{fontWeight:700,color:"#059669",fontSize:12}}>{fmtFull(montant)}</div>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{borderTop:"1px solid #E5E7EB",marginTop:8,paddingTop:6,display:"flex",justifyContent:"space-between",fontSize:11,color:"#6B7280",fontWeight:600}}>
+                  <span>📦 {schedule.schedule.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0)} caisses</span>
+                  <span>💶 {fmtFull(schedule.schedule.reduce((s,c)=>s+(getCmdMontant(c)||0),0))}</span>
+                </div>
               </div>
             ):(
               <div>
-                {/* Timeline */}
                 <div style={{position:"relative",paddingLeft:32}}>
-                  {/* Departure */}
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,position:"relative"}}>
                     <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>🏠</div>
                     <div style={{flex:1,padding:"6px 10px",background:"#F8FAFC",borderRadius:6}}>
@@ -2680,12 +2725,9 @@ function BossokApp({ session, onLogout }) {
 
                   {schedule.schedule.map((stop,idx)=>(
                     <div key={stop.id} style={{marginBottom:10,position:"relative"}}>
-                      {/* Timeline line */}
                       <div style={{position:"absolute",left:-22,top:0,bottom:-10,width:2,background:"#E5E7EB"}}/>
-                      {/* Number bubble */}
-                      <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:stop.isLate?"#DC2626":col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>{idx+1}</div>
-                      
-                      <div style={{padding:"8px 10px",background:stop.isCv?"#FFF7ED":stop.isLate?"#FEF2F2":"#F8FAFC",borderRadius:8,border:(stop.isLate?"1px solid #FECACA":stop.isCv?"1px solid #FED7AA":"1px solid #E5E7EB")}}>
+                      <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>{idx+1}</div>
+                      <div style={{padding:"8px 10px",background:stop.isCv?"#FFF7ED":"#F8FAFC",borderRadius:8,border:(stop.isCv?"1px solid #FED7AA":"1px solid #E5E7EB")}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",gap:4}}>
                             <span style={{fontWeight:700,color:col,fontSize:11}}>Arrêt #{idx+1}</span>
@@ -2714,7 +2756,6 @@ function BossokApp({ session, onLogout }) {
                     </div>
                   ))}
 
-                  {/* Return */}
                   <div style={{display:"flex",alignItems:"center",gap:8,position:"relative"}}>
                     <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:"#059669",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9}}>🏠</div>
                     <div style={{flex:1,padding:"6px 10px",background:"#F0FDF4",borderRadius:6,border:"1px solid #86EFAC"}}>
@@ -2723,7 +2764,6 @@ function BossokApp({ session, onLogout }) {
                   </div>
                 </div>
 
-                {/* Total */}
                 <div style={{borderTop:"1px solid #E5E7EB",marginTop:12,paddingTop:8,display:"flex",justifyContent:"space-between",fontSize:11,color:"#6B7280"}}>
                   <span>📦 {schedule.schedule.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0)} caisses</span>
                   <span>🗺️ Total : ~{schedule.totalKm} km</span>
@@ -2733,10 +2773,10 @@ function BossokApp({ session, onLogout }) {
           </div>
         ))}
       </div>
-  )}
+    )}
+  </div>
   );
-}
-)()}
+})()}
 
 {/* ══ ZONES ════════════════════════════════════════════════════ */}
 {page==="zones" && (
@@ -3245,8 +3285,7 @@ function BossokApp({ session, onLogout }) {
             setFactDate(newDate);
             if(!editingFacture && !factNumero) setFactNumero(genererNumeroFacture(newDate));
             const ech = new Date(newDate); ech.setDate(ech.getDate()+7);
-            setFactEcheance(echDate);
-            setFactEcheance(echDate);
+            setFactEcheance(ech.toISOString().split("T")[0]);
           }} style={S.input}/>
         </div>
         <div>
