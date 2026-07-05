@@ -773,7 +773,7 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
               <span key={i} style={{fontSize:10,background:"#DBEAFE",color:"#1D4ED8",padding:"2px 6px",borderRadius:4}}>
                 {p.nom} ×{p.qte}
               </span>
-            ))}
+            )}
           </div>
           <button onClick={()=>onRepeat(lastCmd.produits||[])}
             style={{...S.btn("#1D4ED8"),padding:"3px 10px",fontSize:11,width:"100%"}}>
@@ -1525,7 +1525,7 @@ function BossokApp({ session, onLogout }) {
             <div key={n.k} style={S.navItem(page===n.k)} onClick={()=>setPage(n.k)}>
               <span>{n.icon}</span><span>{n.label}</span>
             </div>
-          ))}
+          )}
         </div>
         <div style={{padding:"12px",borderTop:"1px solid #1E293B",fontSize:11,color:"#475569"}}>
           {saving && <span style={{color:"#60A5FA"}}>💾 Sauvegarde...</span>}
@@ -1728,7 +1728,7 @@ function BossokApp({ session, onLogout }) {
             style={{...S.btn(dashPeriod===k?"#1D4ED8":"#F1F5F9",dashPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:dashPeriod===k?700:400}}>
             {l}
           </button>
-        ))}
+        )}
         <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:8}}>
           <input type="date" value={dashDateFrom} onChange={e=>{setDashDateFrom(e.target.value);setDashPeriod("custom");}}
             style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
@@ -1744,14 +1744,14 @@ function BossokApp({ session, onLogout }) {
           <option value="">Tous les clients ({clients.length})</option>
           {[...clients].filter(c=>c.statut==="Actif").sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=>(
             <option key={c.id} value={c.id}>{c.nom}</option>
-          ))}
+          )}
         </select>
         <select value={dashZone} onChange={e=>setDashZone(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
           <option value="">Toutes les zones</option>
           {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France"].map(z=>(
             <option key={z} value={z}>{z}</option>
-          ))}
+          )}
         </select>
         <select value={dashChauffeur} onChange={e=>setDashChauffeur(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
@@ -1789,7 +1789,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
           <div style={{fontSize:10,color:"#9CA3AF"}}>{s.sub}</div>
         </div>
-      ))}
+      )}
     </div>
 
     {/* ── KPIs Row 2 ── */}
@@ -1806,7 +1806,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
           <div style={{fontSize:10,color:"#9CA3AF"}}>{s.sub}</div>
         </div>
-      ))}
+      )}
     </div>
 
     {/* ── Charts row 1 ── */}
@@ -1899,7 +1899,7 @@ function BossokApp({ session, onLogout }) {
             <tr style={{borderBottom:"1px solid #E5E7EB"}}>
               {["Client","Type","Zone","CA","Marge","Nb"].map(h=>(
                 <th key={h} style={{padding:"4px 6px",textAlign:h==="CA"||h==="Marge"||h==="Nb"?"right":"left",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
-              ))}
+              )}
             </tr>
           </thead>
           <tbody>
@@ -1914,7 +1914,7 @@ function BossokApp({ session, onLogout }) {
                 <td style={{padding:"4px 6px",textAlign:"right",color:"#059669"}}>{fmtFull(c.marge)}</td>
                 <td style={{padding:"4px 6px",textAlign:"right",color:"#6B7280"}}>{c.nb}</td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>}
       </div>
@@ -1999,7 +1999,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
           <div style={{fontSize:11,color:"#6B7280"}}>{s.l}</div>
         </div>
-      ))}
+      )}
     </div>
     <div style={{...S.card,marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
       <input value={searchC} onChange={e=>setSearchC(e.target.value)} placeholder="🔍 Rechercher un client..." style={{...S.input,flex:1,minWidth:160}}/>
@@ -2054,7 +2054,7 @@ function BossokApp({ session, onLogout }) {
             padding:"3px 7px",fontSize:11,minWidth:24,fontWeight:600}}>
           {l}
         </button>
-      ))}
+      )}
       <span style={{fontSize:11,color:"#6B7280",marginLeft:6,alignSelf:"center"}}>{filteredClients.length} client(s)</span>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
@@ -2153,7 +2153,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{k.l}</div>
           {k.sub&&<div style={{fontSize:11,color:k.c,fontWeight:700}}>{k.sub}</div>}
         </div>
-      ))}
+      )}
     </div>
 
     {/* Filtres */}
@@ -2226,7 +2226,7 @@ function BossokApp({ session, onLogout }) {
                   style={{textAlign:h.right?"right":"left",padding:"8px 10px",color:"#6B7280",fontWeight:600,fontSize:11,whiteSpace:"nowrap",cursor:h.col?"pointer":"default",userSelect:"none"}}>
                   {h.label} {h.col&&<span style={{opacity:0.5,fontSize:9}}><SortIcon col={h.col}/></span>}
                 </th>
-              ))}
+              )}
             </tr>
           </thead>
           <tbody>
@@ -2339,7 +2339,7 @@ function BossokApp({ session, onLogout }) {
                     </div>
                     <span style={S.badge("#DBEAFE","#1D4ED8")}>Ch. {getChauffeur(c.region)}</span>
                   </div>
-                ))}
+                )}
                 {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchCmdClient.trim().toLowerCase())).length===0&&(
                   <div style={{padding:"12px",fontSize:12,color:"#9CA3AF",textAlign:"center"}}>Aucun client trouvé</div>
                 )}
@@ -2405,7 +2405,7 @@ function BossokApp({ session, onLogout }) {
                 <span key={i} style={{fontSize:10,background:"#DCFCE7",color:"#166534",padding:"2px 6px",borderRadius:4,fontWeight:500}}>
                   {p.nom} ×{p.qte}
                 </span>
-              ))}
+              )}
             </div>
           </div>
         )}
@@ -2438,7 +2438,7 @@ function BossokApp({ session, onLogout }) {
                 style={{...S.btn(cmdView===k?"#1D4ED8":"#F1F5F9",cmdView===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:cmdView===k?700:400}}>
                 {l} ({n})
               </button>
-            ))}
+            )}
           </div>
           {cmdList.length===0?(
             <div style={{...S.card,textAlign:"center",padding:"40px 0",color:"#9CA3AF",fontSize:13}}>
@@ -2460,7 +2460,7 @@ function BossokApp({ session, onLogout }) {
                     <div style={{fontSize:11,marginTop:4,display:"flex",flexWrap:"wrap",gap:4}}>
                       {(cmd.produits||[]).map((p,i)=>(
                         <span key={i} style={{background:"#F1F5F9",padding:"1px 6px",borderRadius:4,fontSize:10}}>📦 {p.nom} ×{p.qte}</span>
-                      ))}
+                      )}
                     </div>
                     {cmd.notes&&<div style={{fontSize:11,color:"#F59E0B",marginTop:3}}>💬 {cmd.notes}</div>}
                   </div>
@@ -2635,7 +2635,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
           {s.sub&&<div style={{fontSize:10,color:s.c}}>Fin: {s.sub}</div>}
         </div>
-      ))}
+      )}
     </div>
 
     {dayCommandes.length===0?(
@@ -2700,7 +2700,7 @@ function BossokApp({ session, onLogout }) {
                             <span key={i} style={{fontSize:9,background:bg,color:col,padding:"1px 5px",borderRadius:3}}>
                               📦 {p.nom} ×{p.qte}
                             </span>
-                          ))}
+                          )}
                         </div>
                         <div style={{display:"flex",gap:4}}>
                           <button onClick={()=>marquerLivre(stop.id)} disabled={saving}
@@ -2712,7 +2712,7 @@ function BossokApp({ session, onLogout }) {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )}
 
                   {/* Return */}
                   <div style={{display:"flex",alignItems:"center",gap:8,position:"relative"}}>
@@ -2731,7 +2731,7 @@ function BossokApp({ session, onLogout }) {
               </div>
             )}
           </div>
-        ))}
+        )}
       </div>
   )}
   );
@@ -2775,9 +2775,9 @@ function BossokApp({ session, onLogout }) {
               <span style={{fontWeight:600,width:70,color:"#374151"}}>{s.day}</span>
               <span style={{color:"#6B7280"}}>{s.zones}</span>
             </div>
-          ))}
+          )}
         </div>
-      ))}
+      )}
     </div>
 
     {/* Clients by zone */}
@@ -2814,7 +2814,7 @@ function BossokApp({ session, onLogout }) {
                 <tr style={{background:"#F9FAFB"}}>
                   {["Nom","Adresse","Téléphone","TVA","Type","Conditions"].map(h=>(
                     <th key={h} style={{padding:"5px 8px",textAlign:"left",color:"#6B7280",fontWeight:600,fontSize:10,whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -2828,7 +2828,7 @@ function BossokApp({ session, onLogout }) {
                     <td style={{padding:"5px 8px"}}><span style={S.badge(tc(c.type).bg,tc(c.type).text)}>{c.type}</span></td>
                     <td style={{padding:"5px 8px",color:"#6B7280"}}>{c.conditions}</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
@@ -2851,7 +2851,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
           <div style={{fontSize:11,color:"#6B7280"}}>{s.l}</div>
         </div>
-      ))}
+      )}
     </div>
     <div style={{...S.card,marginBottom:12}}>
       <select value={stockCat} onChange={e=>setStockCat(e.target.value)} style={{padding:"7px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
@@ -2864,7 +2864,7 @@ function BossokApp({ session, onLogout }) {
           <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
             {["Produit","Cat.","Stock","Modifier"].map(h=>(
               <th key={h} style={{textAlign:"left",padding:"8px 12px",color:"#6B7280",fontWeight:600,fontSize:12}}>{h}</th>
-            ))}
+            )}
           </tr>
         </thead>
         <tbody>
@@ -2936,7 +2936,7 @@ function BossokApp({ session, onLogout }) {
                   <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
                     {["Client","Région","Caisses en circulation","Valeur consignes","Crédit à déduire","Détail"].map(h=>(
                       <th key={h} style={{textAlign:"left",padding:"8px 12px",color:"#6B7280",fontWeight:600,fontSize:11}}>{h}</th>
-                    ))}
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -2962,7 +2962,7 @@ function BossokApp({ session, onLogout }) {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
                 <tfoot>
                   <tr style={{borderTop:"2px solid #E5E7EB",background:"#F9FAFB",fontWeight:700}}>
@@ -2991,7 +2991,7 @@ function BossokApp({ session, onLogout }) {
           <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
             {["Produit","Cat.","Type","Prix Snack","Prix Rest.","Prix Admin","Consigne"].map(h=>(
               <th key={h} style={{textAlign:"left",padding:"8px 10px",color:"#6B7280",fontWeight:600}}>{h}</th>
-            ))}
+            )}
           </tr>
         </thead>
         <tbody>
@@ -3005,7 +3005,7 @@ function BossokApp({ session, onLogout }) {
               <td style={{padding:"7px 10px"}}>{fmtFull(p.prix.Administrative)}</td>
               <td style={{padding:"7px 10px",color:p.type_emballage==="VC"?"#7C3AED":"#9CA3AF"}}>{p.type_emballage==="VC"?fmtFull(CONSIGNE_PRIX[p.consigne]):"—"}</td>
             </tr>
-          ))}
+          )}
         </tbody>
       </table>
     </div>
@@ -3033,7 +3033,7 @@ function BossokApp({ session, onLogout }) {
       <div style={{display:"flex",gap:0,borderBottom:"1px solid #E5E7EB",marginBottom:14}}>
         {[["info","Infos"],["factures","Factures"],["visites","Visites"],["consignes","Consignes"],["prix","Prix perso"]].map(([k,l])=>(
           <button key={k} style={S.tab(clientTab===k)} onClick={()=>setClientTab(k)}>{l}</button>
-        ))}
+        )}
       </div>
       {clientTab==="info"&&(
         <div style={{display:"grid",gap:8}}>
@@ -3042,7 +3042,7 @@ function BossokApp({ session, onLogout }) {
               <span style={{color:"#9CA3AF",width:100,flexShrink:0}}>{l}</span>
               <span style={{fontWeight:500}}>{v}</span>
             </div>
-          ))}
+          )}
         </div>
       )}
       {clientTab==="factures"&&(
@@ -3055,7 +3055,7 @@ function BossokApp({ session, onLogout }) {
                   <span>{f.numero} — {f.date}</span>
                   <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes).total)}</span>
                 </div>
-              ))}
+              )}
             </div>
           )}
           {clientFactures(selClient.id).length===0?(
@@ -3146,7 +3146,7 @@ function BossokApp({ session, onLogout }) {
                       <button onClick={()=>deleteVisite(v.id||i)} style={{...S.btn("#FEE2E2","#DC2626"),padding:"3px 8px",fontSize:10,marginLeft:8}}>🗑️</button>
                     </div>
                   </div>
-                ))}
+                )}
               </div>
             )}
           </div>
@@ -3228,7 +3228,7 @@ function BossokApp({ session, onLogout }) {
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                       {c.nom}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>
@@ -3271,7 +3271,7 @@ function BossokApp({ session, onLogout }) {
               <span>{f.numero} — {f.date} (éch. {f.echeance})</span>
               <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes).total)}</span>
             </div>
-          ))}
+          )}
           <div style={{fontSize:11,color:"#DC2626",fontWeight:600,marginTop:4}}>
             Total dû : {fmtFull(clientImpayees(factClientId).reduce((s,f)=>s+totalFact(f.lignes).total,0))}
           </div>
@@ -3307,7 +3307,7 @@ function BossokApp({ session, onLogout }) {
               {l.consigne>0&&<span style={{width:64,textAlign:"right",color:"#7C3AED"}}>+{fmtFull(l.qte*l.consigne)}</span>}
               <button onClick={()=>setFactLignes(prev=>prev.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#EF4444",cursor:"pointer"}}>✕</button>
             </div>
-          ))}
+          )}
           <div style={{padding:"7px 10px",background:"#F9FAFB",display:"flex",justifyContent:"flex-end",gap:14,fontSize:12}}>
             <span>HT : <b>{fmtFull(factLignes.reduce((s,l)=>s+l.qte*l.pu,0))}</b></span>
             {factLignes.some(l=>l.consigne>0)&&<span style={{color:"#7C3AED"}}>Consignes : <b>{fmtFull(factLignes.reduce((s,l)=>s+l.qte*(l.consigne||0),0))}</b></span>}
@@ -3415,7 +3415,7 @@ function BossokApp({ session, onLogout }) {
             setClientForm(updates);
           }} style={S.input}/>
           </div>
-        ))}
+        )}
         {/* Region with auto-detection */}
         <div style={{marginBottom:0}}>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Région</label>
@@ -3424,7 +3424,7 @@ function BossokApp({ session, onLogout }) {
             <option value="">-- Sélectionner --</option>
             {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande"].map(r=>(
               <option key={r} value={r}>{r} {ZONE_SCHEDULE[r] ? " · " + ZONE_SCHEDULE[r].driver + " (" + (ZONE_SCHEDULE[r].days||[]).join(", ") + ")" : ""}</option>
-            ))}
+            )}
           </select>
           {clientForm.adresse && detectRegionFromAddress(clientForm.adresse) && (
             <div style={{fontSize:10,color:"#059669",marginTop:3}}>
@@ -3443,7 +3443,7 @@ function BossokApp({ session, onLogout }) {
                 {opts.map(o=><option key={o}>{o}</option>)}
               </select>
             </div>
-          ))}
+          )}
         </div>
       </div>
       <div style={{display:"flex",gap:8,marginTop:16}}>
@@ -3452,7 +3452,7 @@ function BossokApp({ session, onLogout }) {
       </div>
     </div>
   </div>
-  ))}
+  )}
   </div>
   );
 }
