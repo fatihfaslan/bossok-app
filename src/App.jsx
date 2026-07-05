@@ -773,14 +773,14 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
               <span key={i} style={{fontSize:10,background:"#DBEAFE",color:"#1D4ED8",padding:"2px 6px",borderRadius:4}}>
                 {p.nom} ×{p.qte}
               </span>
-            )}
+            ))}
           </div>
           <button onClick={()=>onRepeat(lastCmd.produits||[])}
             style={{...S.btn("#1D4ED8"),padding:"3px 10px",fontSize:11,width:"100%"}}>
             📋 Reprendre la dernière commande
           </button>
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -1999,7 +1999,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
           <div style={{fontSize:11,color:"#6B7280"}}>{s.l}</div>
         </div>
-      )}
+      ))}
     </div>
     <div style={{...S.card,marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
       <input value={searchC} onChange={e=>setSearchC(e.target.value)} placeholder="🔍 Rechercher un client..." style={{...S.input,flex:1,minWidth:160}}/>
@@ -2405,10 +2405,10 @@ function BossokApp({ session, onLogout }) {
                 <span key={i} style={{fontSize:10,background:"#DCFCE7",color:"#166534",padding:"2px 6px",borderRadius:4,fontWeight:500}}>
                   {p.nom} ×{p.qte}
                 </span>
-              )}
+              ))}
             </div>
           </div>
-        )}
+        ))}
       </div>
 
       <div style={{marginBottom:12}}>
@@ -2851,7 +2851,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
           <div style={{fontSize:11,color:"#6B7280"}}>{s.l}</div>
         </div>
-      )}
+      ))}
     </div>
     <div style={{...S.card,marginBottom:12}}>
       <select value={stockCat} onChange={e=>setStockCat(e.target.value)} style={{padding:"7px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
@@ -2991,7 +2991,7 @@ function BossokApp({ session, onLogout }) {
           <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
             {["Produit","Cat.","Type","Prix Snack","Prix Rest.","Prix Admin","Consigne"].map(h=>(
               <th key={h} style={{textAlign:"left",padding:"8px 10px",color:"#6B7280",fontWeight:600}}>{h}</th>
-            )}
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -3042,9 +3042,9 @@ function BossokApp({ session, onLogout }) {
               <span style={{color:"#9CA3AF",width:100,flexShrink:0}}>{l}</span>
               <span style={{fontWeight:500}}>{v}</span>
             </div>
-          )}
+          ))}
         </div>
-      )}
+      ))}
       {clientTab==="factures"&&(
         <div>
           {clientImpayees(selClient.id).length>0&&(
@@ -3055,9 +3055,9 @@ function BossokApp({ session, onLogout }) {
                   <span>{f.numero} — {f.date}</span>
                   <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes).total)}</span>
                 </div>
-              )}
+              ))}
             </div>
-          )}
+          ))}
           {clientFactures(selClient.id).length===0?(
             <div style={{textAlign:"center",color:"#9CA3AF",padding:"30px 0",fontSize:13}}>Aucune facture</div>
           ):(
@@ -3196,7 +3196,7 @@ function BossokApp({ session, onLogout }) {
             })}
           </div>
         </div>
-      ))}
+      )}
     </div>
   </div>
 )}
@@ -3228,11 +3228,11 @@ function BossokApp({ session, onLogout }) {
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                       {c.nom}
                     </div>
-                  )}
+                  ))}
                 </div>
-              )}
+              ))}
             </div>
-          )}
+          ))}
         </div>
         <div>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>N° Facture</label>
@@ -3271,12 +3271,12 @@ function BossokApp({ session, onLogout }) {
               <span>{f.numero} — {f.date} (éch. {f.echeance})</span>
               <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes).total)}</span>
             </div>
-          )}
+          ))}
           <div style={{fontSize:11,color:"#DC2626",fontWeight:600,marginTop:4}}>
             Total dû : {fmtFull(clientImpayees(factClientId).reduce((s,f)=>s+totalFact(f.lignes).total,0))}
           </div>
         </div>
-      )}
+      ))}
       {factClientId&&(
         <div style={{marginBottom:12}}>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:4}}>Produits</label>
@@ -3296,7 +3296,7 @@ function BossokApp({ session, onLogout }) {
             })}
           </div>
         </div>
-      ))}
+      )}
       {factLignes.length>0&&(
         <div style={{marginBottom:12,border:"1px solid #E5E7EB",borderRadius:8,overflow:"hidden"}}>
           {factLignes.map((l,i)=>(
@@ -3307,7 +3307,7 @@ function BossokApp({ session, onLogout }) {
               {l.consigne>0&&<span style={{width:64,textAlign:"right",color:"#7C3AED"}}>+{fmtFull(l.qte*l.consigne)}</span>}
               <button onClick={()=>setFactLignes(prev=>prev.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#EF4444",cursor:"pointer"}}>✕</button>
             </div>
-          )}
+          ))}
           <div style={{padding:"7px 10px",background:"#F9FAFB",display:"flex",justifyContent:"flex-end",gap:14,fontSize:12}}>
             <span>HT : <b>{fmtFull(factLignes.reduce((s,l)=>s+l.qte*l.pu,0))}</b></span>
             {factLignes.some(l=>l.consigne>0)&&<span style={{color:"#7C3AED"}}>Consignes : <b>{fmtFull(factLignes.reduce((s,l)=>s+l.qte*(l.consigne||0),0))}</b></span>}
