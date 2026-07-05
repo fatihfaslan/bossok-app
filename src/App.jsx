@@ -773,7 +773,7 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
               <span key={i} style={{fontSize:10,background:"#DBEAFE",color:"#1D4ED8",padding:"2px 6px",borderRadius:4}}>
                 {p.nom} ×{p.qte}
               </span>
-            )}
+            ))}
           </div>
           <button onClick={()=>onRepeat(lastCmd.produits||[])}
             style={{...S.btn("#1D4ED8"),padding:"3px 10px",fontSize:11,width:"100%"}}>
