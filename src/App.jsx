@@ -2291,6 +2291,7 @@ function BossokApp({ session, onLogout }) {
         )}
       </div>
   )}
+  </div>
   );
 }
 )()}
@@ -3493,5 +3494,7 @@ function BossokApp({ session, onLogout }) {
   </div>
   )}
   </div>
+      </div>
+    </div>
   );
 }
