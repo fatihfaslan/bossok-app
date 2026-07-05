@@ -780,7 +780,7 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
             📋 Reprendre la dernière commande
           </button>
         </div>
-      ))}
+      )}
     </div>
   );
 }
