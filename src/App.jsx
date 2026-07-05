@@ -1525,7 +1525,7 @@ function BossokApp({ session, onLogout }) {
             <div key={n.k} style={S.navItem(page===n.k)} onClick={()=>setPage(n.k)}>
               <span>{n.icon}</span><span>{n.label}</span>
             </div>
-          )}
+          ))}
         </div>
         <div style={{padding:"12px",borderTop:"1px solid #1E293B",fontSize:11,color:"#475569"}}>
           {saving && <span style={{color:"#60A5FA"}}>💾 Sauvegarde...</span>}
