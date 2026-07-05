@@ -1789,7 +1789,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
           <div style={{fontSize:10,color:"#9CA3AF"}}>{s.sub}</div>
         </div>
-      )}
+      ))}
     </div>
 
     {/* ── KPIs Row 2 ── */}
