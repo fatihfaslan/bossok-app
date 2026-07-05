@@ -1751,7 +1751,7 @@ function BossokApp({ session, onLogout }) {
           <option value="">Toutes les zones</option>
           {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France"].map(z=>(
             <option key={z} value={z}>{z}</option>
-          )}
+            ))}
         </select>
         <select value={dashChauffeur} onChange={e=>setDashChauffeur(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
