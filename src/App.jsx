@@ -1305,7 +1305,6 @@ function BossokApp({ session, onLogout }) {
           chauffeur: suggested.dayIdx <= 1 ? "A" : getChauffeur(client?.region||""),
           date_commande: today, date_livraison: suggested.date||tomorrow,
           jour_livraison: suggested.day,
-          jour_idx: suggested.dayIdx,
         });
       }
       await loadAll();
@@ -1382,6 +1381,18 @@ function BossokApp({ session, onLogout }) {
       });
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
+  };
+
+  const imprimerFactureCommande = (cmd) => {
+    const facture = factures.find(f => f.notes === `Commande #${cmd.id}`);
+    if (!facture) {
+      alert("Aucune facture liée à cette commande n'a été trouvée.");
+      return;
+    }
+    const client = clients.find(c => c.id === cmd.client_id);
+    const imp = factures.filter(x => x.client_id === cmd.client_id && x.statut === "Impayée" && x.id !== facture.id);
+    const solde = soldeConsignes(cmd.client_id).reduce((s, r) => s + r.solde * r.consigne, 0);
+    generatePDF(facture, client, imp, solde);
   };
 
   const updateStock = async (produitId, qte) => {
@@ -2474,7 +2485,10 @@ function BossokApp({ session, onLogout }) {
                     </div>
                   )}
                   {cmd.statut==="Livré"&&(
-                    <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
+                    <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+                      <button onClick={()=>imprimerFactureCommande(cmd)} style={{...S.btn("#374151"),padding:"4px 10px",fontSize:11}}>🖨️ Imprimer facture</button>
+                      <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
+                    </div>
                   )}
                 </div>
               </div>
