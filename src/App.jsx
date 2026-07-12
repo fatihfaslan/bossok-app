@@ -475,6 +475,29 @@ const totalFact = (lignes=[]) => {
   return {prod, cons, total: prod+cons};
 };
 
+// Marge réelle basée sur le prix d'achat du produit (si renseigné), sinon estimation
+// à 28% de marge (ratio historique) en attendant que le prix d'achat soit configuré.
+const COUT_RATIO_FALLBACK = 0.72;
+const calcMargeLigne = (ligne, produits) => {
+  if (ligne.isCredit || ligne.produitId === "CREDIT_CONSIGNES") return { marge: 0, reel: true };
+  const produit = produits.find(p => p.id === ligne.produitId);
+  const prixAchat = produit?.prix_achat;
+  if (prixAchat != null && prixAchat > 0) {
+    return { marge: (ligne.pu - prixAchat) * ligne.qte, reel: true };
+  }
+  return { marge: ligne.qte * ligne.pu * (1 - COUT_RATIO_FALLBACK), reel: false };
+};
+const calcMargeFacture = (facture, produits) => {
+  let marge = 0, ligneReelles = 0, ligneTotal = 0;
+  (facture.lignes||[]).forEach(l => {
+    const r = calcMargeLigne(l, produits);
+    marge += r.marge;
+    ligneTotal++;
+    if (r.reel) ligneReelles++;
+  });
+  return { marge, ligneReelles, ligneTotal };
+};
+
 // ═══════════════════════════════════════════════════════════════════
 // APP
 // ═══════════════════════════════════════════════════════════════════
@@ -1138,6 +1161,7 @@ function BossokApp({ session, onLogout }) {
         type_emballage: produitForm.type_emballage,
         consigne: produitForm.type_emballage === "VC" ? (produitForm.consigne || null) : null,
         prix,
+        prix_achat: produitForm.prix_achat !== undefined && produitForm.prix_achat !== "" ? parseFloat(produitForm.prix_achat) : null,
       };
       if (editProduit) {
         await db.update("produits", editProduit.id, payload);
@@ -1598,7 +1622,7 @@ function BossokApp({ session, onLogout }) {
   setFactEcheance(echInit.toISOString().split("T")[0]);
 }}>+ Nouvelle facture</button>}
             {page==="commandes" && <button style={{...S.btn(),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>✅ Enregistrer</button>}
-            {page==="produits" && <button style={S.btn()} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",consigne:""});setShowProduitForm(true);}}>+ Nouveau produit</button>}
+            {page==="produits" && <button style={S.btn()} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>+ Nouveau produit</button>}
             <button style={S.btn("#F1F5F9","#374151")} onClick={loadAll}>🔄</button>
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 10px",background:"#F1F5F9",borderRadius:8}}>
               <span style={{fontSize:12,color:"#374151"}}>{session?.user?.email}</span>
@@ -1675,12 +1699,16 @@ function BossokApp({ session, onLogout }) {
   });
 
   const factActives = dashFacts.filter(f=>f.statut!=="Avoir"&&f.statut!=="Annulée");
-  const COUT_RATIO = 0.72;
   const ca = factActives.reduce((s,f)=>s+totalFact(f.lignes).total,0);
   const caPayee = dashFacts.filter(f=>f.statut==="Payée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
   const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
-  const marge = ca*(1-COUT_RATIO);
+  let marge = 0, margeLignesReelles = 0, margeLignesTotal = 0;
+  factActives.forEach(f => {
+    const r = calcMargeFacture(f, produits);
+    marge += r.marge; margeLignesReelles += r.ligneReelles; margeLignesTotal += r.ligneTotal;
+  });
   const margePct = ca>0?Math.round(marge/ca*100):0;
+  const margeCouverture = margeLignesTotal>0?Math.round(margeLignesReelles/margeLignesTotal*100):0;
   const panierMoyen = factActives.length>0?ca/factActives.length:0;
   const nbClients = new Set(factActives.map(f=>f.client_id)).size;
   const sefaCmds = dashCmds.filter(c=>c.chauffeur==="A"&&c.statut==="Livré").length;
@@ -1703,7 +1731,7 @@ function BossokApp({ session, onLogout }) {
     const z=cl?.region||"Inconnu";
     if(!zoneStats[z]) zoneStats[z]={zone:z,ca:0,marge:0,nb:0};
     const t=totalFact(f.lignes).total;
-    zoneStats[z].ca+=t; zoneStats[z].marge+=t*(1-COUT_RATIO); zoneStats[z].nb++;
+    zoneStats[z].ca+=t; zoneStats[z].marge+=calcMargeFacture(f,produits).marge; zoneStats[z].nb++;
   });
   const topZones = Object.values(zoneStats).sort((a,b)=>b.ca-a.ca).slice(0,6);
 
@@ -1714,7 +1742,7 @@ function BossokApp({ session, onLogout }) {
     const cid=f.client_id;
     if(!clientStats[cid]) clientStats[cid]={id:cid,nom:f.client_nom,type:cl?.type||"",region:cl?.region||"",ca:0,marge:0,nb:0};
     const t=totalFact(f.lignes).total;
-    clientStats[cid].ca+=t; clientStats[cid].marge+=t*(1-COUT_RATIO); clientStats[cid].nb++;
+    clientStats[cid].ca+=t; clientStats[cid].marge+=calcMargeFacture(f,produits).marge; clientStats[cid].nb++;
   });
   const topClients = Object.values(clientStats).sort((a,b)=>b.ca-a.ca).slice(0,8);
 
@@ -1725,7 +1753,7 @@ function BossokApp({ session, onLogout }) {
     const t=cl?.type||"Autre";
     if(!typeStats[t]) typeStats[t]={type:t,ca:0,marge:0,nb:0};
     const total=totalFact(f.lignes).total;
-    typeStats[t].ca+=total; typeStats[t].marge+=total*(1-COUT_RATIO); typeStats[t].nb++;
+    typeStats[t].ca+=total; typeStats[t].marge+=calcMargeFacture(f,produits).marge; typeStats[t].nb++;
   });
   const topTypes = Object.values(typeStats).sort((a,b)=>b.ca-a.ca);
 
@@ -1750,12 +1778,13 @@ function BossokApp({ session, onLogout }) {
 
   // Export CSV
   const exportDash = () => {
-    const rows = [["N°","Date","Client","Type","Zone","Statut","Montant HT","Consignes","Total TTC","Marge est."]];
+    const rows = [["N°","Date","Client","Type","Zone","Statut","Montant HT","Consignes","Total TTC","Marge"]];
     factActives.forEach(f=>{
       const cl=clients.find(c=>c.id===f.client_id);
       const {prod,cons,total}=totalFact(f.lignes);
+      const margeF=calcMargeFacture(f,produits).marge;
       rows.push([f.numero,f.date,f.client_nom,cl?.type||"",cl?.region||"",f.statut,
-        prod.toFixed(2),cons.toFixed(2),total.toFixed(2),(total*(1-COUT_RATIO)).toFixed(2)]);
+        prod.toFixed(2),cons.toFixed(2),total.toFixed(2),margeF.toFixed(2)]);
     });
     const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\n");
     const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
@@ -1829,7 +1858,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
       {[
         {l:"CA Total",v:fmtFull(ca),c:"#1D4ED8",icon:"💶",sub:factActives.length+" factures"},
-        {l:"Marge estimée",v:fmtFull(marge),c:"#059669",icon:"📈",sub:margePct+"% du CA"},
+        {l:margeCouverture===100?"Marge réelle":"Marge (estimée partielle)",v:fmtFull(marge),c:"#059669",icon:"📈",sub:margePct+"% du CA · "+margeCouverture+"% données réelles"},
         {l:"Encaissé",v:fmtFull(caPayee),c:"#0EA5E9",icon:"✅",sub:dashFacts.filter(f=>f.statut==="Payée").length+" payées"},
         {l:"Impayés",v:fmtFull(impaye),c:"#DC2626",icon:"⚠️",sub:dashFacts.filter(f=>f.statut==="Impayée").length+" factures"},
       ].map((s,i)=>(
@@ -1858,6 +1887,16 @@ function BossokApp({ session, onLogout }) {
         </div>
       ))}
     </div>
+
+    {margeCouverture<100&&(
+      <div style={{...S.card,marginBottom:14,background:"#FFFBEB",border:"1px solid #FDE68A",display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:18}}>💡</span>
+        <div style={{fontSize:12,color:"#92400E"}}>
+          <strong>{margeCouverture}%</strong> de la marge est calculée avec les vrais prix d'achat. Le reste utilise une estimation à 28%.
+          Renseigne le <strong>prix d'achat</strong> de tes produits dans l'onglet <strong>Produits</strong> pour affiner ce chiffre.
+        </div>
+      </div>
+    )}
 
     {/* ── Charts row 1 ── */}
     <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}}>
@@ -3113,20 +3152,27 @@ function BossokApp({ session, onLogout }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
-                {["Produit","Cat.","Type","Prix Snack","Prix Rest.","Prix Admin","Consigne","Statut","Actions"].map(h=>(
+                {["Produit","Cat.","Type","Prix achat","Prix Snack","Marge Snack","Consigne","Statut","Actions"].map(h=>(
                   <th key={h} style={{textAlign:"left",padding:"8px 10px",color:"#6B7280",fontWeight:600}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {produitsFiltres.map((p,i)=>(
+              {produitsFiltres.map((p,i)=>{
+                const margeSnack = (p.prix_achat!=null&&p.prix_achat>0) ? p.prix?.Snack - p.prix_achat : null;
+                const margeSnackPct = (margeSnack!=null && p.prix?.Snack>0) ? Math.round(margeSnack/p.prix.Snack*100) : null;
+                return(
                 <tr key={p.id} style={{borderBottom:"1px solid #F1F5F9",background:p.statut==="Passif"?"#FAFAFA":i%2===0?"#fff":"#FAFAFA",opacity:p.statut==="Passif"?0.6:1}}>
                   <td style={{padding:"7px 10px",fontWeight:500}}>{p.nom}</td>
                   <td style={{padding:"7px 10px"}}><span style={S.badge("#F3F4F6","#374151")}>{p.categorie}</span></td>
                   <td style={{padding:"7px 10px"}}><span style={S.badge(p.type_emballage==="VC"?"#EDE9FE":p.type_emballage==="CAN"?"#FEF3C7":"#E0F2FE",p.type_emballage==="VC"?"#6D28D9":p.type_emballage==="CAN"?"#92400E":"#0369A1")}>{p.type_emballage}</span></td>
+                  <td style={{padding:"7px 10px"}}>
+                    {p.prix_achat!=null&&p.prix_achat>0 ? fmtFull(p.prix_achat) : <span style={{color:"#DC2626",fontSize:11}}>non renseigné</span>}
+                  </td>
                   <td style={{padding:"7px 10px"}}>{fmtFull(p.prix?.Snack)}</td>
-                  <td style={{padding:"7px 10px"}}>{fmtFull(p.prix?.Restaurant)}</td>
-                  <td style={{padding:"7px 10px"}}>{fmtFull(p.prix?.Administrative)}</td>
+                  <td style={{padding:"7px 10px"}}>
+                    {margeSnack!=null ? <span style={{color:"#059669",fontWeight:600}}>{fmtFull(margeSnack)} ({margeSnackPct}%)</span> : "—"}
+                  </td>
                   <td style={{padding:"7px 10px",color:p.type_emballage==="VC"?"#7C3AED":"#9CA3AF"}}>{p.type_emballage==="VC"?fmtFull(CONSIGNE_PRIX[p.consigne]):"—"}</td>
                   <td style={{padding:"7px 10px"}}>
                     <span style={S.badge(p.statut==="Passif"?"#FEF3C7":"#DCFCE7",p.statut==="Passif"?"#92400E":"#166534")}>
@@ -3144,6 +3190,7 @@ function BossokApp({ session, onLogout }) {
                           prix_Administrative:p.prix?.Administrative??"", prix_Market:p.prix?.Market??"",
                           prix_Café:p.prix?.Café??"", prix_Creche:p.prix?.Creche??"",
                           prix_Distributor:p.prix?.Distributor??"",
+                          prix_achat:p.prix_achat??"",
                         });
                         setShowProduitForm(true);
                       }} style={{...S.btn("#1D4ED8"),padding:"3px 8px",fontSize:11}}>✏️</button>
@@ -3154,7 +3201,8 @@ function BossokApp({ session, onLogout }) {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -3647,6 +3695,14 @@ function BossokApp({ session, onLogout }) {
             </select>
           </div>
         )}
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>
+            Prix d'achat (€ / unité vendue) <span style={{color:"#9CA3AF",fontWeight:400}}>— utilisé pour la marge réelle</span>
+          </label>
+          <input type="number" step="0.01" min="0" value={produitForm.prix_achat??""}
+            onChange={e=>setProduitForm(p=>({...p,prix_achat:e.target.value}))}
+            placeholder="0.00" style={{...S.input,maxWidth:180,borderColor:"#7C3AED"}}/>
+        </div>
         <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginTop:4}}>Prix par type de client (€)</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {[["Snack","prix_Snack"],["Restaurant","prix_Restaurant"],["Administratif","prix_Administrative"],["Market","prix_Market"],["Café","prix_Café"],["Crèche","prix_Creche"],["Distributor","prix_Distributor"]].map(([l,k])=>(
