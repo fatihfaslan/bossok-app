@@ -98,6 +98,15 @@ const MONTHLY_DATA = [
   {label:"Mai 26",ca:91826,paye:84527,impaye:7299},
   {label:"Juin 26",ca:65821,paye:25702,impaye:40120},
 ];
+// Historique de CA mensuel antérieur à l'usage réel de l'app (comptabilité manuelle).
+// Agrégé par mois uniquement — pas de détail facture par facture, donc ne peut pas
+// alimenter marge/top produits/top clients, seulement les totaux CA/Encaissé/Impayés
+// et le graphique d'évolution.
+const MOIS_ABBR = {"Jan":"01","Fév":"02","Mar":"03","Avr":"04","Mai":"05","Juin":"06","Juil":"07","Aoû":"08","Sep":"09","Oct":"10","Nov":"11","Déc":"12"};
+const MONTHLY_DATA_KEYED = MONTHLY_DATA.map(m => {
+  const [moisAbbr, an2] = m.label.split(" ");
+  return {...m, key: "20"+an2+"-"+MOIS_ABBR[moisAbbr]};
+});
 
 // GPS coordinates per region (approximate center)
 const REGION_COORDS = {
@@ -1194,6 +1203,7 @@ function BossokApp({ session, onLogout }) {
 
   // Dashboard filters
   const [dashPeriod, setDashPeriod] = useState("mois");
+  const [dashProduitTri, setDashProduitTri] = useState("quantite");
   const [dashDateFrom, setDashDateFrom] = useState(() => {
     const now = new Date();
     return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
@@ -2281,9 +2291,23 @@ function BossokApp({ session, onLogout }) {
   });
 
   const factActives = dashFacts.filter(f=>f.statut!=="Avoir"&&f.statut!=="Annulée");
-  const ca = factActives.reduce((s,f)=>s+totalFact(f.lignes).total,0);
-  const caPayee = dashFacts.filter(f=>f.statut==="Payée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
-  const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
+
+  // Historique pré-app : n'ajouter que pour les mois sans aucune vraie facture,
+  // pour ne jamais compter deux fois le même mois.
+  const moisAvecVraiesFactures = new Set(factures.map(f=>f.date?.slice(0,7)).filter(Boolean));
+  const historiquePeriode = MONTHLY_DATA_KEYED.filter(m =>
+    (!activeFrom || m.key >= activeFrom.slice(0,7)) &&
+    (!activeTo || m.key <= activeTo.slice(0,7)) &&
+    !moisAvecVraiesFactures.has(m.key) &&
+    !dashClient && !dashZone && !dashChauffeur && !dashProduit // l'historique n'a pas ce niveau de détail
+  );
+  const caHistorique = historiquePeriode.reduce((s,m)=>s+m.ca,0);
+  const payeeHistorique = historiquePeriode.reduce((s,m)=>s+m.paye,0);
+  const impayeHistorique = historiquePeriode.reduce((s,m)=>s+m.impaye,0);
+
+  const ca = factActives.reduce((s,f)=>s+totalFact(f.lignes).total,0) + caHistorique;
+  const caPayee = dashFacts.filter(f=>f.statut==="Payée").reduce((s,f)=>s+totalFact(f.lignes).total,0) + payeeHistorique;
+  const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0) + impayeHistorique;
   let marge = 0, margeLignesReelles = 0, margeLignesTotal = 0;
   factActives.forEach(f => {
     const r = calcMargeFacture(f, produits, receptionsStock);
@@ -2293,6 +2317,11 @@ function BossokApp({ session, onLogout }) {
   const margeCouverture = margeLignesTotal>0?Math.round(margeLignesReelles/margeLignesTotal*100):0;
   const panierMoyen = factActives.length>0?ca/factActives.length:0;
   const nbClients = new Set(factActives.map(f=>f.client_id)).size;
+  const nouveauxClients = clients.filter(c=>{
+    if (!c.created_at) return false;
+    const d = c.created_at.slice(0,10);
+    return (!activeFrom || d>=activeFrom) && (!activeTo || d<=activeTo);
+  }).length;
   const sefaCmds = dashCmds.filter(c=>c.chauffeur==="A"&&c.statut==="Livré").length;
   const mikailCmds = dashCmds.filter(c=>c.chauffeur==="B"&&c.statut==="Livré").length;
 
@@ -2300,11 +2329,13 @@ function BossokApp({ session, onLogout }) {
   const prodStats = {};
   factActives.forEach(f=>{
     (f.lignes||[]).filter(l=>!l.isCredit&&(!dashProduit||l.nom===dashProduit)).forEach(l=>{
-      if(!prodStats[l.nom]) prodStats[l.nom]={nom:l.nom,qte:0,ca:0};
+      if(!prodStats[l.nom]) prodStats[l.nom]={nom:l.nom,qte:0,ca:0,marge:0};
       prodStats[l.nom].qte+=l.qte; prodStats[l.nom].ca+=l.qte*l.pu;
+      prodStats[l.nom].marge+=calcMargeLigne(l,produits,receptionsStock).marge;
     });
   });
   const topProduits = Object.values(prodStats).sort((a,b)=>b.qte-a.qte).slice(0,8);
+  const topProduitsMarge = Object.values(prodStats).sort((a,b)=>b.marge-a.marge).slice(0,8);
 
   // Zone stats
   const zoneStats = {};
@@ -2343,9 +2374,12 @@ function BossokApp({ session, onLogout }) {
   const monthlyMap = {};
   factActives.forEach(f=>{
     const m=f.date?.slice(0,7)||"";
-    if(!monthlyMap[m]) monthlyMap[m]={label:m,paye:0,impaye:0};
+    if(!monthlyMap[m]) monthlyMap[m]={label:m,paye:0,impaye:0,historique:false};
     if(f.statut==="Payée") monthlyMap[m].paye+=totalFact(f.lignes).total;
     else monthlyMap[m].impaye+=totalFact(f.lignes).total;
+  });
+  historiquePeriode.forEach(m=>{
+    monthlyMap[m.key] = {label:m.key, paye:m.paye, impaye:m.impaye, historique:true};
   });
   const chartData = Object.values(monthlyMap).sort((a,b)=>a.label.localeCompare(b.label));
 
@@ -2436,12 +2470,12 @@ function BossokApp({ session, onLogout }) {
       </div>
     </div>
 
-    {/* ── KPIs Row 1 ── */}
+    {/* ── KPIs Row 1 : indicateurs financiers (priorité visuelle) ── */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
       {[
         {l:"CA Total",v:fmtFull(ca),c:"#1D4ED8",icon:"💶",sub:factActives.length+" factures"},
-        {l:margeCouverture===100?"Marge réelle":"Marge (estimée partielle)",v:fmtFull(marge),c:"#059669",icon:"📈",sub:margePct+"% du CA · "+margeCouverture+"% données réelles"},
-        {l:"Encaissé",v:fmtFull(caPayee),c:"#0EA5E9",icon:"✅",sub:dashFacts.filter(f=>f.statut==="Payée").length+" payées"},
+        {l:margeCouverture===100?"Marge réelle":"Marge (estimée partielle)",v:fmtFull(marge),c:"#7C3AED",icon:"📈",sub:margePct+"% du CA · "+margeCouverture+"% données réelles"},
+        {l:"Encaissé",v:fmtFull(caPayee),c:"#059669",icon:"✅",sub:dashFacts.filter(f=>f.statut==="Payée").length+" payées"},
         {l:"Impayés",v:fmtFull(impaye),c:"#DC2626",icon:"⚠️",sub:dashFacts.filter(f=>f.statut==="Impayée").length+" factures"},
       ].map((s,i)=>(
         <div key={i} style={S.kpi(s.c)}>
@@ -2453,13 +2487,13 @@ function BossokApp({ session, onLogout }) {
       ))}
     </div>
 
-    {/* ── KPIs Row 2 ── */}
+    {/* ── KPIs Row 2 : indicateurs opérationnels (secondaires, teinte neutre) ── */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
-        {l:"Clients actifs",v:nbClients,c:"#7C3AED",icon:"👥",sub:"sur la période"},
-        {l:"Panier moyen",v:fmtFull(panierMoyen),c:"#F59E0B",icon:"🛒",sub:"par facture"},
-        {l:"Livraisons Sefa",v:sefaCmds,c:"#0EA5E9",icon:"🚚",sub:"livrées"},
-        {l:"Livraisons Mikail",v:mikailCmds,c:"#8B5CF6",icon:"🚚",sub:"livrées"},
+        {l:"Clients actifs",v:nbClients,c:"#64748B",icon:"👥",sub:"sur la période"},
+        {l:"Nouveaux clients",v:nouveauxClients,c:"#64748B",icon:"✨",sub:"sur la période"},
+        {l:"Panier moyen",v:fmtFull(panierMoyen),c:"#64748B",icon:"🛒",sub:"par facture"},
+        {l:"Livraisons",v:(sefaCmds+mikailCmds),c:"#64748B",icon:"🚚",sub:`Sefa ${sefaCmds} · Mikail ${mikailCmds}`},
       ].map((s,i)=>(
         <div key={i} style={S.kpi(s.c)}>
           <div style={{fontSize:18,marginBottom:2}}>{s.icon}</div>
@@ -2500,12 +2534,19 @@ function BossokApp({ session, onLogout }) {
     {/* ── Charts row 1 ── */}
     <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>📊 CA mensuel (payé vs impayé)</div>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>📊 CA mensuel (payé vs impayé)</div>
+        {historiquePeriode.length>0&&(
+          <div style={{fontSize:10,color:"#9CA3AF",marginBottom:8}}>📁 Inclut {historiquePeriode.length} mois de données historiques (avant l'app)</div>
+        )}
         {chartData.length>0?(
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={chartData} margin={{top:0,right:10,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
-              <XAxis dataKey="label" tick={{fontSize:9}}/>
+              <XAxis dataKey="label" tick={{fontSize:9}} tickFormatter={(v)=>{
+                const [y,m]=String(v).split("-");
+                const noms=["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Aoû","Sep","Oct","Nov","Déc"];
+                return m ? noms[parseInt(m)-1]+" "+y.slice(2) : v;
+              }}/>
               <YAxis tick={{fontSize:9}} tickFormatter={fmt2} width={48}/>
               <Tooltip formatter={(v,n)=>[fmtFull(v),n==="paye"?"Encaissé":"Impayé"]}/>
               <Bar dataKey="paye" stackId="a" fill="#1D4ED8" name="paye" radius={[0,0,0,0]}/>
@@ -2533,24 +2574,36 @@ function BossokApp({ session, onLogout }) {
     {/* ── Charts row 2: Top produits + CA par zone ── */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🍺 Top produits (caisses vendues)</div>
-        {topProduits.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
-        topProduits.map((p,i)=>{
-          const maxQ=topProduits[0].qte;
-          return(
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontWeight:700,fontSize:13}}>🍺 Top produits</div>
+          <div style={{display:"flex",gap:4}}>
+            {[["quantite","Ventes"],["marge","Marge"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setDashProduitTri(k)}
+                style={{...S.btn(dashProduitTri===k?"#1D4ED8":"#F1F5F9",dashProduitTri===k?"#fff":"#374151"),padding:"3px 10px",fontSize:10}}>{l}</button>
+            ))}
+          </div>
+        </div>
+        {(() => {
+          const liste = dashProduitTri==="marge" ? topProduitsMarge : topProduits;
+          const valKey = dashProduitTri==="marge" ? "marge" : "qte";
+          if (liste.length===0) return <div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>;
+          const maxV = liste[0][valKey] || 1;
+          return liste.map((p,i)=>(
             <div key={p.nom} style={{marginBottom:5}}>
               <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:1}}>
                 <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200,fontWeight:i<3?600:400,color:i===0?"#1D4ED8":"#374151"}}>
                   {i===0?"🥇 ":i===1?"🥈 ":i===2?"🥉 ":""}{p.nom}
                 </span>
-                <span style={{color:"#6B7280",whiteSpace:"nowrap",marginLeft:4}}>{p.qte} cs · {fmtFull(p.ca)}</span>
+                <span style={{color:"#6B7280",whiteSpace:"nowrap",marginLeft:4}}>
+                  {dashProduitTri==="marge" ? fmtFull(p.marge) : `${p.qte} cs · ${fmtFull(p.ca)}`}
+                </span>
               </div>
               <div style={{height:5,background:"#F1F5F9",borderRadius:3}}>
-                <div style={{height:5,background:i===0?"#1D4ED8":i<3?"#60A5FA":"#BAE6FD",borderRadius:3,width:(p.qte/maxQ*100)+"%"}}/>
+                <div style={{height:5,background:i===0?(dashProduitTri==="marge"?"#059669":"#1D4ED8"):i<3?(dashProduitTri==="marge"?"#6EE7B7":"#60A5FA"):(dashProduitTri==="marge"?"#D1FAE5":"#BAE6FD"),borderRadius:3,width:Math.max(2,(p[valKey]/maxV*100))+"%"}}/>
               </div>
             </div>
-          );
-        })}
+          ));
+        })()}
       </div>
 
       <div style={S.card}>
