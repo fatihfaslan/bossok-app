@@ -459,6 +459,22 @@ const getClientPrix = (produit, client) => {
   return produit.prix[client?.type] || produit.prix["Snack"] || 0;
 };
 
+// Régions hors Luxembourg traitées en exonération de TVA intracommunautaire
+// (autoliquidation B2B, art. 138 directive TVA UE) — cohérent avec generatePDF.
+const EXPORT_REGIONS = ["Belgique", "France", "Hollande"];
+const TVA_PREFIX = { "Belgique": "BE", "France": "FR", "Hollande": "NL" };
+// Vérifie qu'un client hors Luxembourg a un numéro de TVA intracommunautaire
+// plausible (préfixe pays correct + longueur minimale). L'exonération à 0%
+// appliquée automatiquement à ces clients n'est légale que si ce numéro est
+// valide et figure sur la facture — sans lui, la TVA luxembourgeoise est due.
+const tvaIntracomValide = (client) => {
+  const region = client?.region || "";
+  if (!EXPORT_REGIONS.includes(region)) return true; // n/a pour clients LU
+  const tva = (client?.tva || "").replace(/[\s.\-]/g, "").toUpperCase();
+  const prefix = TVA_PREFIX[region];
+  return tva.startsWith(prefix) && tva.length >= prefix.length + 6;
+};
+
 const fmt = (n) => new Intl.NumberFormat("fr-LU",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(n||0);
 const fmtFull = (n) => new Intl.NumberFormat("fr-LU",{style:"currency",currency:"EUR"}).format(n||0);
 const initials = (n="") => n.split(" ").slice(0,2).map(w=>w[0]||"").join("").toUpperCase();
@@ -526,7 +542,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   const sousTotal = lignes.reduce((s, l) => s + l.qte * l.pu, 0);
   const totalConsignes = lignes.reduce((s, l) => s + l.qte * (l.consigne || 0), 0);
 
-  const paysExport = ["Belgique", "France", "Hollande"].includes(client?.region || "");
+  const paysExport = EXPORT_REGIONS.includes(client?.region || "");
   const tvaPct = paysExport ? 0 : 3;
   const tvaVal = sousTotal * tvaPct / 100;
   const total = sousTotal + tvaVal + totalConsignes; // vidanges incluses
@@ -2182,12 +2198,13 @@ function BossokApp({ session, onLogout }) {
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && (
   <div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:clients.length,c:"#1D4ED8"},
         {l:"Actifs",v:clientsActifs.length,c:"#059669"},
         {l:"Passifs",v:clients.filter(c=>c.statut==="Passif").length,c:"#D97706"},
         {l:"Impayées",v:factures.filter(f=>f.statut==="Impayée").length,c:"#DC2626"},
+        {l:"TVA manquante",v:clients.filter(c=>EXPORT_REGIONS.includes(c.region)&&!tvaIntracomValide(c)).length,c:"#DC2626"},
       ].map((s,i)=>(
         <div key={i} style={S.kpi(s.c)}>
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
@@ -2232,6 +2249,9 @@ function BossokApp({ session, onLogout }) {
                   <span style={S.badge(tc(c.type).bg,tc(c.type).text)}>{c.type}</span>
                   <span style={S.badge(c.statut==="Actif"?"#DCFCE7":"#FEF3C7",c.statut==="Actif"?"#166534":"#92400E")}>{c.statut}</span>
                   {imp.length>0&&<span style={S.badge("#FEE2E2","#DC2626")}>⚠ {imp.length}</span>}
+                  {EXPORT_REGIONS.includes(c.region)&&!tvaIntracomValide(c)&&(
+                    <span title="Pas de n° TVA intracommunautaire valide — l'exonération 0% n'est pas justifiée" style={S.badge("#FEE2E2","#DC2626")}>🧾 TVA manquante</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -3378,6 +3398,11 @@ function BossokApp({ session, onLogout }) {
       </div>
       {clientTab==="info"&&(
         <div style={{display:"grid",gap:8}}>
+          {EXPORT_REGIONS.includes(selClient.region)&&!tvaIntracomValide(selClient)&&(
+            <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,padding:10,fontSize:12,color:"#991B1B"}}>
+              🧾 <strong>Pas de n° de TVA intracommunautaire valide.</strong> Les factures pour ce client sont émises à 0% (exonération intracommunautaire), ce qui n'est légal que si un n° de TVA {TVA_PREFIX[selClient.region]}... est renseigné. Complète le champ "N° TVA" ci-dessous.
+            </div>
+          )}
           {[["Adresse",selClient.adresse],["Téléphone",selClient.telephone],["Email",selClient.email||"—"],["Contact",selClient.contact||"—"],["N° TVA",selClient.tva||"—"],["Région",selClient.region],["Conditions",selClient.conditions],["Statut",selClient.statut]].map(([l,v])=>(
             <div key={l} style={{display:"flex",gap:12,fontSize:13}}>
               <span style={{color:"#9CA3AF",width:100,flexShrink:0}}>{l}</span>
@@ -3617,6 +3642,15 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
       )}
+      {(()=>{
+        const factClient = clients.find(c=>c.id===factClientId);
+        if (!factClient || !EXPORT_REGIONS.includes(factClient.region) || tvaIntracomValide(factClient)) return null;
+        return(
+          <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:10,marginBottom:12,fontSize:12,color:"#92400E"}}>
+            🧾 <strong>Client {factClient.region} sans n° de TVA intracommunautaire valide.</strong> Cette facture sera émise à 0% de TVA, mais l'exonération n'est légale qu'avec un n° {TVA_PREFIX[factClient.region]}... valide. Complète-le dans la fiche client avant d'envoyer.
+          </div>
+        );
+      })()}
       {factClientId&&(
         <div style={{marginBottom:12}}>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:4}}>Produits</label>
