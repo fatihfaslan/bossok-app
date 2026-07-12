@@ -2015,7 +2015,7 @@ function BossokApp({ session, onLogout }) {
           <span style={{fontSize:18}}>📦</span>
           <div style={{fontSize:12,color:"#991B1B",flex:1}}>
             {nbRuptures>0&&<span><strong>{nbRuptures} produit{nbRuptures>1?"s":""}</strong> en rupture de stock. </span>}
-            {nbStockBas>0&&<span><strong>{nbStockBas} produit{nbStockBas>1?"s":""}</strong> en stock bas (≤5 caisses). </span>}
+            {nbStockBas>0&&<span><strong>{nbStockBas} produit{nbStockBas>1?"s":""}</strong> en stock bas (≤{STOCK_BAS_SEUIL} caisses). </span>}
             Clique pour voir le détail dans l'onglet Stock →
           </div>
         </div>
@@ -4056,4 +4056,3 @@ function BossokApp({ session, onLogout }) {
     </div>
   );
 }
- 
