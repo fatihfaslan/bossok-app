@@ -1773,6 +1773,34 @@ function BossokApp({ session, onLogout }) {
     generatePDF(facture, client, imp, solde);
   };
 
+  // Aperçu de facture pour une commande pas encore livrée : mêmes lignes/prix que
+  // la vraie facture qui serait créée à la livraison, mais rien n'est enregistré
+  // en base — c'est purement un document imprimable à l'avance.
+  const apercuFactureCommande = (cmd) => {
+    const client = clients.find(c => c.id === cmd.client_id);
+    const lignes = (cmd.produits||[]).map(p => {
+      const produit = findProduitByNom(produits, p.nom);
+      const pu = produit ? getClientPrix(produit, client) : 0;
+      const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
+      return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
+    });
+    const today = new Date().toISOString().split("T")[0];
+    const ech = new Date(); ech.setDate(ech.getDate()+7);
+    const imp = factures.filter(x => x.client_id === cmd.client_id && x.statut === "Impayée");
+    const solde = soldeConsignes(cmd.client_id).reduce((s, r) => s + r.solde * r.consigne, 0);
+    generatePDF({
+      numero: "APERÇU-CMD" + cmd.id,
+      client_id: cmd.client_id,
+      client_nom: cmd.client_nom,
+      client_adresse: cmd.client_adresse,
+      client_tva: client?.tva || "",
+      date: today,
+      echeance: ech.toISOString().split("T")[0],
+      lignes,
+      statut: "Impayée",
+    }, client, imp, solde);
+  };
+
   const imprimerBonLivraison = (cmd) => {
     const client = clients.find(c => c.id === cmd.client_id);
     generateBonLivraison(cmd, client);
@@ -3128,6 +3156,7 @@ function BossokApp({ session, onLogout }) {
                   {cmd.statut!=="Livré"&&(
                     <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
                       <button onClick={()=>marquerLivre(cmd.id)} style={{...S.btn("#059669"),padding:"4px 10px",fontSize:11}}>✓ Livré</button>
+                      <button onClick={()=>apercuFactureCommande(cmd)} style={{...S.btn("#374151"),padding:"4px 10px",fontSize:11}}>🖨️ Aperçu facture</button>
                       <button onClick={()=>imprimerBonLivraison(cmd)} style={{...S.btn("#7C3AED"),padding:"4px 10px",fontSize:11}}>📦 Bon de livraison</button>
                       <button onClick={()=>openEditCmd(cmd)} style={{...S.btn("#1D4ED8"),padding:"4px 10px",fontSize:11}}>✏️ Modifier</button>
                       <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
