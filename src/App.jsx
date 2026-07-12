@@ -969,7 +969,7 @@ function App({ session, onLogout }) {
 }
 
 function BossokApp({ session, onLogout }) {
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState("calendrier");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -983,6 +983,8 @@ function BossokApp({ session, onLogout }) {
   const [receptionsStock, setReceptionsStock] = useState([]);
   const [pertesStock, setPertesStock] = useState([]);
   const [evenements, setEvenements] = useState([]);
+  const [stickyNote, setStickyNote] = useState("");
+  const [stickyNoteSaved, setStickyNoteSaved] = useState(true);
 
   // UI
   const [selClient, setSelClient] = useState(null);
@@ -1081,7 +1083,7 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes, evts] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -1090,6 +1092,7 @@ function BossokApp({ session, onLogout }) {
         db.get("receptions_stock"),
         db.get("pertes_stock"),
         db.get("evenements"),
+        db.get("note_partagee"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -1101,6 +1104,7 @@ function BossokApp({ session, onLogout }) {
       setReceptionsStock(receps);
       setPertesStock(pertes);
       setEvenements(evts);
+      setStickyNote(note?.[0]?.contenu || "");
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
@@ -1324,6 +1328,17 @@ function BossokApp({ session, onLogout }) {
       setEditEvent(null);
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
+  };
+
+  const saveStickyNote = async (contenu) => {
+    try {
+      await db.update("note_partagee", 1, {
+        contenu,
+        updated_par: session?.user?.email || null,
+        updated_at: new Date().toISOString(),
+      });
+      setStickyNoteSaved(true);
+    } catch(e) { console.error(e); }
   };
 
   const [lastFacture, setLastFacture] = useState(null);
@@ -1906,6 +1921,21 @@ function BossokApp({ session, onLogout }) {
             ))}
           </div>
         )}
+      </div>
+
+      <div style={{...S.card,background:"#FEFCE8",border:"1px solid #FDE68A",position:"relative"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontWeight:700,fontSize:13,color:"#92400E"}}>📌 Pense-bête</div>
+          <span style={{fontSize:10,color:"#B45309"}}>{stickyNoteSaved?"":"● non enregistré"}</span>
+        </div>
+        <textarea
+          value={stickyNote}
+          onChange={e=>{setStickyNote(e.target.value);setStickyNoteSaved(false);}}
+          onBlur={()=>saveStickyNote(stickyNote)}
+          placeholder="Note partagée entre tous les utilisateurs..."
+          rows={5}
+          style={{width:"100%",border:"none",background:"transparent",resize:"vertical",fontSize:13,fontFamily:"inherit",outline:"none",color:"#78350F",boxSizing:"border-box"}}
+        />
       </div>
     </div>
   </div>
