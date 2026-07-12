@@ -985,6 +985,11 @@ function BossokApp({ session, onLogout }) {
   const [evenements, setEvenements] = useState([]);
   const [stickyNote, setStickyNote] = useState("");
   const [stickyNoteSaved, setStickyNoteSaved] = useState(true);
+  const [notesPersonnelles, setNotesPersonnelles] = useState([]);
+  const [myNote, setMyNote] = useState("");
+  const [myNoteSaved, setMyNoteSaved] = useState(true);
+  const [calViewMode, setCalViewMode] = useState("mois");
+  const [calWeekRef, setCalWeekRef] = useState(()=>new Date().toISOString().split("T")[0]);
 
   // UI
   const [selClient, setSelClient] = useState(null);
@@ -1083,7 +1088,7 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -1093,6 +1098,7 @@ function BossokApp({ session, onLogout }) {
         db.get("pertes_stock"),
         db.get("evenements"),
         db.get("note_partagee"),
+        db.get("notes_personnelles"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -1105,6 +1111,8 @@ function BossokApp({ session, onLogout }) {
       setPertesStock(pertes);
       setEvenements(evts);
       setStickyNote(note?.[0]?.contenu || "");
+      setNotesPersonnelles(mesNotes);
+      setMyNote(mesNotes.find(n=>n.user_email===session?.user?.email)?.contenu || "");
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
@@ -1338,6 +1346,21 @@ function BossokApp({ session, onLogout }) {
         updated_at: new Date().toISOString(),
       });
       setStickyNoteSaved(true);
+    } catch(e) { console.error(e); }
+  };
+
+  const saveMyNote = async (contenu) => {
+    const email = session?.user?.email;
+    if (!email) return;
+    try {
+      const existing = notesPersonnelles.find(n=>n.user_email===email);
+      if (existing) {
+        await db.update("notes_personnelles", existing.id, {contenu, updated_at: new Date().toISOString()});
+      } else {
+        const created = await db.insert("notes_personnelles", {user_email: email, contenu});
+        setNotesPersonnelles(prev=>[...prev, ...(Array.isArray(created)?created:[created])]);
+      }
+      setMyNoteSaved(true);
     } catch(e) { console.error(e); }
   };
 
@@ -1858,20 +1881,51 @@ function BossokApp({ session, onLogout }) {
     .sort((a,b)=>a.date_debut.localeCompare(b.date_debut))
     .slice(0,6);
 
+  // Vue semaine
+  const jourNoms = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
+  const refD = new Date(calWeekRef+"T00:00:00");
+  const dow = (refD.getDay()+6)%7;
+  const weekStart = new Date(refD); weekStart.setDate(refD.getDate()-dow);
+  const weekDays = [...Array(7)].map((_,i)=>{const d=new Date(weekStart); d.setDate(weekStart.getDate()+i); return d;});
+  const weekEnd = weekDays[6];
+
+  const changeWeek = (deltaWeeks) => {
+    const d = new Date(calWeekRef+"T00:00:00");
+    d.setDate(d.getDate() + deltaWeeks*7);
+    setCalWeekRef(d.toISOString().split("T")[0]);
+  };
+
+  const openDayEventDate = (dateStr) => {
+    setEditEvent(null);
+    setEventForm({titre:"",description:"",date_debut:dateStr,date_fin:"",toute_journee:true,heure_debut:"",heure_fin:"",couleur:"#1D4ED8"});
+    setShowEventForm(true);
+  };
+
   return(
   <div>
-    <div style={{display:"grid",gridTemplateColumns:"2.2fr 1fr",gap:16}}>
+    <div style={{display:"grid",gridTemplateColumns:"1.7fr 1.3fr",gap:16}}>
       <div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,...S.card,padding:"10px 16px"}}>
-          <button onClick={()=>changeMonth(-1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>‹</button>
+          <button onClick={()=>calViewMode==="mois"?changeMonth(-1):changeWeek(-1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>‹</button>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{fontWeight:700,fontSize:15}}>{monthNames[month]} {year}</div>
-            <button onClick={()=>{const d=new Date();setCalMonth({year:d.getFullYear(),month:d.getMonth()});}}
+            <div style={{fontWeight:700,fontSize:15}}>
+              {calViewMode==="mois" ? `${monthNames[month]} ${year}` :
+                `${weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})} → ${weekEnd.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit',year:'numeric'})}`}
+            </div>
+            <button onClick={()=>{const d=new Date();setCalMonth({year:d.getFullYear(),month:d.getMonth()});setCalWeekRef(d.toISOString().split("T")[0]);}}
               style={{...S.btn("#EFF6FF","#1D4ED8"),padding:"4px 10px",fontSize:11}}>Aujourd'hui</button>
           </div>
-          <button onClick={()=>changeMonth(1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>›</button>
+          <button onClick={()=>calViewMode==="mois"?changeMonth(1):changeWeek(1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>›</button>
         </div>
 
+        <div style={{display:"flex",gap:4,marginBottom:12}}>
+          {[["mois","Mois"],["semaine","Semaine"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setCalViewMode(k)}
+              style={{...S.btn(calViewMode===k?"#1D4ED8":"#F1F5F9",calViewMode===k?"#fff":"#374151"),padding:"6px 16px",fontSize:12}}>{l}</button>
+          ))}
+        </div>
+
+        {calViewMode==="mois" ? (
         <div style={S.card}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,marginBottom:6}}>
             {["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(d=>(
@@ -1900,6 +1954,32 @@ function BossokApp({ session, onLogout }) {
             })}
           </div>
         </div>
+        ) : (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8}}>
+          {weekDays.map((d,idx)=>{
+            const dateStr = d.toISOString().split("T")[0];
+            const dayEvents = getEventsForDate(dateStr);
+            const isToday = dateStr===todayStr;
+            return(
+              <div key={idx} style={{...S.card,padding:10,minHeight:220,border:"1px solid "+(isToday?"#1D4ED8":"#E5E7EB"),background:isToday?"#EFF6FF":"#fff",cursor:"pointer"}}
+                onClick={()=>openDayEventDate(dateStr)}>
+                <div style={{fontSize:11,fontWeight:600,color:"#9CA3AF"}}>{jourNoms[idx].slice(0,3)}</div>
+                <div style={{fontSize:15,fontWeight:isToday?800:700,color:isToday?"#1D4ED8":"#374151",marginBottom:8}}>{d.getDate()}</div>
+                <div style={{display:"grid",gap:4}}>
+                  {dayEvents.map(evt=>(
+                    <div key={evt.id} onClick={(e)=>openEditEvent(evt,e)}
+                      style={{fontSize:11,padding:"4px 6px",borderRadius:5,background:evt.couleur+"22",color:evt.couleur,fontWeight:600}}>
+                      {!evt.toute_journee&&evt.heure_debut&&<div style={{fontSize:9,opacity:0.85}}>{evt.heure_debut.slice(0,5)}{evt.heure_fin?`–${evt.heure_fin.slice(0,5)}`:""}</div>}
+                      <div style={{whiteSpace:"normal"}}>{evt.titre}</div>
+                    </div>
+                  ))}
+                  {dayEvents.length===0&&<div style={{fontSize:10,color:"#D1D5DB"}}>—</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        )}
       </div>
 
       <div style={S.card}>
@@ -1923,19 +2003,36 @@ function BossokApp({ session, onLogout }) {
         )}
       </div>
 
-      <div style={{...S.card,background:"#FEFCE8",border:"1px solid #FDE68A",position:"relative"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:700,fontSize:13,color:"#92400E"}}>📌 Pense-bête</div>
-          <span style={{fontSize:10,color:"#B45309"}}>{stickyNoteSaved?"":"● non enregistré"}</span>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{...S.card,background:"#FEFCE8",border:"1px solid #FDE68A",position:"relative"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{fontWeight:700,fontSize:13,color:"#92400E"}}>📌 Pense-bête</div>
+            <span style={{fontSize:10,color:"#B45309"}}>{stickyNoteSaved?"":"● non enregistré"}</span>
+          </div>
+          <textarea
+            value={stickyNote}
+            onChange={e=>{setStickyNote(e.target.value);setStickyNoteSaved(false);}}
+            onBlur={()=>saveStickyNote(stickyNote)}
+            placeholder="Note partagée entre tous les utilisateurs..."
+            rows={5}
+            style={{width:"100%",border:"none",background:"transparent",resize:"vertical",fontSize:13,fontFamily:"inherit",outline:"none",color:"#78350F",boxSizing:"border-box"}}
+          />
         </div>
-        <textarea
-          value={stickyNote}
-          onChange={e=>{setStickyNote(e.target.value);setStickyNoteSaved(false);}}
-          onBlur={()=>saveStickyNote(stickyNote)}
-          placeholder="Note partagée entre tous les utilisateurs..."
-          rows={5}
-          style={{width:"100%",border:"none",background:"transparent",resize:"vertical",fontSize:13,fontFamily:"inherit",outline:"none",color:"#78350F",boxSizing:"border-box"}}
-        />
+
+        <div style={{...S.card,background:"#EFF6FF",border:"1px solid #BFDBFE",position:"relative"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{fontWeight:700,fontSize:13,color:"#1D4ED8"}}>🔒 Ma note</div>
+            <span style={{fontSize:10,color:"#1D4ED8"}}>{myNoteSaved?"":"● non enregistré"}</span>
+          </div>
+          <textarea
+            value={myNote}
+            onChange={e=>{setMyNote(e.target.value);setMyNoteSaved(false);}}
+            onBlur={()=>saveMyNote(myNote)}
+            placeholder="Note personnelle, visible par toi uniquement..."
+            rows={5}
+            style={{width:"100%",border:"none",background:"transparent",resize:"vertical",fontSize:13,fontFamily:"inherit",outline:"none",color:"#1E3A8A",boxSizing:"border-box"}}
+          />
+        </div>
       </div>
     </div>
   </div>
