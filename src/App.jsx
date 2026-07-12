@@ -1815,7 +1815,7 @@ function BossokApp({ session, onLogout }) {
 }}>+ Nouvelle facture</button>}
             {page==="commandes" && <button style={{...S.btn(),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>✅ Enregistrer</button>}
             {page==="produits" && <button style={S.btn()} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>+ Nouveau produit</button>}
-            {page==="calendrier" && <button style={S.btn()} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:new Date().toISOString().split("T")[0],date_fin:"",toute_journee:true,heure_debut:"",heure_fin:"",couleur:"#1D4ED8"});setShowEventForm(true);}}>+ Nouvel événement</button>}
+            {page==="calendrier" && <button style={S.btn()} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:new Date().toISOString().split("T")[0],date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>+ Nouvel événement</button>}
             <button style={S.btn("#F1F5F9","#374151")} onClick={loadAll}>🔄</button>
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 10px",background:"#F1F5F9",borderRadius:8}}>
               <span style={{fontSize:12,color:"#374151"}}>{session?.user?.email}</span>
@@ -1859,7 +1859,7 @@ function BossokApp({ session, onLogout }) {
   const openDayEvent = (day) => {
     const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     setEditEvent(null);
-    setEventForm({titre:"",description:"",date_debut:dateStr,date_fin:"",toute_journee:true,heure_debut:"",heure_fin:"",couleur:"#1D4ED8"});
+    setEventForm({titre:"",description:"",date_debut:dateStr,date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});
     setShowEventForm(true);
   };
 
@@ -1897,7 +1897,7 @@ function BossokApp({ session, onLogout }) {
 
   const openDayEventDate = (dateStr) => {
     setEditEvent(null);
-    setEventForm({titre:"",description:"",date_debut:dateStr,date_fin:"",toute_journee:true,heure_debut:"",heure_fin:"",couleur:"#1D4ED8"});
+    setEventForm({titre:"",description:"",date_debut:dateStr,date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});
     setShowEventForm(true);
   };
 
@@ -4388,7 +4388,16 @@ function BossokApp({ session, onLogout }) {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div>
               <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Heure de début</label>
-              <input type="time" value={eventForm.heure_debut||""} onChange={e=>setEventForm(p=>({...p,heure_debut:e.target.value}))} style={S.input}/>
+              <input type="time" value={eventForm.heure_debut||""} onChange={e=>{
+                const newDebut = e.target.value;
+                setEventForm(p=>{
+                  if (!newDebut) return {...p, heure_debut:newDebut};
+                  const toMin = (t)=>{const [h,m]=t.split(":").map(Number);return h*60+m;};
+                  const toStr = (min)=>{min=((min%1440)+1440)%1440;return `${String(Math.floor(min/60)).padStart(2,'0')}:${String(min%60).padStart(2,'0')}`;};
+                  const dureeMin = (p.heure_debut && p.heure_fin) ? (toMin(p.heure_fin)-toMin(p.heure_debut)+1440)%1440 || 60 : 60;
+                  return {...p, heure_debut:newDebut, heure_fin: toStr(toMin(newDebut)+dureeMin)};
+                });
+              }} style={S.input}/>
             </div>
             <div>
               <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Heure de fin</label>
