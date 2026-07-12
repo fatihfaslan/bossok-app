@@ -1603,20 +1603,20 @@ function BossokApp({ session, onLogout }) {
 
   // ── STYLES ─────────────────────────────────────────────────────
   const S = {
-    app:{fontFamily:"'Inter',system-ui,sans-serif",background:"#F1F5F9",minHeight:"100vh",display:"flex"},
-    sidebar:{width:200,background:"#0F172A",color:"#fff",display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:100},
-    main:{marginLeft:200,flex:1,minWidth:0},
-    topbar:{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"0 24px",height:52,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50},
-    page:{padding:"20px 24px",maxWidth:1100,margin:"0 auto"},
-    card:{background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:16},
-    btn:(bg,col)=>({padding:"8px 16px",background:bg||"#1D4ED8",color:col||"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:saving?0.7:1}),
-    input:{width:"100%",padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box"},
-    badge:(bg,col)=>({fontSize:11,padding:"2px 8px",borderRadius:999,background:bg,color:col,fontWeight:500,display:"inline-block"}),
-    modal:{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16},
-    modalBox:{background:"#fff",borderRadius:16,padding:24,maxWidth:640,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"},
-    tab:(a)=>({padding:"7px 14px",border:"none",borderBottom:a?"2px solid #1D4ED8":"2px solid transparent",background:"transparent",cursor:"pointer",fontSize:12,fontWeight:a?700:400,color:a?"#1D4ED8":"#6B7280"}),
-    kpi:(c)=>({background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:"14px 16px",borderLeft:"4px solid "+c}),
-    navItem:(a)=>({display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,cursor:"pointer",marginBottom:2,background:a?"#1D4ED8":"transparent",color:a?"#fff":"#94A3B8",fontSize:13,fontWeight:a?600:400}),
+    app:{fontFamily:"'Inter',system-ui,sans-serif",background:"#F8FAFC",minHeight:"100vh",display:"flex"},
+    sidebar:{width:224,background:"#fff",color:"#0F172A",borderRight:"1px solid #E5E7EB",display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:100},
+    main:{marginLeft:224,flex:1,minWidth:0},
+    topbar:{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"0 24px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50},
+    page:{padding:"24px 28px",maxWidth:1100,margin:"0 auto"},
+    card:{background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:18},
+    btn:(bg,col)=>({padding:"9px 18px",background:bg||"#1D4ED8",color:col||"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:saving?0.7:1,letterSpacing:"0.1px"}),
+    input:{width:"100%",padding:"9px 12px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:"inherit"},
+    badge:(bg,col)=>({fontSize:11,padding:"3px 9px",borderRadius:999,background:bg,color:col,fontWeight:600,display:"inline-block"}),
+    modal:{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16},
+    modalBox:{background:"#fff",borderRadius:16,padding:26,maxWidth:640,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(15,23,42,0.18)"},
+    tab:(a)=>({padding:"8px 16px",border:"none",borderBottom:a?"2px solid #1D4ED8":"2px solid transparent",background:"transparent",cursor:"pointer",fontSize:13,fontWeight:a?700:500,color:a?"#1D4ED8":"#6B7280"}),
+    kpi:(c)=>({background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:"16px 18px",borderLeft:"4px solid "+c}),
+    navItem:(a)=>({display:"flex",alignItems:"center",gap:11,padding:"10px 14px",borderRadius:8,cursor:"pointer",marginBottom:2,background:a?"#EFF6FF":"transparent",color:a?"#1D4ED8":"#475569",fontSize:14,fontWeight:a?600:500}),
   };
 
   const NAV = [
@@ -1634,7 +1634,7 @@ function BossokApp({ session, onLogout }) {
   const PAGE_TITLES = {dashboard:"Tableau de bord",clients:"Clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
   if (loading) return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F1F5F9",fontFamily:"Inter,system-ui,sans-serif"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8FAFC",fontFamily:"Inter,system-ui,sans-serif"}}>
       <div style={{textAlign:"center"}}>
         <div style={{fontSize:40,marginBottom:16}}>🍺</div>
         <div style={{fontSize:18,fontWeight:700,color:"#0F172A"}}>BOSSOK</div>
@@ -1644,7 +1644,7 @@ function BossokApp({ session, onLogout }) {
   );
 
   if (error) return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F1F5F9",fontFamily:"Inter,system-ui,sans-serif"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8FAFC",fontFamily:"Inter,system-ui,sans-serif"}}>
       <div style={{textAlign:"center",maxWidth:400}}>
         <div style={{fontSize:40,marginBottom:16}}>⚠️</div>
         <div style={{fontSize:16,fontWeight:700,color:"#DC2626",marginBottom:8}}>Erreur de connexion</div>
@@ -1656,18 +1656,24 @@ function BossokApp({ session, onLogout }) {
 
   return (
     <div style={S.app}>
+      <style>{`
+        input:focus, select:focus, textarea:focus { border-color:#1D4ED8 !important; box-shadow:0 0 0 3px rgba(29,78,216,0.12); }
+        button { transition: opacity 0.12s ease, transform 0.08s ease; }
+        button:active { transform: scale(0.97); }
+        ::selection { background: #BFDBFE; }
+      `}</style>
       {/* SIDEBAR */}
       <div style={S.sidebar}>
-        <div style={{padding:"16px",borderBottom:"1px solid #1E293B"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <img src={LOGO} alt="BOSSOK" style={{width:36,height:36,objectFit:"contain",borderRadius:8}}/>
+        <div style={{padding:"18px 16px",borderBottom:"1px solid #F1F5F9"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <img src={LOGO} alt="BOSSOK" style={{width:38,height:38,objectFit:"contain",borderRadius:8}}/>
             <div>
-              <div style={{fontWeight:800,fontSize:14}}>BOSSOK</div>
-              <div style={{fontSize:10,color:"#475569"}}>Luxembourg</div>
+              <div style={{fontWeight:800,fontSize:16,color:"#0F172A",letterSpacing:"-0.2px"}}>BOSSOK</div>
+              <div style={{fontSize:11,color:"#94A3B8"}}>Luxembourg</div>
             </div>
           </div>
         </div>
-        <div style={{flex:1,padding:"8px",overflowY:"auto"}}>
+        <div style={{flex:1,padding:"12px 10px",overflowY:"auto"}}>
           {NAV.map(n=>{
             const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=5).length : 0;
             return(
@@ -1682,8 +1688,8 @@ function BossokApp({ session, onLogout }) {
             );
           })}
         </div>
-        <div style={{padding:"12px",borderTop:"1px solid #1E293B",fontSize:11,color:"#475569"}}>
-          {saving && <span style={{color:"#60A5FA"}}>💾 Sauvegarde...</span>}
+        <div style={{padding:"14px 16px",borderTop:"1px solid #F1F5F9",fontSize:11,color:"#94A3B8"}}>
+          {saving && <span style={{color:"#1D4ED8",fontWeight:600}}>💾 Sauvegarde...</span>}
           {!saving && <span>✅ {clientsActifs.length} clients actifs</span>}
         </div>
       </div>
