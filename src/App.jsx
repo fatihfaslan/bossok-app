@@ -72,75 +72,6 @@ const db = {
   delete: (table, id) => sb(`${table}?id=eq.${id}`, "DELETE"),
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// STATIC DATA
-// ═══════════════════════════════════════════════════════════════════
-const PRODUITS = [
-  {id:"C01",nom:"COCA COLA CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
-  {id:"C02",nom:"COCA ZERO CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
-  {id:"C03",nom:"COCA CHERRY CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:12.97,Restaurant:12.97,Administrative:13.97,Market:12.97,Café:13.97,Creche:13.97,Distributor:12.97}},
-  {id:"C05",nom:"FANTA ORANGE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:10.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
-  {id:"C06",nom:"FANTA EXOTIC CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
-  {id:"C09",nom:"SPRITE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
-  {id:"C10",nom:"SEVEN UP CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
-  {id:"C11",nom:"PEPSI CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:10.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
-  {id:"C12",nom:"OASIS TROPICAL CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:13.96,Restaurant:13.96,Administrative:16.96,Market:13.96,Café:14.96,Creche:15.96,Distributor:13.96}},
-  {id:"C16",nom:"LIPTON PEACH CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:12.97,Restaurant:12.97,Administrative:13.97,Market:12.97,Café:13.97,Creche:13.97,Distributor:12.97}},
-  {id:"C18",nom:"SCHWEPPES AGRUM CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:13.96,Restaurant:13.96,Administrative:16.96,Market:13.96,Café:14.96,Creche:15.96,Distributor:13.96}},
-  {id:"C21",nom:"RED BULL CANS 24x25cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:25.97,Restaurant:25.97,Administrative:28.97,Market:25.97,Café:26.97,Creche:27.97,Distributor:25.97}},
-  {id:"C22",nom:"MONSTER GREEN CANS 24x50cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:28.96,Restaurant:28.96,Administrative:31.96,Market:28.96,Café:29.96,Creche:30.96,Distributor:28.96}},
-  {id:"B01",nom:"COCA COLA 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:21.97,Restaurant:21.97,Administrative:25.97,Market:21.97,Café:23.97,Creche:24.97,Distributor:21.97}},
-  {id:"B02",nom:"COCA ZERO 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:21.97,Restaurant:21.97,Administrative:25.97,Market:21.97,Café:23.97,Creche:24.97,Distributor:21.97}},
-  {id:"B03",nom:"FANTA ORANGE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:21.97,Restaurant:21.97,Administrative:25.97,Market:21.97,Café:23.97,Creche:24.97,Distributor:21.97}},
-  {id:"B04",nom:"SPRITE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:21.97,Restaurant:21.97,Administrative:25.97,Market:21.97,Café:23.97,Creche:24.97,Distributor:21.97}},
-  {id:"B10",nom:"CRISTALINE 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:5.95,Restaurant:5.95,Administrative:8.95,Market:5.95,Café:6.95,Creche:7.95,Distributor:5.95}},
-  {id:"B12",nom:"EVIAN 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:14.95,Restaurant:14.95,Administrative:17.95,Market:14.95,Café:15.95,Creche:16.95,Distributor:14.95}},
-  {id:"B14",nom:"SAN PELLEGRINO 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:14.95,Restaurant:14.95,Administrative:17.85,Market:14.95,Café:15.95,Creche:16.95,Distributor:14.95}},
-  {id:"B16",nom:"ROSPORT BLUE 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:18.00,Restaurant:18.00,Administrative:19.95,Market:18.00,Café:19.00,Creche:19.00,Distributor:18.00}},
-  {id:"V01",nom:"COCA VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:15.96,Restaurant:17.96,Administrative:19.96,Market:16.96,Café:17.96,Creche:18.96,Distributor:15.96}},
-  {id:"V03",nom:"FANTA VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:15.96,Restaurant:17.96,Administrative:19.96,Market:16.96,Café:17.96,Creche:18.96,Distributor:15.96}},
-  {id:"V08",nom:"ROSPORT BLUE VC 28x25cl",categorie:"Verre",type_emballage:"VC",consigne:"25cl",prix:{Snack:14.59,Restaurant:15.59,Administrative:18.59,Market:15.59,Café:16.59,Creche:17.59,Distributor:14.59}},
-  {id:"V10",nom:"ROSPORT BLUE VC 20x50cl",categorie:"Verre",type_emballage:"VC",consigne:"50cl",prix:{Snack:16.89,Restaurant:17.89,Administrative:19.89,Market:17.89,Café:17.89,Creche:18.89,Distributor:16.89}},
-  {id:"V13",nom:"ROSPORT CLASSIC VC 6x1L",categorie:"Verre",type_emballage:"VC",consigne:"1L",prix:{Snack:9.29,Restaurant:9.29,Administrative:11.29,Market:9.29,Café:10.29,Creche:11.29,Distributor:9.29}},
-  {id:"C23",nom:"FANTA KIWI CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:13.81,Distributor:10.81}},
-  {id:"C24",nom:"FANTA CITRON CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:13.81,Distributor:10.81}},
-  {id:"C25",nom:"OASIS POMME CASSIS CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:13.96,Restaurant:13.96,Administrative:16.96,Market:13.96,Café:13.96,Creche:16.96,Distributor:13.96}},
-  {id:"C26",nom:"OASIS FRAISE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:13.96,Restaurant:13.96,Administrative:16.96,Market:13.96,Café:13.96,Creche:16.96,Distributor:13.96}},
-  {id:"C27",nom:"TROPICO CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:14.25,Restaurant:14.25,Administrative:17.25,Market:14.25,Café:14.25,Creche:17.25,Distributor:14.25}},
-  {id:"C28",nom:"FUZE TEA PEACH CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:16.98,Restaurant:16.98,Administrative:16.98,Market:16.98,Café:16.98,Creche:16.98,Distributor:16.98}},
-  {id:"C29",nom:"NALU CANS 24x25cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:25.97,Restaurant:25.97,Administrative:28.97,Market:25.97,Café:25.97,Creche:28.97,Distributor:25.97}},
-  {id:"C30",nom:"MINUTE MAID MULTIFRUIT CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:22.98,Restaurant:22.98,Administrative:23.98,Market:22.98,Café:22.98,Creche:23.98,Distributor:22.98}},
-  {id:"C31",nom:"MINUTE MAID ORANGE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:22.98,Restaurant:22.98,Administrative:23.98,Market:22.98,Café:22.98,Creche:23.98,Distributor:22.98}},
-  {id:"C32",nom:"CAPRISONNE MULTIVIT VP 4x10x20cl",categorie:"Canettes",type_emballage:"VP",prix:{Snack:15.59,Restaurant:15.59,Administrative:17.59,Market:15.59,Café:15.59,Creche:17.59,Distributor:15.59}},
-  {id:"C33",nom:"ORANGINA CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:13.96,Restaurant:13.96,Administrative:16.96,Market:13.96,Café:13.96,Creche:16.96,Distributor:13.96}},
-  {id:"C34",nom:"MONSTER NOIR CANS 24x50cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:28.96,Restaurant:28.96,Administrative:31.96,Market:28.96,Café:28.96,Creche:31.96,Distributor:28.96}},
-  {id:"C35",nom:"MONSTER MANGO CANS 24x50cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:30.96,Restaurant:30.96,Administrative:33.96,Market:30.96,Café:30.96,Creche:33.96,Distributor:30.96}},
-  {id:"C36",nom:"MONSTER ROUGE CANS 24x50cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:30.96,Restaurant:30.96,Administrative:33.96,Market:30.96,Café:30.96,Creche:33.96,Distributor:30.96}},
-  {id:"B17",nom:"SAN BENEDETTO PEACH 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:18.59,Restaurant:18.59,Administrative:22.59,Market:18.59,Café:18.59,Creche:22.59,Distributor:18.59}},
-  {id:"B18",nom:"SAN BENEDETTO LEMON 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:18.59,Restaurant:18.59,Administrative:22.59,Market:18.59,Café:18.59,Creche:22.59,Distributor:18.59}},
-  {id:"B19",nom:"POWERADE BLUE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:30.26,Restaurant:30.26,Administrative:33.26,Market:30.26,Café:30.26,Creche:33.26,Distributor:30.26}},
-  {id:"B20",nom:"AQUARIUS BLUE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:38.96,Restaurant:38.96,Administrative:39.96,Market:38.96,Café:38.96,Creche:39.96,Distributor:38.96}},
-  {id:"B21",nom:"AQUARIUS ROUGE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:38.96,Restaurant:38.96,Administrative:39.96,Market:38.96,Café:38.96,Creche:39.96,Distributor:38.96}},
-  {id:"B22",nom:"VIVA 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:17.5,Restaurant:17.5,Administrative:18.95,Market:17.5,Café:17.5,Creche:18.95,Distributor:17.5}},
-  {id:"B23",nom:"ROSPORT CLASSIC 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:18.0,Restaurant:18.0,Administrative:19.95,Market:18.0,Café:18.0,Creche:19.95,Distributor:18.0}},
-  {id:"B24",nom:"FANTA SHOKATA 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:25.97,Restaurant:25.97,Administrative:27.97,Market:25.97,Café:25.97,Creche:27.97,Distributor:25.97}},
-  {id:"B25",nom:"COCA CHERRY 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:25.97,Restaurant:25.97,Administrative:27.97,Market:25.97,Café:25.97,Creche:27.97,Distributor:25.97}},
-  {id:"B26",nom:"CRISTALINE 6x1.5L",categorie:"Eaux",type_emballage:"PET",prix:{Snack:1.85,Restaurant:1.85,Administrative:2.45,Market:1.85,Café:1.85,Creche:2.45,Distributor:1.85}},
-  {id:"B27",nom:"FUZE TEA 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:25.97,Restaurant:25.97,Administrative:27.97,Market:25.97,Café:25.97,Creche:27.97,Distributor:25.97}},
-  {id:"B28",nom:"LIPTON PEACH 6x1.5L",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:13.97,Restaurant:13.97,Administrative:16.97,Market:13.97,Café:13.97,Creche:16.97,Distributor:13.97}},
-  {id:"B29",nom:"COCA COLA 6x1.5L",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:10.99,Restaurant:10.99,Administrative:13.99,Market:10.99,Café:10.99,Creche:13.99,Distributor:10.99}},
-  {id:"B30",nom:"VITTEL 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:14.59,Restaurant:14.95,Administrative:17.85,Market:14.59,Café:14.95,Creche:17.85,Distributor:14.59}},
-  {id:"V14",nom:"COCA ZERO VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:15.96,Restaurant:17.96,Administrative:19.96,Market:15.96,Café:17.96,Creche:19.96,Distributor:15.96}},
-  {id:"V15",nom:"SPRITE VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:15.96,Restaurant:17.96,Administrative:19.96,Market:15.96,Café:17.96,Creche:19.96,Distributor:15.96}},
-  {id:"V16",nom:"FUZE PEACH VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:16.89,Restaurant:18.89,Administrative:20.89,Market:16.89,Café:18.89,Creche:20.89,Distributor:16.89}},
-  {id:"V17",nom:"MINUTE MAID POMME VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:18.89,Restaurant:18.89,Administrative:20.89,Market:18.89,Café:18.89,Creche:20.89,Distributor:18.89}},
-  {id:"V18",nom:"MINUTE MAID ORANGE VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:18.89,Restaurant:18.89,Administrative:20.89,Market:18.89,Café:18.89,Creche:20.89,Distributor:18.89}},
-  {id:"V19",nom:"ROSPORT BLUE VC 6x1L",categorie:"Verre",type_emballage:"VC",consigne:"1L",prix:{Snack:9.29,Restaurant:9.29,Administrative:11.29,Market:9.29,Café:9.29,Creche:11.29,Distributor:9.29}},
-  {id:"V20",nom:"VITTEL VC 20x50cl",categorie:"Verre",type_emballage:"VC",consigne:"50cl",prix:{Snack:15.89,Restaurant:15.89,Administrative:17.89,Market:15.89,Café:15.89,Creche:17.89,Distributor:15.89}},
-  {id:"V21",nom:"VIVA VC 6x1L",categorie:"Verre",type_emballage:"VC",consigne:"1L",prix:{Snack:9.29,Restaurant:9.29,Administrative:11.29,Market:9.29,Café:9.29,Creche:11.29,Distributor:9.29}},
-  {id:"C37",nom:"COCA VANILLE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:10.81,Administrative:13.81,Market:10.81,Café:10.81,Creche:13.81,Distributor:10.81}},
-];
-
 const CONSIGNE_PRIX = {"20cl":5.00,"25cl":5.00,"50cl":7.95,"1L":4.20};
 
 // Alias pour produits renommés dans le catalogue (protège les commandes en attente
@@ -148,9 +79,9 @@ const CONSIGNE_PRIX = {"20cl":5.00,"25cl":5.00,"50cl":7.95,"1L":4.20};
 const PRODUIT_ALIASES = {
   "CRISTALINTE 24x50cl": "CRISTALINE 24x50cl",
 };
-const findProduitByNom = (nom) =>
-  PRODUITS.find(x => x.nom === nom) ||
-  PRODUITS.find(x => x.nom === PRODUIT_ALIASES[nom]);
+const findProduitByNom = (produits, nom) =>
+  produits.find(x => x.nom === nom) ||
+  produits.find(x => x.nom === PRODUIT_ALIASES[nom]);
 
 const MONTHLY_DATA = [
   {label:"Juin 25",ca:114263,paye:114165,impaye:97},
@@ -990,6 +921,7 @@ function BossokApp({ session, onLogout }) {
   const [factures, setFactures] = useState([]);
   const [commandes, setCommandes] = useState([]);
   const [stock, setStock] = useState({});
+  const [produits, setProduits] = useState([]);
 
   // UI
   const [selClient, setSelClient] = useState(null);
@@ -1010,6 +942,10 @@ function BossokApp({ session, onLogout }) {
   const [showClientForm, setShowClientForm] = useState(false);
   const [editClient, setEditClient] = useState(null);
   const [clientForm, setClientForm] = useState({});
+  const [showProduitForm, setShowProduitForm] = useState(false);
+  const [editProduit, setEditProduit] = useState(null);
+  const [produitForm, setProduitForm] = useState({});
+  const [produitFilterStatut, setProduitFilterStatut] = useState("Actif");
   const [showFactForm, setShowFactForm] = useState(false);
   const [factFilterStatut, setFactFilterStatut] = useState("Tous");
   const [factFilterSearch, setFactFilterSearch] = useState("");
@@ -1074,11 +1010,12 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk] = await Promise.all([
+      const [cls, facts, cmds, stk, prods] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
         db.get("stock"),
+        db.get("produits"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -1086,6 +1023,7 @@ function BossokApp({ session, onLogout }) {
       const stockMap = {};
       stk.forEach(s => { stockMap[s.produit_id] = s.quantite; });
       setStock(stockMap);
+      setProduits([...prods].sort((a,b) => (a.categorie+a.nom).localeCompare(b.categorie+b.nom)));
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
@@ -1167,6 +1105,60 @@ function BossokApp({ session, onLogout }) {
       }
       await loadAll();
       setShowClientForm(false);
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
+  };
+
+  const genererIdProduit = (categorie) => {
+    const prefix = categorie === "Verre" ? "V" : (categorie === "Bouteilles" || categorie === "Eaux") ? "B" : "C";
+    const nums = produits
+      .filter(p => p.id?.startsWith(prefix))
+      .map(p => parseInt(p.id.slice(prefix.length)))
+      .filter(n => !isNaN(n));
+    const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+    return prefix + String(next).padStart(2, "0");
+  };
+
+  const saveProduit = async () => {
+    if (!produitForm.nom || !produitForm.categorie || !produitForm.type_emballage) return;
+    setSaving(true);
+    try {
+      const prix = {
+        Snack: parseFloat(produitForm.prix_Snack) || 0,
+        Restaurant: parseFloat(produitForm.prix_Restaurant) || 0,
+        Administrative: parseFloat(produitForm.prix_Administrative) || 0,
+        Market: parseFloat(produitForm.prix_Market) || 0,
+        Café: parseFloat(produitForm.prix_Café) || 0,
+        Creche: parseFloat(produitForm.prix_Creche) || 0,
+        Distributor: parseFloat(produitForm.prix_Distributor) || 0,
+      };
+      const payload = {
+        nom: produitForm.nom,
+        categorie: produitForm.categorie,
+        type_emballage: produitForm.type_emballage,
+        consigne: produitForm.type_emballage === "VC" ? (produitForm.consigne || null) : null,
+        prix,
+      };
+      if (editProduit) {
+        await db.update("produits", editProduit.id, payload);
+      } else {
+        const newId = genererIdProduit(produitForm.categorie);
+        await db.insert("produits", {...payload, id: newId, statut: "Actif"});
+      }
+      await loadAll();
+      setShowProduitForm(false);
+      setEditProduit(null);
+      setProduitForm({});
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
+  };
+
+  const toggleProduitStatut = async (produit) => {
+    const nouveauStatut = produit.statut === "Actif" ? "Passif" : "Actif";
+    setSaving(true);
+    try {
+      await db.update("produits", produit.id, {statut: nouveauStatut});
+      await loadAll();
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -1370,7 +1362,7 @@ function BossokApp({ session, onLogout }) {
       
       // Update stock - reduce quantities
       for (const p of (cmd.produits||[])) {
-        const prod = findProduitByNom(p.nom);
+        const prod = findProduitByNom(produits, p.nom);
         if (!prod) continue;
         const current = stock.find(s=>s.produit_id===prod.id);
         const currentQte = current?.quantite||0;
@@ -1388,7 +1380,7 @@ function BossokApp({ session, onLogout }) {
 
       // Build lignes from commande produits
       const lignes = (cmd.produits||[]).map(p => {
-        const produit = findProduitByNom(p.nom);
+        const produit = findProduitByNom(produits, p.nom);
         const pu = produit ? getClientPrix(produit, client) : 0;
         const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
         return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
@@ -1606,6 +1598,7 @@ function BossokApp({ session, onLogout }) {
   setFactEcheance(echInit.toISOString().split("T")[0]);
 }}>+ Nouvelle facture</button>}
             {page==="commandes" && <button style={{...S.btn(),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>✅ Enregistrer</button>}
+            {page==="produits" && <button style={S.btn()} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",consigne:""});setShowProduitForm(true);}}>+ Nouveau produit</button>}
             <button style={S.btn("#F1F5F9","#374151")} onClick={loadAll}>🔄</button>
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 10px",background:"#F1F5F9",borderRadius:8}}>
               <span style={{fontSize:12,color:"#374151"}}>{session?.user?.email}</span>
@@ -1819,7 +1812,7 @@ function BossokApp({ session, onLogout }) {
         <select value={dashProduit} onChange={e=>setDashProduit(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:200}}>
           <option value="">Tous les produits</option>
-          {PRODUITS.map(p=><option key={p.id} value={p.nom}>{p.nom}</option>)}
+          {produits.map(p=><option key={p.id} value={p.nom}>{p.nom}</option>)}
           {dashProduit&&<option value={dashProduit}>{dashProduit}</option>}
         </select>
         {(dashClient||dashZone||dashChauffeur||dashProduit)&&(
@@ -2412,8 +2405,8 @@ function BossokApp({ session, onLogout }) {
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Produits * <span style={{color:"#9CA3AF"}}>(entrez les quantités)</span></label>
         
         {/* Grouped by category */}
-        {["Canettes","Energy","Bouteilles","Eaux","Verre"].map(cat=>{
-          const prods = PRODUITS.filter(p=>p.categorie===cat);
+        {[...new Set(produits.filter(p=>p.statut!=="Passif").map(p=>p.categorie))].sort().map(cat=>{
+          const prods = produits.filter(p=>p.categorie===cat&&p.statut!=="Passif");
           return(
             <div key={cat} style={{marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4,padding:"2px 0",borderBottom:"1px solid #F1F5F9"}}>{cat}</div>
@@ -2944,9 +2937,9 @@ function BossokApp({ session, onLogout }) {
   <div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
       {[
-        {l:"Ruptures",v:PRODUITS.filter(p=>!(stock[p.id]>0)).length,c:"#DC2626"},
-        {l:"Stock bas (≤5)",v:PRODUITS.filter(p=>stock[p.id]>0&&stock[p.id]<=5).length,c:"#D97706"},
-        {l:"En stock",v:PRODUITS.filter(p=>stock[p.id]>5).length,c:"#059669"},
+        {l:"Ruptures",v:produits.filter(p=>!(stock[p.id]>0)).length,c:"#DC2626"},
+        {l:"Stock bas (≤5)",v:produits.filter(p=>stock[p.id]>0&&stock[p.id]<=5).length,c:"#D97706"},
+        {l:"En stock",v:produits.filter(p=>stock[p.id]>5).length,c:"#059669"},
       ].map((s,i)=>(
         <div key={i} style={S.kpi(s.c)}>
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
@@ -2956,7 +2949,7 @@ function BossokApp({ session, onLogout }) {
     </div>
     <div style={{...S.card,marginBottom:12}}>
       <select value={stockCat} onChange={e=>setStockCat(e.target.value)} style={{padding:"7px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
-        {["Tous","Canettes","Energy","Jus","Bouteilles","Eaux","Sports","Verre"].map(c=><option key={c}>{c}</option>)}
+        {["Tous",...new Set(produits.map(p=>p.categorie))].sort((a,b)=>a==="Tous"?-1:b==="Tous"?1:a.localeCompare(b)).map(c=><option key={c}>{c}</option>)}
       </select>
     </div>
     <div style={S.card}>
@@ -2969,7 +2962,7 @@ function BossokApp({ session, onLogout }) {
           </tr>
         </thead>
         <tbody>
-          {PRODUITS.filter(p=>stockCat==="Tous"||p.categorie===stockCat).map(p=>{
+          {produits.filter(p=>stockCat==="Tous"||p.categorie===stockCat).map(p=>{
             const q=stock[p.id]||0;
             const col=q===0?"#DC2626":q<=5?"#D97706":"#059669";
             return(
@@ -3083,35 +3076,94 @@ function BossokApp({ session, onLogout }) {
 )}
 
 {/* ══ PRODUITS ══════════════════════════════════════════════════ */}
-{page==="produits" && (
-  <div style={S.card}>
-    <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>Catalogue — {PRODUITS.length} références</div>
-    <div style={{overflowX:"auto"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-        <thead>
-          <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
-            {["Produit","Cat.","Type","Prix Snack","Prix Rest.","Prix Admin","Consigne"].map(h=>(
-              <th key={h} style={{textAlign:"left",padding:"8px 10px",color:"#6B7280",fontWeight:600}}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {PRODUITS.map((p,i)=>(
-            <tr key={p.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFAFA"}}>
-              <td style={{padding:"7px 10px",fontWeight:500}}>{p.nom}</td>
-              <td style={{padding:"7px 10px"}}><span style={S.badge("#F3F4F6","#374151")}>{p.categorie}</span></td>
-              <td style={{padding:"7px 10px"}}><span style={S.badge(p.type_emballage==="VC"?"#EDE9FE":p.type_emballage==="CAN"?"#FEF3C7":"#E0F2FE",p.type_emballage==="VC"?"#6D28D9":p.type_emballage==="CAN"?"#92400E":"#0369A1")}>{p.type_emballage}</span></td>
-              <td style={{padding:"7px 10px"}}>{fmtFull(p.prix.Snack)}</td>
-              <td style={{padding:"7px 10px"}}>{fmtFull(p.prix.Restaurant)}</td>
-              <td style={{padding:"7px 10px"}}>{fmtFull(p.prix.Administrative)}</td>
-              <td style={{padding:"7px 10px",color:p.type_emballage==="VC"?"#7C3AED":"#9CA3AF"}}>{p.type_emballage==="VC"?fmtFull(CONSIGNE_PRIX[p.consigne]):"—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+{page==="produits" && (()=>{
+  const produitsFiltres = produits.filter(p=>
+    produitFilterStatut==="Tous" || (p.statut||"Actif")===produitFilterStatut
+  );
+  const nbActifs = produits.filter(p=>(p.statut||"Actif")==="Actif").length;
+  const nbPassifs = produits.filter(p=>p.statut==="Passif").length;
+
+  return(
+  <div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+      {[
+        {l:"Total",v:produits.length,c:"#1D4ED8",s:"Tous"},
+        {l:"Actifs",v:nbActifs,c:"#059669",s:"Actif"},
+        {l:"Désactivés",v:nbPassifs,c:"#D97706",s:"Passif"},
+      ].map((k,i)=>(
+        <div key={i} style={{...S.kpi(k.c),cursor:"pointer",outline:produitFilterStatut===k.s?"2px solid "+k.c:"none"}}
+          onClick={()=>setProduitFilterStatut(k.s)}>
+          <div style={{fontSize:22,fontWeight:800,color:k.c}}>{k.v}</div>
+          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{k.l}</div>
+        </div>
+      ))}
+    </div>
+
+    <div style={S.card}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontWeight:700,fontSize:14}}>Catalogue — {produitsFiltres.length} référence(s)</div>
+      </div>
+      {produitsFiltres.length===0?(
+        <div style={{textAlign:"center",padding:"40px 0",color:"#9CA3AF"}}>
+          <div style={{fontSize:32,marginBottom:8}}>🍺</div>
+          Aucun produit dans cette vue
+        </div>
+      ):(
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
+                {["Produit","Cat.","Type","Prix Snack","Prix Rest.","Prix Admin","Consigne","Statut","Actions"].map(h=>(
+                  <th key={h} style={{textAlign:"left",padding:"8px 10px",color:"#6B7280",fontWeight:600}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {produitsFiltres.map((p,i)=>(
+                <tr key={p.id} style={{borderBottom:"1px solid #F1F5F9",background:p.statut==="Passif"?"#FAFAFA":i%2===0?"#fff":"#FAFAFA",opacity:p.statut==="Passif"?0.6:1}}>
+                  <td style={{padding:"7px 10px",fontWeight:500}}>{p.nom}</td>
+                  <td style={{padding:"7px 10px"}}><span style={S.badge("#F3F4F6","#374151")}>{p.categorie}</span></td>
+                  <td style={{padding:"7px 10px"}}><span style={S.badge(p.type_emballage==="VC"?"#EDE9FE":p.type_emballage==="CAN"?"#FEF3C7":"#E0F2FE",p.type_emballage==="VC"?"#6D28D9":p.type_emballage==="CAN"?"#92400E":"#0369A1")}>{p.type_emballage}</span></td>
+                  <td style={{padding:"7px 10px"}}>{fmtFull(p.prix?.Snack)}</td>
+                  <td style={{padding:"7px 10px"}}>{fmtFull(p.prix?.Restaurant)}</td>
+                  <td style={{padding:"7px 10px"}}>{fmtFull(p.prix?.Administrative)}</td>
+                  <td style={{padding:"7px 10px",color:p.type_emballage==="VC"?"#7C3AED":"#9CA3AF"}}>{p.type_emballage==="VC"?fmtFull(CONSIGNE_PRIX[p.consigne]):"—"}</td>
+                  <td style={{padding:"7px 10px"}}>
+                    <span style={S.badge(p.statut==="Passif"?"#FEF3C7":"#DCFCE7",p.statut==="Passif"?"#92400E":"#166534")}>
+                      {p.statut==="Passif"?"⛔ Désactivé":"✅ Actif"}
+                    </span>
+                  </td>
+                  <td style={{padding:"7px 10px"}}>
+                    <div style={{display:"flex",gap:4}}>
+                      <button title="Modifier" onClick={()=>{
+                        setEditProduit(p);
+                        setProduitForm({
+                          nom:p.nom, categorie:p.categorie, type_emballage:p.type_emballage,
+                          consigne:p.consigne||"",
+                          prix_Snack:p.prix?.Snack??"", prix_Restaurant:p.prix?.Restaurant??"",
+                          prix_Administrative:p.prix?.Administrative??"", prix_Market:p.prix?.Market??"",
+                          prix_Café:p.prix?.Café??"", prix_Creche:p.prix?.Creche??"",
+                          prix_Distributor:p.prix?.Distributor??"",
+                        });
+                        setShowProduitForm(true);
+                      }} style={{...S.btn("#1D4ED8"),padding:"3px 8px",fontSize:11}}>✏️</button>
+                      <button title={p.statut==="Passif"?"Réactiver":"Désactiver"} onClick={()=>toggleProduitStatut(p)}
+                        style={{...S.btn(p.statut==="Passif"?"#059669":"#F59E0B"),padding:"3px 8px",fontSize:11}}>
+                        {p.statut==="Passif"?"✅":"⛔"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   </div>
-)}
+  );
+})()}
+
 
   {/* ══ MODAL CLIENT DETAIL ══════════════════════════════════════ */}
   {selClient&&(
@@ -3281,7 +3333,7 @@ function BossokApp({ session, onLogout }) {
         <div>
           <div style={{fontSize:12,color:"#6B7280",marginBottom:8}}>Tarif standard : {selClient.type}. Entrez un prix pour personnaliser.</div>
           <div style={{maxHeight:360,overflowY:"auto",display:"grid",gap:3}}>
-            {PRODUITS.map(p=>{
+            {produits.filter(p=>p.statut!=="Passif").map(p=>{
               const standard=p.prix[selClient.type]||p.prix.Snack;
               const perso=(selClient.prix_individuels||{})[p.id];
               return(
@@ -3381,7 +3433,7 @@ function BossokApp({ session, onLogout }) {
         <div style={{marginBottom:12}}>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:4}}>Produits</label>
           <div style={{maxHeight:180,overflowY:"auto",border:"1px solid #E5E7EB",borderRadius:8}}>
-            {PRODUITS.map(p=>{
+            {produits.filter(p=>p.statut!=="Passif").map(p=>{
               const client=clients.find(c=>c.id===factClientId);
               const pu=getClientPrix(p,client);
               const cons=p.type_emballage==="VC"?(CONSIGNE_PRIX[p.consigne]||0):0;
@@ -3549,6 +3601,70 @@ function BossokApp({ session, onLogout }) {
       <div style={{display:"flex",gap:8,marginTop:16}}>
         <button onClick={()=>setShowClientForm(false)} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveClient} disabled={saving} style={{...S.btn(),flex:2,opacity:saving?0.5:1}}>{saving?"Sauvegarde...":editClient?"Enregistrer":"Créer"}</button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL PRODUIT FORM ══════════════════════════════════════════ */}
+  {showProduitForm&&(
+  <div style={S.modal} onClick={()=>setShowProduitForm(false)}>
+    <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editProduit?"Modifier produit":"Nouveau produit"}</h2>
+        <button onClick={()=>setShowProduitForm(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Nom du produit *</label>
+          <input value={produitForm.nom||""} onChange={e=>setProduitForm(p=>({...p,nom:e.target.value}))}
+            placeholder="Ex: COCA COLA CANS 24x33cl" style={S.input}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Catégorie *</label>
+            <input value={produitForm.categorie||""} onChange={e=>setProduitForm(p=>({...p,categorie:e.target.value}))}
+              list="categories-list" placeholder="Ex: Canettes" style={S.input}/>
+            <datalist id="categories-list">
+              {[...new Set(produits.map(p=>p.categorie))].sort().map(c=><option key={c} value={c}/>)}
+            </datalist>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Type d'emballage *</label>
+            <select value={produitForm.type_emballage||"CAN"} onChange={e=>setProduitForm(p=>({...p,type_emballage:e.target.value,consigne:e.target.value==="VC"?p.consigne:""}))} style={S.input}>
+              {["CAN","PET","VC","VP"].map(t=><option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+        {produitForm.type_emballage==="VC"&&(
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Consigne (taille)</label>
+            <select value={produitForm.consigne||""} onChange={e=>setProduitForm(p=>({...p,consigne:e.target.value}))} style={S.input}>
+              <option value="">-- Sélectionner --</option>
+              {Object.keys(CONSIGNE_PRIX).map(c=>(
+                <option key={c} value={c}>{c} ({fmtFull(CONSIGNE_PRIX[c])})</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginTop:4}}>Prix par type de client (€)</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {[["Snack","prix_Snack"],["Restaurant","prix_Restaurant"],["Administratif","prix_Administrative"],["Market","prix_Market"],["Café","prix_Café"],["Crèche","prix_Creche"],["Distributor","prix_Distributor"]].map(([l,k])=>(
+            <div key={k}>
+              <label style={{fontSize:11,color:"#9CA3AF",display:"block",marginBottom:2}}>{l}</label>
+              <input type="number" step="0.01" min="0" value={produitForm[k]??""}
+                onChange={e=>setProduitForm(p=>({...p,[k]:e.target.value}))}
+                placeholder="0.00" style={S.input}/>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        <button onClick={()=>{setShowProduitForm(false);setEditProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveProduit} disabled={saving||!produitForm.nom||!produitForm.categorie}
+          style={{...S.btn(),flex:2,opacity:(saving||!produitForm.nom||!produitForm.categorie)?0.5:1}}>
+          {saving?"Sauvegarde...":editProduit?"Enregistrer":"Créer"}
+        </button>
       </div>
     </div>
   </div>
