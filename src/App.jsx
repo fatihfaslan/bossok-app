@@ -962,6 +962,7 @@ function BossokApp({ session, onLogout }) {
   const [stock, setStock] = useState({});
   const [produits, setProduits] = useState([]);
   const [receptionsStock, setReceptionsStock] = useState([]);
+  const [pertesStock, setPertesStock] = useState([]);
 
   // UI
   const [selClient, setSelClient] = useState(null);
@@ -989,6 +990,9 @@ function BossokApp({ session, onLogout }) {
   const [showReceptionForm, setShowReceptionForm] = useState(false);
   const [receptionProduit, setReceptionProduit] = useState(null);
   const [receptionForm, setReceptionForm] = useState({});
+  const [showPerteForm, setShowPerteForm] = useState(false);
+  const [perteProduit, setPerteProduit] = useState(null);
+  const [perteForm, setPerteForm] = useState({});
   const [showFactForm, setShowFactForm] = useState(false);
   const [factFilterStatut, setFactFilterStatut] = useState("Tous");
   const [factFilterSearch, setFactFilterSearch] = useState("");
@@ -1053,13 +1057,14 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
         db.get("stock"),
         db.get("produits"),
         db.get("receptions_stock"),
+        db.get("pertes_stock"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -1069,6 +1074,7 @@ function BossokApp({ session, onLogout }) {
       setStock(stockMap);
       setProduits([...prods].sort((a,b) => (a.categorie+a.nom).localeCompare(b.categorie+b.nom)));
       setReceptionsStock(receps);
+      setPertesStock(pertes);
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
@@ -1229,6 +1235,28 @@ function BossokApp({ session, onLogout }) {
       setShowReceptionForm(false);
       setReceptionProduit(null);
       setReceptionForm({});
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
+  };
+
+  const savePerte = async () => {
+    const qte = parseFloat(perteForm.quantite);
+    if (!perteProduit || !qte || qte <= 0) return;
+    setSaving(true);
+    try {
+      await db.insert("pertes_stock", {
+        produit_id: perteProduit.id,
+        quantite: qte,
+        motif: perteForm.motif || "Casse",
+        date: perteForm.date || new Date().toISOString().split("T")[0],
+        notes: perteForm.notes || null,
+      });
+      const newQte = Math.max(0, (stock[perteProduit.id] || 0) - qte);
+      await updateStock(perteProduit.id, newQte);
+      await loadAll();
+      setShowPerteForm(false);
+      setPerteProduit(null);
+      setPerteForm({});
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -1640,11 +1668,19 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
         <div style={{flex:1,padding:"8px",overflowY:"auto"}}>
-          {NAV.map(n=>(
-            <div key={n.k} style={S.navItem(page===n.k)} onClick={()=>setPage(n.k)}>
-              <span>{n.icon}</span><span>{n.label}</span>
-            </div>
-          ))}
+          {NAV.map(n=>{
+            const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=5).length : 0;
+            return(
+              <div key={n.k} style={S.navItem(page===n.k)} onClick={()=>setPage(n.k)}>
+                <span>{n.icon}</span><span style={{flex:1}}>{n.label}</span>
+                {stockAlerteCount>0&&(
+                  <span style={{background:"#DC2626",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>
+                    {stockAlerteCount}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div style={{padding:"12px",borderTop:"1px solid #1E293B",fontSize:11,color:"#475569"}}>
           {saving && <span style={{color:"#60A5FA"}}>💾 Sauvegarde...</span>}
@@ -1943,6 +1979,23 @@ function BossokApp({ session, onLogout }) {
         </div>
       </div>
     )}
+
+    {(()=>{
+      const nbRuptures = produits.filter(p=>p.statut!=="Passif"&&!(stock[p.id]>0)).length;
+      const nbStockBas = produits.filter(p=>p.statut!=="Passif"&&stock[p.id]>0&&stock[p.id]<=5).length;
+      if (nbRuptures===0 && nbStockBas===0) return null;
+      return(
+        <div style={{...S.card,marginBottom:14,background:"#FEF2F2",border:"1px solid #FECACA",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}
+          onClick={()=>setPage("stock")}>
+          <span style={{fontSize:18}}>📦</span>
+          <div style={{fontSize:12,color:"#991B1B",flex:1}}>
+            {nbRuptures>0&&<span><strong>{nbRuptures} produit{nbRuptures>1?"s":""}</strong> en rupture de stock. </span>}
+            {nbStockBas>0&&<span><strong>{nbStockBas} produit{nbStockBas>1?"s":""}</strong> en stock bas (≤5 caisses). </span>}
+            Clique pour voir le détail dans l'onglet Stock →
+          </div>
+        </div>
+      );
+    })()}
 
     {/* ── Charts row 1 ── */}
     <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}}>
@@ -3020,11 +3073,22 @@ function BossokApp({ session, onLogout }) {
 {/* ══ STOCK ══════════════════════════════════════════════════════ */}
 {page==="stock" && (
   <div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Ruptures",v:produits.filter(p=>!(stock[p.id]>0)).length,c:"#DC2626"},
         {l:"Stock bas (≤5)",v:produits.filter(p=>stock[p.id]>0&&stock[p.id]<=5).length,c:"#D97706"},
         {l:"En stock",v:produits.filter(p=>stock[p.id]>5).length,c:"#059669"},
+        {l:"Pertes ce mois",v:(()=>{
+          const moisActuel=new Date().toISOString().slice(0,7);
+          const pertesMois=pertesStock.filter(p=>(p.date||"").startsWith(moisActuel));
+          const coutPertes=pertesMois.reduce((s,p)=>{
+            const cm=getCoutMoyenPondere(p.produit_id,receptionsStock);
+            const prod=produits.find(x=>x.id===p.produit_id);
+            const cout=cm??prod?.prix_achat??0;
+            return s+p.quantite*cout;
+          },0);
+          return fmtFull(coutPertes);
+        })(),c:"#DC2626"},
       ].map((s,i)=>(
         <div key={i} style={S.kpi(s.c)}>
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
@@ -3041,7 +3105,7 @@ function BossokApp({ session, onLogout }) {
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead>
           <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
-            {["Produit","Cat.","Stock","Coût moyen","Modifier","Réception"].map(h=>(
+            {["Produit","Cat.","Stock","Coût moyen","Modifier","Réception","Perte"].map(h=>(
               <th key={h} style={{textAlign:"left",padding:"8px 12px",color:"#6B7280",fontWeight:600,fontSize:12}}>{h}</th>
             ))}
           </tr>
@@ -3078,6 +3142,13 @@ function BossokApp({ session, onLogout }) {
                     setReceptionForm({quantite:"",prix_achat_unitaire:p.prix_achat||"",fournisseur:"",date:new Date().toISOString().split("T")[0],notes:""});
                     setShowReceptionForm(true);
                   }} style={{...S.btn("#7C3AED"),padding:"5px 10px",fontSize:11}}>📥 Réception</button>
+                </td>
+                <td style={{padding:"7px 12px"}}>
+                  <button onClick={()=>{
+                    setPerteProduit(p);
+                    setPerteForm({quantite:"",motif:"Casse",date:new Date().toISOString().split("T")[0],notes:""});
+                    setShowPerteForm(true);
+                  }} style={{...S.btn("#F59E0B"),padding:"5px 10px",fontSize:11}}>🗑️ Perte</button>
                 </td>
               </tr>
             );
@@ -3857,6 +3928,81 @@ function BossokApp({ session, onLogout }) {
         <button onClick={saveReception} disabled={saving||!receptionForm.quantite||!receptionForm.prix_achat_unitaire}
           style={{...S.btn("#7C3AED"),flex:2,opacity:(saving||!receptionForm.quantite||!receptionForm.prix_achat_unitaire)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Enregistrer la réception"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL PERTE STOCK ══════════════════════════════════════════ */}
+  {showPerteForm&&perteProduit&&(
+  <div style={S.modal} onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}}>
+    <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🗑️ Déclarer une perte</h2>
+        <button onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>{perteProduit.nom} · Stock actuel : {stock[perteProduit.id]||0} cs</div>
+
+      <div style={{display:"grid",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Quantité perdue (caisses) *</label>
+            <input type="number" min="0" max={stock[perteProduit.id]||0} step="1" value={perteForm.quantite||""}
+              onChange={e=>setPerteForm(p=>({...p,quantite:e.target.value}))}
+              placeholder="0" style={S.input}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Motif</label>
+            <select value={perteForm.motif||"Casse"} onChange={e=>setPerteForm(p=>({...p,motif:e.target.value}))} style={S.input}>
+              {["Casse","Périmé","Vol","Erreur inventaire","Autre"].map(m=><option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
+          <input type="date" value={perteForm.date||""} onChange={e=>setPerteForm(p=>({...p,date:e.target.value}))} style={{...S.input,maxWidth:180}}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={perteForm.notes||""} onChange={e=>setPerteForm(p=>({...p,notes:e.target.value}))}
+            placeholder="Optionnel — détails de l'incident" style={S.input}/>
+        </div>
+      </div>
+
+      {(() => {
+        const coutMoyen = getCoutMoyenPondere(perteProduit.id, receptionsStock);
+        const cout = coutMoyen ?? perteProduit.prix_achat;
+        const qte = parseFloat(perteForm.quantite) || 0;
+        return cout && qte>0 ? (
+          <div style={{marginTop:12,padding:"8px 12px",background:"#FEF3C7",borderRadius:8,fontSize:12,color:"#92400E"}}>
+            💶 Coût estimé de cette perte : <strong>{fmtFull(cout*qte)}</strong>
+          </div>
+        ) : null;
+      })()}
+
+      {(() => {
+        const historique = pertesStock.filter(p=>p.produit_id===perteProduit.id).slice(0,5);
+        return historique.length>0 ? (
+          <div style={{marginTop:14}}>
+            <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginBottom:6}}>Historique récent</div>
+            <div style={{maxHeight:120,overflowY:"auto"}}>
+              {historique.map(p=>(
+                <div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 8px",background:"#F9FAFB",borderRadius:6,marginBottom:3}}>
+                  <span style={{color:"#6B7280"}}>{p.date} · {p.motif}</span>
+                  <span style={{fontWeight:600}}>{p.quantite} cs</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      })()}
+
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        <button onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={savePerte} disabled={saving||!perteForm.quantite}
+          style={{...S.btn("#F59E0B"),flex:2,opacity:(saving||!perteForm.quantite)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Confirmer la perte"}
         </button>
       </div>
     </div>
