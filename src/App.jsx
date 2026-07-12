@@ -79,7 +79,7 @@ const PRODUITS = [
   {id:"C01",nom:"COCA COLA CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
   {id:"C02",nom:"COCA ZERO CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
   {id:"C03",nom:"COCA CHERRY CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:12.97,Restaurant:12.97,Administrative:13.97,Market:12.97,Café:13.97,Creche:13.97,Distributor:12.97}},
-  {id:"C05",nom:"FANTA ORANGE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
+  {id:"C05",nom:"FANTA ORANGE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:10.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
   {id:"C06",nom:"FANTA EXOTIC CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
   {id:"C09",nom:"SPRITE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
   {id:"C10",nom:"SEVEN UP CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:12.81,Distributor:10.81}},
@@ -93,7 +93,7 @@ const PRODUITS = [
   {id:"B02",nom:"COCA ZERO 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:21.97,Restaurant:21.97,Administrative:25.97,Market:21.97,Café:23.97,Creche:24.97,Distributor:21.97}},
   {id:"B03",nom:"FANTA ORANGE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:21.97,Restaurant:21.97,Administrative:25.97,Market:21.97,Café:23.97,Creche:24.97,Distributor:21.97}},
   {id:"B04",nom:"SPRITE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:21.97,Restaurant:21.97,Administrative:25.97,Market:21.97,Café:23.97,Creche:24.97,Distributor:21.97}},
-  {id:"B10",nom:"CRISTALINTE 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:5.95,Restaurant:5.95,Administrative:8.95,Market:5.95,Café:6.95,Creche:7.95,Distributor:5.95}},
+  {id:"B10",nom:"CRISTALINE 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:5.95,Restaurant:5.95,Administrative:8.95,Market:5.95,Café:6.95,Creche:7.95,Distributor:5.95}},
   {id:"B12",nom:"EVIAN 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:14.95,Restaurant:14.95,Administrative:17.95,Market:14.95,Café:15.95,Creche:16.95,Distributor:14.95}},
   {id:"B14",nom:"SAN PELLEGRINO 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:14.95,Restaurant:14.95,Administrative:17.85,Market:14.95,Café:15.95,Creche:16.95,Distributor:14.95}},
   {id:"B16",nom:"ROSPORT BLUE 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:18.00,Restaurant:18.00,Administrative:19.95,Market:18.00,Café:19.00,Creche:19.00,Distributor:18.00}},
@@ -102,9 +102,55 @@ const PRODUITS = [
   {id:"V08",nom:"ROSPORT BLUE VC 28x25cl",categorie:"Verre",type_emballage:"VC",consigne:"25cl",prix:{Snack:14.59,Restaurant:15.59,Administrative:18.59,Market:15.59,Café:16.59,Creche:17.59,Distributor:14.59}},
   {id:"V10",nom:"ROSPORT BLUE VC 20x50cl",categorie:"Verre",type_emballage:"VC",consigne:"50cl",prix:{Snack:16.89,Restaurant:17.89,Administrative:19.89,Market:17.89,Café:17.89,Creche:18.89,Distributor:16.89}},
   {id:"V13",nom:"ROSPORT CLASSIC VC 6x1L",categorie:"Verre",type_emballage:"VC",consigne:"1L",prix:{Snack:9.29,Restaurant:9.29,Administrative:11.29,Market:9.29,Café:10.29,Creche:11.29,Distributor:9.29}},
+  {id:"C23",nom:"FANTA KIWI CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:13.81,Distributor:10.81}},
+  {id:"C24",nom:"FANTA CITRON CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:11.81,Administrative:13.81,Market:10.81,Café:11.81,Creche:13.81,Distributor:10.81}},
+  {id:"C25",nom:"OASIS POMME CASSIS CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:13.96,Restaurant:13.96,Administrative:16.96,Market:13.96,Café:13.96,Creche:16.96,Distributor:13.96}},
+  {id:"C26",nom:"OASIS FRAISE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:13.96,Restaurant:13.96,Administrative:16.96,Market:13.96,Café:13.96,Creche:16.96,Distributor:13.96}},
+  {id:"C27",nom:"TROPICO CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:14.25,Restaurant:14.25,Administrative:17.25,Market:14.25,Café:14.25,Creche:17.25,Distributor:14.25}},
+  {id:"C28",nom:"FUZE TEA PEACH CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:16.98,Restaurant:16.98,Administrative:16.98,Market:16.98,Café:16.98,Creche:16.98,Distributor:16.98}},
+  {id:"C29",nom:"NALU CANS 24x25cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:25.97,Restaurant:25.97,Administrative:28.97,Market:25.97,Café:25.97,Creche:28.97,Distributor:25.97}},
+  {id:"C30",nom:"MINUTE MAID MULTIFRUIT CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:22.98,Restaurant:22.98,Administrative:23.98,Market:22.98,Café:22.98,Creche:23.98,Distributor:22.98}},
+  {id:"C31",nom:"MINUTE MAID ORANGE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:22.98,Restaurant:22.98,Administrative:23.98,Market:22.98,Café:22.98,Creche:23.98,Distributor:22.98}},
+  {id:"C32",nom:"CAPRISONNE MULTIVIT VP 4x10x20cl",categorie:"Canettes",type_emballage:"VP",prix:{Snack:15.59,Restaurant:15.59,Administrative:17.59,Market:15.59,Café:15.59,Creche:17.59,Distributor:15.59}},
+  {id:"C33",nom:"ORANGINA CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:13.96,Restaurant:13.96,Administrative:16.96,Market:13.96,Café:13.96,Creche:16.96,Distributor:13.96}},
+  {id:"C34",nom:"MONSTER NOIR CANS 24x50cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:28.96,Restaurant:28.96,Administrative:31.96,Market:28.96,Café:28.96,Creche:31.96,Distributor:28.96}},
+  {id:"C35",nom:"MONSTER MANGO CANS 24x50cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:30.96,Restaurant:30.96,Administrative:33.96,Market:30.96,Café:30.96,Creche:33.96,Distributor:30.96}},
+  {id:"C36",nom:"MONSTER ROUGE CANS 24x50cl",categorie:"Energy",type_emballage:"CAN",prix:{Snack:30.96,Restaurant:30.96,Administrative:33.96,Market:30.96,Café:30.96,Creche:33.96,Distributor:30.96}},
+  {id:"B17",nom:"SAN BENEDETTO PEACH 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:18.59,Restaurant:18.59,Administrative:22.59,Market:18.59,Café:18.59,Creche:22.59,Distributor:18.59}},
+  {id:"B18",nom:"SAN BENEDETTO LEMON 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:18.59,Restaurant:18.59,Administrative:22.59,Market:18.59,Café:18.59,Creche:22.59,Distributor:18.59}},
+  {id:"B19",nom:"POWERADE BLUE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:30.26,Restaurant:30.26,Administrative:33.26,Market:30.26,Café:30.26,Creche:33.26,Distributor:30.26}},
+  {id:"B20",nom:"AQUARIUS BLUE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:38.96,Restaurant:38.96,Administrative:39.96,Market:38.96,Café:38.96,Creche:39.96,Distributor:38.96}},
+  {id:"B21",nom:"AQUARIUS ROUGE 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:38.96,Restaurant:38.96,Administrative:39.96,Market:38.96,Café:38.96,Creche:39.96,Distributor:38.96}},
+  {id:"B22",nom:"VIVA 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:17.5,Restaurant:17.5,Administrative:18.95,Market:17.5,Café:17.5,Creche:18.95,Distributor:17.5}},
+  {id:"B23",nom:"ROSPORT CLASSIC 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:18.0,Restaurant:18.0,Administrative:19.95,Market:18.0,Café:18.0,Creche:19.95,Distributor:18.0}},
+  {id:"B24",nom:"FANTA SHOKATA 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:25.97,Restaurant:25.97,Administrative:27.97,Market:25.97,Café:25.97,Creche:27.97,Distributor:25.97}},
+  {id:"B25",nom:"COCA CHERRY 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:25.97,Restaurant:25.97,Administrative:27.97,Market:25.97,Café:25.97,Creche:27.97,Distributor:25.97}},
+  {id:"B26",nom:"CRISTALINE 6x1.5L",categorie:"Eaux",type_emballage:"PET",prix:{Snack:1.85,Restaurant:1.85,Administrative:2.45,Market:1.85,Café:1.85,Creche:2.45,Distributor:1.85}},
+  {id:"B27",nom:"FUZE TEA 24x50cl",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:25.97,Restaurant:25.97,Administrative:27.97,Market:25.97,Café:25.97,Creche:27.97,Distributor:25.97}},
+  {id:"B28",nom:"LIPTON PEACH 6x1.5L",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:13.97,Restaurant:13.97,Administrative:16.97,Market:13.97,Café:13.97,Creche:16.97,Distributor:13.97}},
+  {id:"B29",nom:"COCA COLA 6x1.5L",categorie:"Bouteilles",type_emballage:"PET",prix:{Snack:10.99,Restaurant:10.99,Administrative:13.99,Market:10.99,Café:10.99,Creche:13.99,Distributor:10.99}},
+  {id:"B30",nom:"VITTEL 24x50cl",categorie:"Eaux",type_emballage:"PET",prix:{Snack:14.59,Restaurant:14.95,Administrative:17.85,Market:14.59,Café:14.95,Creche:17.85,Distributor:14.59}},
+  {id:"V14",nom:"COCA ZERO VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:15.96,Restaurant:17.96,Administrative:19.96,Market:15.96,Café:17.96,Creche:19.96,Distributor:15.96}},
+  {id:"V15",nom:"SPRITE VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:15.96,Restaurant:17.96,Administrative:19.96,Market:15.96,Café:17.96,Creche:19.96,Distributor:15.96}},
+  {id:"V16",nom:"FUZE PEACH VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:16.89,Restaurant:18.89,Administrative:20.89,Market:16.89,Café:18.89,Creche:20.89,Distributor:16.89}},
+  {id:"V17",nom:"MINUTE MAID POMME VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:18.89,Restaurant:18.89,Administrative:20.89,Market:18.89,Café:18.89,Creche:20.89,Distributor:18.89}},
+  {id:"V18",nom:"MINUTE MAID ORANGE VC 24x20cl",categorie:"Verre",type_emballage:"VC",consigne:"20cl",prix:{Snack:18.89,Restaurant:18.89,Administrative:20.89,Market:18.89,Café:18.89,Creche:20.89,Distributor:18.89}},
+  {id:"V19",nom:"ROSPORT BLUE VC 6x1L",categorie:"Verre",type_emballage:"VC",consigne:"1L",prix:{Snack:9.29,Restaurant:9.29,Administrative:11.29,Market:9.29,Café:9.29,Creche:11.29,Distributor:9.29}},
+  {id:"V20",nom:"VITTEL VC 20x50cl",categorie:"Verre",type_emballage:"VC",consigne:"50cl",prix:{Snack:15.89,Restaurant:15.89,Administrative:17.89,Market:15.89,Café:15.89,Creche:17.89,Distributor:15.89}},
+  {id:"V21",nom:"VIVA VC 6x1L",categorie:"Verre",type_emballage:"VC",consigne:"1L",prix:{Snack:9.29,Restaurant:9.29,Administrative:11.29,Market:9.29,Café:9.29,Creche:11.29,Distributor:9.29}},
+  {id:"C37",nom:"COCA VANILLE CANS 24x33cl",categorie:"Canettes",type_emballage:"CAN",prix:{Snack:10.81,Restaurant:10.81,Administrative:13.81,Market:10.81,Café:10.81,Creche:13.81,Distributor:10.81}},
 ];
 
 const CONSIGNE_PRIX = {"20cl":5.00,"25cl":5.00,"50cl":7.95,"1L":4.20};
+
+// Alias pour produits renommés dans le catalogue (protège les commandes en attente
+// qui référencent encore un ancien nom, ex: fautes de frappe corrigées)
+const PRODUIT_ALIASES = {
+  "CRISTALINTE 24x50cl": "CRISTALINE 24x50cl",
+};
+const findProduitByNom = (nom) =>
+  PRODUITS.find(x => x.nom === nom) ||
+  PRODUITS.find(x => x.nom === PRODUIT_ALIASES[nom]);
 
 const MONTHLY_DATA = [
   {label:"Juin 25",ca:114263,paye:114165,impaye:97},
@@ -1324,7 +1370,7 @@ function BossokApp({ session, onLogout }) {
       
       // Update stock - reduce quantities
       for (const p of (cmd.produits||[])) {
-        const prod = PRODUITS.find(x=>x.nom===p.nom);
+        const prod = findProduitByNom(p.nom);
         if (!prod) continue;
         const current = stock.find(s=>s.produit_id===prod.id);
         const currentQte = current?.quantite||0;
@@ -1342,7 +1388,7 @@ function BossokApp({ session, onLogout }) {
 
       // Build lignes from commande produits
       const lignes = (cmd.produits||[]).map(p => {
-        const produit = PRODUITS.find(x=>x.nom===p.nom);
+        const produit = findProduitByNom(p.nom);
         const pu = produit ? getClientPrix(produit, client) : 0;
         const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
         return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
