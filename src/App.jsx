@@ -457,7 +457,7 @@ const getSuggestedDay = (region) => {
       const daysUntil = (d - todayIdx + 7) % 7 || 7;
       const delivDate = new Date();
       delivDate.setDate(delivDate.getDate() + daysUntil);
-      return { day: days[d], date: delivDate.toLocaleDateString('fr-LU'), dayIdx: d };
+      return { day: days[d], date: delivDate.toISOString().split("T")[0], dayIdx: d };
     }
   }
   return { day: 'Lundi', date: '', dayIdx: 0 };
