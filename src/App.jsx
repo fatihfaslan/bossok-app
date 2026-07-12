@@ -1945,7 +1945,7 @@ function BossokApp({ session, onLogout }) {
                   {dayEvents.slice(0,3).map(evt=>(
                     <div key={evt.id} onClick={(e)=>openEditEvent(evt,e)}
                       style={{fontSize:9.5,padding:"1px 5px",borderRadius:4,background:evt.couleur+"22",color:evt.couleur,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                      {!evt.toute_journee&&evt.heure_debut&&<span>{evt.heure_debut.slice(0,5)} </span>}{evt.titre}
+                      {!evt.toute_journee&&evt.heure_debut&&<span>{evt.heure_debut.slice(0,5)}{evt.heure_fin?`-${evt.heure_fin.slice(0,5)}`:""} </span>}{evt.titre}
                     </div>
                   ))}
                   {dayEvents.length>3&&<div style={{fontSize:9,color:"#9CA3AF"}}>+{dayEvents.length-3} de plus</div>}
@@ -1994,7 +1994,7 @@ function BossokApp({ session, onLogout }) {
                 <div style={{fontWeight:600,fontSize:12}}>{evt.titre}</div>
                 <div style={{fontSize:11,color:"#6B7280",marginTop:2}}>
                   {new Date(evt.date_debut+"T00:00:00").toLocaleDateString('fr-LU',{weekday:'short',day:'numeric',month:'short'})}
-                  {!evt.toute_journee&&evt.heure_debut?` · ${evt.heure_debut.slice(0,5)}`:evt.toute_journee?" · Toute la journée":""}
+                  {!evt.toute_journee&&evt.heure_debut?` · ${evt.heure_debut.slice(0,5)}${evt.heure_fin?`-${evt.heure_fin.slice(0,5)}`:""}`:evt.toute_journee?" · Toute la journée":""}
                 </div>
                 {evt.cree_par&&<div style={{fontSize:10,color:"#9CA3AF",marginTop:2}}>Par {evt.cree_par.split('@')[0]}</div>}
               </div>
