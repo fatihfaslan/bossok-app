@@ -448,6 +448,9 @@ const detectRegionFromAddress = (adresse) => {
   return "";
 };
 
+// Seuil de stock bas déclenchant les alertes (badge sidebar, bannière dashboard, page Stock)
+const STOCK_BAS_SEUIL = 50;
+
 const CHAUFFEUR_REGIONS = {
   A:["Centre-ville","Nord","Nord-ouest","Nord-Est","Nord-est","Est"],
   B:["Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande"],
@@ -1691,7 +1694,7 @@ function BossokApp({ session, onLogout }) {
         </div>
         <div style={{flex:1,padding:"12px 10px",overflowY:"auto"}}>
           {NAV.map(n=>{
-            const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=5).length : 0;
+            const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=STOCK_BAS_SEUIL).length : 0;
             return(
               <div key={n.k} style={S.navItem(page===n.k)} onClick={()=>setPage(n.k)}>
                 <span>{n.icon}</span><span style={{flex:1}}>{n.label}</span>
@@ -2004,7 +2007,7 @@ function BossokApp({ session, onLogout }) {
 
     {(()=>{
       const nbRuptures = produits.filter(p=>p.statut!=="Passif"&&!(stock[p.id]>0)).length;
-      const nbStockBas = produits.filter(p=>p.statut!=="Passif"&&stock[p.id]>0&&stock[p.id]<=5).length;
+      const nbStockBas = produits.filter(p=>p.statut!=="Passif"&&stock[p.id]>0&&stock[p.id]<=STOCK_BAS_SEUIL).length;
       if (nbRuptures===0 && nbStockBas===0) return null;
       return(
         <div style={{...S.card,marginBottom:14,background:"#FEF2F2",border:"1px solid #FECACA",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}
@@ -3102,7 +3105,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Ruptures",v:produits.filter(p=>!(stock[p.id]>0)).length,c:"#DC2626"},
-        {l:"Stock bas (≤5)",v:produits.filter(p=>stock[p.id]>0&&stock[p.id]<=5).length,c:"#D97706"},
+        {l:"Stock bas (≤"+STOCK_BAS_SEUIL+")",v:produits.filter(p=>stock[p.id]>0&&stock[p.id]<=STOCK_BAS_SEUIL).length,c:"#D97706"},
         {l:"En stock",v:produits.filter(p=>stock[p.id]>5).length,c:"#059669"},
         {l:"Pertes ce mois",v:(()=>{
           const moisActuel=new Date().toISOString().slice(0,7);
@@ -3139,11 +3142,11 @@ function BossokApp({ session, onLogout }) {
         <tbody>
           {produits.filter(p=>stockCat==="Tous"||p.categorie===stockCat).map(p=>{
             const q=stock[p.id]||0;
-            const col=q===0?"#DC2626":q<=5?"#D97706":"#059669";
+            const col=q===0?"#DC2626":q<=STOCK_BAS_SEUIL?"#D97706":"#059669";
             const coutMoyen=getCoutMoyenPondere(p.id,receptionsStock);
             const nbReceptions=receptionsStock.filter(r=>r.produit_id===p.id).length;
             return(
-              <tr key={p.id} style={{borderBottom:"1px solid #F1F5F9",background:q===0?"#FFF5F5":q<=5?"#FFFDF0":"transparent"}}>
+              <tr key={p.id} style={{borderBottom:"1px solid #F1F5F9",background:q===0?"#FFF5F5":q<=STOCK_BAS_SEUIL?"#FFFDF0":"transparent"}}>
                 <td style={{padding:"7px 12px",fontWeight:500}}>{p.nom}{p.type_emballage==="VC"&&<span style={{...S.badge("#EDE9FE","#7C3AED"),marginLeft:6,fontSize:10}}>VC</span>}</td>
                 <td style={{padding:"7px 12px"}}><span style={S.badge("#F3F4F6","#374151")}>{p.categorie}</span></td>
                 <td style={{padding:"7px 12px"}}><span style={{fontWeight:700,color:col,fontSize:16}}>{q}</span><span style={{fontSize:11,color:"#9CA3AF",marginLeft:4}}>cs</span></td>
