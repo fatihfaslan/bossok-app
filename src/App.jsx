@@ -982,6 +982,7 @@ function BossokApp({ session, onLogout }) {
   const [produits, setProduits] = useState([]);
   const [receptionsStock, setReceptionsStock] = useState([]);
   const [pertesStock, setPertesStock] = useState([]);
+  const [evenements, setEvenements] = useState([]);
 
   // UI
   const [selClient, setSelClient] = useState(null);
@@ -1012,6 +1013,10 @@ function BossokApp({ session, onLogout }) {
   const [showPerteForm, setShowPerteForm] = useState(false);
   const [perteProduit, setPerteProduit] = useState(null);
   const [perteForm, setPerteForm] = useState({});
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [editEvent, setEditEvent] = useState(null);
+  const [eventForm, setEventForm] = useState({});
+  const [calMonth, setCalMonth] = useState(()=>{const d=new Date();return {year:d.getFullYear(),month:d.getMonth()};});
   const [showFactForm, setShowFactForm] = useState(false);
   const [factFilterStatut, setFactFilterStatut] = useState("Tous");
   const [factFilterSearch, setFactFilterSearch] = useState("");
@@ -1076,7 +1081,7 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -1084,6 +1089,7 @@ function BossokApp({ session, onLogout }) {
         db.get("produits"),
         db.get("receptions_stock"),
         db.get("pertes_stock"),
+        db.get("evenements"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -1094,6 +1100,7 @@ function BossokApp({ session, onLogout }) {
       setProduits([...prods].sort((a,b) => (a.categorie+a.nom).localeCompare(b.categorie+b.nom)));
       setReceptionsStock(receps);
       setPertesStock(pertes);
+      setEvenements(evts);
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
@@ -1276,6 +1283,45 @@ function BossokApp({ session, onLogout }) {
       setShowPerteForm(false);
       setPerteProduit(null);
       setPerteForm({});
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
+  };
+
+  const saveEvenement = async () => {
+    if (!eventForm.titre || !eventForm.date_debut) return;
+    setSaving(true);
+    try {
+      const payload = {
+        titre: eventForm.titre,
+        description: eventForm.description || null,
+        date_debut: eventForm.date_debut,
+        date_fin: eventForm.date_fin || null,
+        toute_journee: eventForm.toute_journee !== false,
+        heure_debut: eventForm.toute_journee === false ? (eventForm.heure_debut || null) : null,
+        heure_fin: eventForm.toute_journee === false ? (eventForm.heure_fin || null) : null,
+        couleur: eventForm.couleur || "#1D4ED8",
+      };
+      if (editEvent) {
+        await db.update("evenements", editEvent.id, payload);
+      } else {
+        await db.insert("evenements", {...payload, cree_par: session?.user?.email || null});
+      }
+      await loadAll();
+      setShowEventForm(false);
+      setEditEvent(null);
+      setEventForm({});
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
+  };
+
+  const deleteEvenement = async (id) => {
+    if (!confirm("Supprimer cet événement ?")) return;
+    setSaving(true);
+    try {
+      await db.delete("evenements", id);
+      await loadAll();
+      setShowEventForm(false);
+      setEditEvent(null);
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -1639,6 +1685,7 @@ function BossokApp({ session, onLogout }) {
   };
 
   const NAV = [
+    {k:"calendrier",icon:"📅",label:"Calendrier"},
     {k:"dashboard",icon:"📊",label:"Dashboard"},
     {k:"clients",icon:"👥",label:"Clients"},
     {k:"factures",icon:"🧾",label:"Factures"},
@@ -1650,7 +1697,7 @@ function BossokApp({ session, onLogout }) {
     {k:"zones",icon:"🗺️",label:"Zones"},
   ];
 
-  const PAGE_TITLES = {dashboard:"Tableau de bord",clients:"Clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
+  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",clients:"Clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8FAFC",fontFamily:"Inter,system-ui,sans-serif"}}>
@@ -1730,6 +1777,7 @@ function BossokApp({ session, onLogout }) {
 }}>+ Nouvelle facture</button>}
             {page==="commandes" && <button style={{...S.btn(),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>✅ Enregistrer</button>}
             {page==="produits" && <button style={S.btn()} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>+ Nouveau produit</button>}
+            {page==="calendrier" && <button style={S.btn()} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:new Date().toISOString().split("T")[0],date_fin:"",toute_journee:true,heure_debut:"",heure_fin:"",couleur:"#1D4ED8"});setShowEventForm(true);}}>+ Nouvel événement</button>}
             <button style={S.btn("#F1F5F9","#374151")} onClick={loadAll}>🔄</button>
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 10px",background:"#F1F5F9",borderRadius:8}}>
               <span style={{fontSize:12,color:"#374151"}}>{session?.user?.email}</span>
@@ -1739,6 +1787,130 @@ function BossokApp({ session, onLogout }) {
         </div>
 
         <div style={S.page}>
+
+{/* ══ CALENDRIER ═════════════════════════════════════════════════ */}
+{page==="calendrier" && (()=>{
+  const {year, month} = calMonth;
+  const monthNames = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+  const firstOfMonth = new Date(year, month, 1);
+  const lastOfMonth = new Date(year, month+1, 0);
+  const daysInMonth = lastOfMonth.getDate();
+  const firstDow = (firstOfMonth.getDay()+6)%7;
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  const getEventsForDate = (dateStr) => {
+    return evenements.filter(e=>{
+      const start = e.date_debut;
+      const end = e.date_fin || e.date_debut;
+      return dateStr >= start && dateStr <= end;
+    }).sort((a,b)=>(a.heure_debut||"").localeCompare(b.heure_debut||""));
+  };
+
+  const cells = [];
+  for (let i=0;i<firstDow;i++) cells.push(null);
+  for (let d=1; d<=daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const changeMonth = (delta) => {
+    let newMonth = month + delta, newYear = year;
+    if (newMonth < 0) { newMonth = 11; newYear--; }
+    if (newMonth > 11) { newMonth = 0; newYear++; }
+    setCalMonth({year:newYear, month:newMonth});
+  };
+
+  const openDayEvent = (day) => {
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    setEditEvent(null);
+    setEventForm({titre:"",description:"",date_debut:dateStr,date_fin:"",toute_journee:true,heure_debut:"",heure_fin:"",couleur:"#1D4ED8"});
+    setShowEventForm(true);
+  };
+
+  const openEditEvent = (evt, e) => {
+    if (e) e.stopPropagation();
+    setEditEvent(evt);
+    setEventForm({
+      titre:evt.titre, description:evt.description||"",
+      date_debut:evt.date_debut, date_fin:evt.date_fin||"",
+      toute_journee:evt.toute_journee!==false,
+      heure_debut:evt.heure_debut||"", heure_fin:evt.heure_fin||"",
+      couleur:evt.couleur||"#1D4ED8",
+    });
+    setShowEventForm(true);
+  };
+
+  const upcoming = evenements
+    .filter(e=>(e.date_fin||e.date_debut) >= todayStr)
+    .sort((a,b)=>a.date_debut.localeCompare(b.date_debut))
+    .slice(0,6);
+
+  return(
+  <div>
+    <div style={{display:"grid",gridTemplateColumns:"2.2fr 1fr",gap:16}}>
+      <div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,...S.card,padding:"10px 16px"}}>
+          <button onClick={()=>changeMonth(-1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>‹</button>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{fontWeight:700,fontSize:15}}>{monthNames[month]} {year}</div>
+            <button onClick={()=>{const d=new Date();setCalMonth({year:d.getFullYear(),month:d.getMonth()});}}
+              style={{...S.btn("#EFF6FF","#1D4ED8"),padding:"4px 10px",fontSize:11}}>Aujourd'hui</button>
+          </div>
+          <button onClick={()=>changeMonth(1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>›</button>
+        </div>
+
+        <div style={S.card}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,marginBottom:6}}>
+            {["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(d=>(
+              <div key={d} style={{textAlign:"center",fontSize:11,fontWeight:600,color:"#9CA3AF",padding:"4px 0"}}>{d}</div>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+            {cells.map((day,idx)=>{
+              if (day===null) return <div key={idx} style={{minHeight:86}}/>;
+              const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+              const dayEvents = getEventsForDate(dateStr);
+              const isToday = dateStr===todayStr;
+              return(
+                <div key={idx} onClick={()=>openDayEvent(day)}
+                  style={{minHeight:86,border:"1px solid "+(isToday?"#1D4ED8":"#F1F5F9"),borderRadius:8,padding:5,cursor:"pointer",background:isToday?"#EFF6FF":"#fff",display:"flex",flexDirection:"column",gap:2}}>
+                  <div style={{fontSize:11,fontWeight:isToday?800:600,color:isToday?"#1D4ED8":"#374151"}}>{day}</div>
+                  {dayEvents.slice(0,3).map(evt=>(
+                    <div key={evt.id} onClick={(e)=>openEditEvent(evt,e)}
+                      style={{fontSize:9.5,padding:"1px 5px",borderRadius:4,background:evt.couleur+"22",color:evt.couleur,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      {!evt.toute_journee&&evt.heure_debut&&<span>{evt.heure_debut.slice(0,5)} </span>}{evt.titre}
+                    </div>
+                  ))}
+                  {dayEvents.length>3&&<div style={{fontSize:9,color:"#9CA3AF"}}>+{dayEvents.length-3} de plus</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>📅 Prochains événements</div>
+        {upcoming.length===0?(
+          <div style={{textAlign:"center",color:"#9CA3AF",fontSize:12,padding:"24px 0"}}>Aucun événement à venir</div>
+        ):(
+          <div style={{display:"grid",gap:8}}>
+            {upcoming.map(evt=>(
+              <div key={evt.id} onClick={()=>openEditEvent(evt,null)}
+                style={{padding:"8px 10px",borderRadius:8,borderLeft:"3px solid "+evt.couleur,background:"#F9FAFB",cursor:"pointer"}}>
+                <div style={{fontWeight:600,fontSize:12}}>{evt.titre}</div>
+                <div style={{fontSize:11,color:"#6B7280",marginTop:2}}>
+                  {new Date(evt.date_debut+"T00:00:00").toLocaleDateString('fr-LU',{weekday:'short',day:'numeric',month:'short'})}
+                  {!evt.toute_journee&&evt.heure_debut?` · ${evt.heure_debut.slice(0,5)}`:evt.toute_journee?" · Toute la journée":""}
+                </div>
+                {evt.cree_par&&<div style={{fontSize:10,color:"#9CA3AF",marginTop:2}}>Par {evt.cree_par.split('@')[0]}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+  );
+})()}
 
 {/* ══ DASHBOARD ══════════════════════════════════════════════════ */}
 {page==="dashboard" && (()=>{
@@ -4046,6 +4218,78 @@ function BossokApp({ session, onLogout }) {
         <button onClick={savePerte} disabled={saving||!perteForm.quantite}
           style={{...S.btn("#F59E0B"),flex:2,opacity:(saving||!perteForm.quantite)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Confirmer la perte"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL ÉVÉNEMENT ═══════════════════════════════════════════ */}
+  {showEventForm&&(
+  <div style={S.modal} onClick={()=>{setShowEventForm(false);setEditEvent(null);}}>
+    <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editEvent?"Modifier l'événement":"Nouvel événement"}</h2>
+        <button onClick={()=>{setShowEventForm(false);setEditEvent(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Titre *</label>
+          <input value={eventForm.titre||""} onChange={e=>setEventForm(p=>({...p,titre:e.target.value}))}
+            placeholder="Ex: Livraison fournisseur, réunion..." style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Description</label>
+          <textarea value={eventForm.description||""} onChange={e=>setEventForm(p=>({...p,description:e.target.value}))}
+            placeholder="Optionnel" rows={2} style={{...S.input,resize:"vertical",fontFamily:"inherit"}}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date de début *</label>
+            <input type="date" value={eventForm.date_debut||""} onChange={e=>setEventForm(p=>({...p,date_debut:e.target.value}))} style={S.input}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date de fin <span style={{color:"#D1D5DB"}}>(si plusieurs jours)</span></label>
+            <input type="date" value={eventForm.date_fin||""} onChange={e=>setEventForm(p=>({...p,date_fin:e.target.value}))} style={S.input}/>
+          </div>
+        </div>
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer"}}>
+          <input type="checkbox" checked={eventForm.toute_journee!==false} onChange={e=>setEventForm(p=>({...p,toute_journee:e.target.checked}))}/>
+          Toute la journée
+        </label>
+        {eventForm.toute_journee===false&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div>
+              <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Heure de début</label>
+              <input type="time" value={eventForm.heure_debut||""} onChange={e=>setEventForm(p=>({...p,heure_debut:e.target.value}))} style={S.input}/>
+            </div>
+            <div>
+              <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Heure de fin</label>
+              <input type="time" value={eventForm.heure_fin||""} onChange={e=>setEventForm(p=>({...p,heure_fin:e.target.value}))} style={S.input}/>
+            </div>
+          </div>
+        )}
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:5}}>Couleur</label>
+          <div style={{display:"flex",gap:8}}>
+            {["#1D4ED8","#059669","#D97706","#DC2626","#7C3AED","#0EA5E9","#DB2777","#374151"].map(c=>(
+              <div key={c} onClick={()=>setEventForm(p=>({...p,couleur:c}))}
+                style={{width:26,height:26,borderRadius:"50%",background:c,cursor:"pointer",
+                  border:(eventForm.couleur||"#1D4ED8")===c?"3px solid #0F172A":"3px solid transparent",
+                  boxShadow:"0 0 0 1px #E5E7EB"}}/>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        {editEvent&&(
+          <button onClick={()=>deleteEvenement(editEvent.id)} disabled={saving}
+            style={{...S.btn("#FEE2E2","#DC2626"),padding:"9px 14px"}}>🗑️</button>
+        )}
+        <button onClick={()=>{setShowEventForm(false);setEditEvent(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveEvenement} disabled={saving||!eventForm.titre||!eventForm.date_debut}
+          style={{...S.btn(),flex:2,opacity:(saving||!eventForm.titre||!eventForm.date_debut)?0.5:1}}>
+          {saving?"Sauvegarde...":editEvent?"Enregistrer":"Créer l'événement"}
         </button>
       </div>
     </div>
