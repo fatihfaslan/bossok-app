@@ -475,11 +475,27 @@ const totalFact = (lignes=[]) => {
   return {prod, cons, total: prod+cons};
 };
 
-// Marge réelle basée sur le prix d'achat du produit (si renseigné), sinon estimation
-// à 28% de marge (ratio historique) en attendant que le prix d'achat soit configuré.
+// Coût moyen pondéré d'un produit à partir de son historique de réceptions de stock.
+// Retourne null si aucune réception n'a encore été enregistrée pour ce produit.
+const getCoutMoyenPondere = (produitId, receptionsStock) => {
+  const receps = receptionsStock.filter(r => r.produit_id === produitId);
+  if (receps.length === 0) return null;
+  const totalQte = receps.reduce((s,r) => s + Number(r.quantite), 0);
+  if (totalQte <= 0) return null;
+  const totalCout = receps.reduce((s,r) => s + Number(r.quantite) * Number(r.prix_achat_unitaire), 0);
+  return totalCout / totalQte;
+};
+
+// Marge réelle : priorité au coût moyen pondéré (réceptions de stock),
+// puis au prix d'achat manuel du produit, puis une estimation à 28% de marge
+// (ratio historique) en dernier recours si aucune donnée n'est disponible.
 const COUT_RATIO_FALLBACK = 0.72;
-const calcMargeLigne = (ligne, produits) => {
+const calcMargeLigne = (ligne, produits, receptionsStock) => {
   if (ligne.isCredit || ligne.produitId === "CREDIT_CONSIGNES") return { marge: 0, reel: true };
+  const coutMoyen = getCoutMoyenPondere(ligne.produitId, receptionsStock);
+  if (coutMoyen != null && coutMoyen > 0) {
+    return { marge: (ligne.pu - coutMoyen) * ligne.qte, reel: true };
+  }
   const produit = produits.find(p => p.id === ligne.produitId);
   const prixAchat = produit?.prix_achat;
   if (prixAchat != null && prixAchat > 0) {
@@ -487,10 +503,10 @@ const calcMargeLigne = (ligne, produits) => {
   }
   return { marge: ligne.qte * ligne.pu * (1 - COUT_RATIO_FALLBACK), reel: false };
 };
-const calcMargeFacture = (facture, produits) => {
+const calcMargeFacture = (facture, produits, receptionsStock) => {
   let marge = 0, ligneReelles = 0, ligneTotal = 0;
   (facture.lignes||[]).forEach(l => {
-    const r = calcMargeLigne(l, produits);
+    const r = calcMargeLigne(l, produits, receptionsStock);
     marge += r.marge;
     ligneTotal++;
     if (r.reel) ligneReelles++;
@@ -945,6 +961,7 @@ function BossokApp({ session, onLogout }) {
   const [commandes, setCommandes] = useState([]);
   const [stock, setStock] = useState({});
   const [produits, setProduits] = useState([]);
+  const [receptionsStock, setReceptionsStock] = useState([]);
 
   // UI
   const [selClient, setSelClient] = useState(null);
@@ -969,6 +986,9 @@ function BossokApp({ session, onLogout }) {
   const [editProduit, setEditProduit] = useState(null);
   const [produitForm, setProduitForm] = useState({});
   const [produitFilterStatut, setProduitFilterStatut] = useState("Actif");
+  const [showReceptionForm, setShowReceptionForm] = useState(false);
+  const [receptionProduit, setReceptionProduit] = useState(null);
+  const [receptionForm, setReceptionForm] = useState({});
   const [showFactForm, setShowFactForm] = useState(false);
   const [factFilterStatut, setFactFilterStatut] = useState("Tous");
   const [factFilterSearch, setFactFilterSearch] = useState("");
@@ -1033,12 +1053,13 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
         db.get("stock"),
         db.get("produits"),
+        db.get("receptions_stock"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -1047,6 +1068,7 @@ function BossokApp({ session, onLogout }) {
       stk.forEach(s => { stockMap[s.produit_id] = s.quantite; });
       setStock(stockMap);
       setProduits([...prods].sort((a,b) => (a.categorie+a.nom).localeCompare(b.categorie+b.nom)));
+      setReceptionsStock(receps);
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
@@ -1183,6 +1205,30 @@ function BossokApp({ session, onLogout }) {
     try {
       await db.update("produits", produit.id, {statut: nouveauStatut});
       await loadAll();
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
+  };
+
+  const saveReception = async () => {
+    const qte = parseFloat(receptionForm.quantite);
+    const prixUnit = parseFloat(receptionForm.prix_achat_unitaire);
+    if (!receptionProduit || !qte || qte <= 0 || !prixUnit || prixUnit <= 0) return;
+    setSaving(true);
+    try {
+      await db.insert("receptions_stock", {
+        produit_id: receptionProduit.id,
+        quantite: qte,
+        prix_achat_unitaire: prixUnit,
+        fournisseur: receptionForm.fournisseur || null,
+        date: receptionForm.date || new Date().toISOString().split("T")[0],
+        notes: receptionForm.notes || null,
+      });
+      const newQte = (stock[receptionProduit.id] || 0) + qte;
+      await updateStock(receptionProduit.id, newQte);
+      await loadAll();
+      setShowReceptionForm(false);
+      setReceptionProduit(null);
+      setReceptionForm({});
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -1704,7 +1750,7 @@ function BossokApp({ session, onLogout }) {
   const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
   let marge = 0, margeLignesReelles = 0, margeLignesTotal = 0;
   factActives.forEach(f => {
-    const r = calcMargeFacture(f, produits);
+    const r = calcMargeFacture(f, produits, receptionsStock);
     marge += r.marge; margeLignesReelles += r.ligneReelles; margeLignesTotal += r.ligneTotal;
   });
   const margePct = ca>0?Math.round(marge/ca*100):0;
@@ -1731,7 +1777,7 @@ function BossokApp({ session, onLogout }) {
     const z=cl?.region||"Inconnu";
     if(!zoneStats[z]) zoneStats[z]={zone:z,ca:0,marge:0,nb:0};
     const t=totalFact(f.lignes).total;
-    zoneStats[z].ca+=t; zoneStats[z].marge+=calcMargeFacture(f,produits).marge; zoneStats[z].nb++;
+    zoneStats[z].ca+=t; zoneStats[z].marge+=calcMargeFacture(f,produits,receptionsStock).marge; zoneStats[z].nb++;
   });
   const topZones = Object.values(zoneStats).sort((a,b)=>b.ca-a.ca).slice(0,6);
 
@@ -1742,7 +1788,7 @@ function BossokApp({ session, onLogout }) {
     const cid=f.client_id;
     if(!clientStats[cid]) clientStats[cid]={id:cid,nom:f.client_nom,type:cl?.type||"",region:cl?.region||"",ca:0,marge:0,nb:0};
     const t=totalFact(f.lignes).total;
-    clientStats[cid].ca+=t; clientStats[cid].marge+=calcMargeFacture(f,produits).marge; clientStats[cid].nb++;
+    clientStats[cid].ca+=t; clientStats[cid].marge+=calcMargeFacture(f,produits,receptionsStock).marge; clientStats[cid].nb++;
   });
   const topClients = Object.values(clientStats).sort((a,b)=>b.ca-a.ca).slice(0,8);
 
@@ -1753,7 +1799,7 @@ function BossokApp({ session, onLogout }) {
     const t=cl?.type||"Autre";
     if(!typeStats[t]) typeStats[t]={type:t,ca:0,marge:0,nb:0};
     const total=totalFact(f.lignes).total;
-    typeStats[t].ca+=total; typeStats[t].marge+=calcMargeFacture(f,produits).marge; typeStats[t].nb++;
+    typeStats[t].ca+=total; typeStats[t].marge+=calcMargeFacture(f,produits,receptionsStock).marge; typeStats[t].nb++;
   });
   const topTypes = Object.values(typeStats).sort((a,b)=>b.ca-a.ca);
 
@@ -1782,7 +1828,7 @@ function BossokApp({ session, onLogout }) {
     factActives.forEach(f=>{
       const cl=clients.find(c=>c.id===f.client_id);
       const {prod,cons,total}=totalFact(f.lignes);
-      const margeF=calcMargeFacture(f,produits).marge;
+      const margeF=calcMargeFacture(f,produits,receptionsStock).marge;
       rows.push([f.numero,f.date,f.client_nom,cl?.type||"",cl?.region||"",f.statut,
         prod.toFixed(2),cons.toFixed(2),total.toFixed(2),margeF.toFixed(2)]);
     });
@@ -2995,7 +3041,7 @@ function BossokApp({ session, onLogout }) {
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead>
           <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
-            {["Produit","Cat.","Stock","Modifier"].map(h=>(
+            {["Produit","Cat.","Stock","Coût moyen","Modifier","Réception"].map(h=>(
               <th key={h} style={{textAlign:"left",padding:"8px 12px",color:"#6B7280",fontWeight:600,fontSize:12}}>{h}</th>
             ))}
           </tr>
@@ -3004,17 +3050,34 @@ function BossokApp({ session, onLogout }) {
           {produits.filter(p=>stockCat==="Tous"||p.categorie===stockCat).map(p=>{
             const q=stock[p.id]||0;
             const col=q===0?"#DC2626":q<=5?"#D97706":"#059669";
+            const coutMoyen=getCoutMoyenPondere(p.id,receptionsStock);
+            const nbReceptions=receptionsStock.filter(r=>r.produit_id===p.id).length;
             return(
               <tr key={p.id} style={{borderBottom:"1px solid #F1F5F9",background:q===0?"#FFF5F5":q<=5?"#FFFDF0":"transparent"}}>
                 <td style={{padding:"7px 12px",fontWeight:500}}>{p.nom}{p.type_emballage==="VC"&&<span style={{...S.badge("#EDE9FE","#7C3AED"),marginLeft:6,fontSize:10}}>VC</span>}</td>
                 <td style={{padding:"7px 12px"}}><span style={S.badge("#F3F4F6","#374151")}>{p.categorie}</span></td>
                 <td style={{padding:"7px 12px"}}><span style={{fontWeight:700,color:col,fontSize:16}}>{q}</span><span style={{fontSize:11,color:"#9CA3AF",marginLeft:4}}>cs</span></td>
                 <td style={{padding:"7px 12px"}}>
+                  {coutMoyen!=null ? (
+                    <div>
+                      <span style={{fontWeight:600,color:"#7C3AED"}}>{fmtFull(coutMoyen)}</span>
+                      <div style={{fontSize:10,color:"#9CA3AF"}}>{nbReceptions} réception{nbReceptions>1?"s":""}</div>
+                    </div>
+                  ) : <span style={{color:"#D1D5DB",fontSize:12}}>—</span>}
+                </td>
+                <td style={{padding:"7px 12px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:4}}>
                     <button onClick={()=>updateStock(p.id,(stock[p.id]||0)-1)} style={{width:26,height:26,border:"1px solid #E5E7EB",borderRadius:6,background:"#F9FAFB",cursor:"pointer",fontWeight:700}}>−</button>
                     <input type="number" min="0" value={q} onChange={e=>updateStock(p.id,parseInt(e.target.value)||0)} style={{width:54,textAlign:"center",padding:"3px 4px",border:"1px solid #D1D5DB",borderRadius:6,fontSize:13,outline:"none"}}/>
                     <button onClick={()=>updateStock(p.id,(stock[p.id]||0)+1)} style={{width:26,height:26,border:"1px solid #E5E7EB",borderRadius:6,background:"#F9FAFB",cursor:"pointer",fontWeight:700}}>+</button>
                   </div>
+                </td>
+                <td style={{padding:"7px 12px"}}>
+                  <button onClick={()=>{
+                    setReceptionProduit(p);
+                    setReceptionForm({quantite:"",prix_achat_unitaire:p.prix_achat||"",fournisseur:"",date:new Date().toISOString().split("T")[0],notes:""});
+                    setShowReceptionForm(true);
+                  }} style={{...S.btn("#7C3AED"),padding:"5px 10px",fontSize:11}}>📥 Réception</button>
                 </td>
               </tr>
             );
@@ -3720,6 +3783,80 @@ function BossokApp({ session, onLogout }) {
         <button onClick={saveProduit} disabled={saving||!produitForm.nom||!produitForm.categorie}
           style={{...S.btn(),flex:2,opacity:(saving||!produitForm.nom||!produitForm.categorie)?0.5:1}}>
           {saving?"Sauvegarde...":editProduit?"Enregistrer":"Créer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL RÉCEPTION STOCK ══════════════════════════════════════ */}
+  {showReceptionForm&&receptionProduit&&(
+  <div style={S.modal} onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}}>
+    <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>📥 Réception de stock</h2>
+        <button onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>{receptionProduit.nom}</div>
+
+      <div style={{display:"grid",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Quantité reçue (caisses) *</label>
+            <input type="number" min="0" step="1" value={receptionForm.quantite||""}
+              onChange={e=>setReceptionForm(p=>({...p,quantite:e.target.value}))}
+              placeholder="0" style={S.input}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Prix d'achat / caisse *</label>
+            <input type="number" min="0" step="0.01" value={receptionForm.prix_achat_unitaire||""}
+              onChange={e=>setReceptionForm(p=>({...p,prix_achat_unitaire:e.target.value}))}
+              placeholder="0.00" style={S.input}/>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Fournisseur</label>
+            <input value={receptionForm.fournisseur||""} onChange={e=>setReceptionForm(p=>({...p,fournisseur:e.target.value}))}
+              placeholder="Optionnel" style={S.input}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
+            <input type="date" value={receptionForm.date||""} onChange={e=>setReceptionForm(p=>({...p,date:e.target.value}))} style={S.input}/>
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={receptionForm.notes||""} onChange={e=>setReceptionForm(p=>({...p,notes:e.target.value}))}
+            placeholder="Optionnel — n° de bon de livraison, etc." style={S.input}/>
+        </div>
+      </div>
+
+      {(() => {
+        const historique = receptionsStock.filter(r=>r.produit_id===receptionProduit.id).slice(0,5);
+        const coutMoyen = getCoutMoyenPondere(receptionProduit.id, receptionsStock);
+        return historique.length>0 ? (
+          <div style={{marginTop:14}}>
+            <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginBottom:6}}>
+              Historique récent {coutMoyen!=null&&<span style={{color:"#7C3AED"}}>· Coût moyen actuel : {fmtFull(coutMoyen)}</span>}
+            </div>
+            <div style={{maxHeight:120,overflowY:"auto"}}>
+              {historique.map(r=>(
+                <div key={r.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 8px",background:"#F9FAFB",borderRadius:6,marginBottom:3}}>
+                  <span style={{color:"#6B7280"}}>{r.date}{r.fournisseur?" · "+r.fournisseur:""}</span>
+                  <span style={{fontWeight:600}}>{r.quantite} cs × {fmtFull(r.prix_achat_unitaire)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      })()}
+
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        <button onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveReception} disabled={saving||!receptionForm.quantite||!receptionForm.prix_achat_unitaire}
+          style={{...S.btn("#7C3AED"),flex:2,opacity:(saving||!receptionForm.quantite||!receptionForm.prix_achat_unitaire)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer la réception"}
         </button>
       </div>
     </div>
