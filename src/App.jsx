@@ -788,6 +788,145 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+// Bon de livraison : document de preuve de livraison, distinct de la facture.
+// Pas de prix — juste les quantités livrées et une zone de signature.
+const generateBonLivraison = (commande, client) => {
+  const lignes = commande.produits || [];
+  const totalCaisses = lignes.reduce((s, p) => s + p.qte, 0);
+  const numeroBL = "BL-" + new Date((commande.date_livraison || commande.date_commande || new Date().toISOString())).getFullYear() + "-" + String(commande.id).padStart(5, "0");
+  const dateLivraison = commande.date_livraison || commande.date_commande || new Date().toISOString().split("T")[0];
+
+  const rows = lignes.map(p => `
+    <tr>
+      <td style="text-align:center;font-weight:700;font-size:11pt">${p.qte}</td>
+      <td style="font-size:10pt">${p.nom}</td>
+    </tr>
+  `).join("");
+
+  const emptyRows = Array(Math.max(0, 6 - lignes.length)).fill("").map(() => `
+    <tr><td>&nbsp;</td><td></td></tr>
+  `).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Bon de livraison ${numeroBL}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:14mm 16mm; }
+    .no-print { position:fixed; top:8px; right:8px; z-index:999; }
+    .no-print button { padding:8px 16px; background:#1D4ED8; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; }
+    @media print { .no-print { display:none; } }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+    .company h1 { font-size:14pt; font-weight:700; color:#1D4ED8; margin-bottom:3px; }
+    .company p { font-size:8pt; color:#555; line-height:1.5; }
+    .logo img { width:56px; height:56px; object-fit:contain; }
+    hr { border:none; border-top:1px solid #E5E7EB; margin:10px 0; }
+    .title-band { background:#1D4ED8; color:#fff; padding:8px 14px; border-radius:8px; margin:14px 0; display:flex; justify-content:space-between; align-items:center; }
+    .title-band h2 { font-size:13pt; font-weight:700; }
+    .meta { display:flex; justify-content:space-between; margin-bottom:14px; }
+    .meta-left p { font-size:9pt; margin-bottom:3px; }
+    .client-name { font-size:11pt; font-weight:700; margin-bottom:2px; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; }
+    th { background:#F3F4F6; text-align:left; padding:7px 10px; font-size:8.5pt; color:#374151; border-bottom:2px solid #E5E7EB; }
+    td { padding:7px 10px; border-bottom:1px solid #F1F5F9; }
+    .total-row td { border-top:2px solid #1D4ED8; font-weight:700; font-size:10pt; padding-top:10px; }
+    .sig-zone { display:flex; justify-content:space-between; margin-top:36px; gap:24px; }
+    .sig-box { flex:1; }
+    .sig-box .label { font-size:9pt; font-weight:700; margin-bottom:40px; }
+    .sig-box .line { border-top:1px solid #111; padding-top:4px; font-size:7.5pt; color:#555; }
+    .footer { margin-top:30px; text-align:center; font-size:7.5pt; color:#9CA3AF; }
+    .notes-box { margin-top:14px; padding:10px; background:#F9FAFB; border-radius:8px; font-size:8.5pt; }
+  </style>
+</head>
+<body>
+  <div class="no-print"><button onclick="window.print()">🖨️ Imprimer / PDF</button></div>
+
+  <div class="header">
+    <div class="company">
+      <h1>BOSSOK DISTRIBUTION Sàrl</h1>
+      <p>
+        71A Boulevard Robert Schuman · 8340 Olm<br/>
+        Tél : 661-620-620 · TVA : LU35355446
+      </p>
+    </div>
+    <div class="logo"><img src="${LOGO}" alt="BOSSOK"/></div>
+  </div>
+
+  <hr/>
+
+  <div class="title-band">
+    <h2>📦 BON DE LIVRAISON</h2>
+    <div style="text-align:right;font-size:9pt">
+      <div><strong>N° :</strong> ${numeroBL}</div>
+      <div><strong>Date :</strong> ${dateLivraison}</div>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div class="meta-left">
+      <p><strong>Chauffeur :</strong> ${commande.chauffeur === "A" ? "Sefa" : commande.chauffeur === "B" ? "Mikail" : "—"}</p>
+      <p><strong>Zone :</strong> ${commande.client_region || "—"}</p>
+    </div>
+    <div style="text-align:right">
+      <p style="font-size:7.5pt;color:#555;margin-bottom:2px">Livré à :</p>
+      <p class="client-name">${commande.client_nom || ""}</p>
+      <p style="font-size:8pt;color:#333;line-height:1.6">
+        ${commande.client_adresse || client?.adresse || ""}<br/>
+        ${client?.telephone ? "Tél : " + client.telephone : ""}
+      </p>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:70px;text-align:center">Quantité</th>
+        <th>Produit</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+      ${emptyRows}
+      <tr class="total-row">
+        <td style="text-align:center">${totalCaisses}</td>
+        <td>TOTAL CAISSES LIVRÉES</td>
+      </tr>
+    </tbody>
+  </table>
+
+  ${commande.notes ? `<div class="notes-box"><strong>Notes :</strong> ${commande.notes}</div>` : ""}
+
+  <div class="sig-zone">
+    <div class="sig-box">
+      <div class="label">Signature chauffeur</div>
+      <div class="line">BOSSOK Distribution Sàrl</div>
+    </div>
+    <div class="sig-box">
+      <div class="label">Signature client — Reçu en bon état</div>
+      <div class="line">${commande.client_nom || ""}</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Ce bon de livraison confirme la remise des marchandises listées ci-dessus. Toute réclamation doit être signalée sous 48h.</p>
+    <p>BOSSOK Distribution Sàrl · 661-620-620</p>
+  </div>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = numeroBL + ".html";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
 
 function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, getChauffeur}) {
   return(
@@ -1632,6 +1771,11 @@ function BossokApp({ session, onLogout }) {
     const imp = factures.filter(x => x.client_id === cmd.client_id && x.statut === "Impayée" && x.id !== facture.id);
     const solde = soldeConsignes(cmd.client_id).reduce((s, r) => s + r.solde * r.consigne, 0);
     generatePDF(facture, client, imp, solde);
+  };
+
+  const imprimerBonLivraison = (cmd) => {
+    const client = clients.find(c => c.id === cmd.client_id);
+    generateBonLivraison(cmd, client);
   };
 
   const updateStock = async (produitId, qte) => {
@@ -2984,6 +3128,7 @@ function BossokApp({ session, onLogout }) {
                   {cmd.statut!=="Livré"&&(
                     <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
                       <button onClick={()=>marquerLivre(cmd.id)} style={{...S.btn("#059669"),padding:"4px 10px",fontSize:11}}>✓ Livré</button>
+                      <button onClick={()=>imprimerBonLivraison(cmd)} style={{...S.btn("#7C3AED"),padding:"4px 10px",fontSize:11}}>📦 Bon de livraison</button>
                       <button onClick={()=>openEditCmd(cmd)} style={{...S.btn("#1D4ED8"),padding:"4px 10px",fontSize:11}}>✏️ Modifier</button>
                       <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
                       <button onClick={()=>supprimerCommande(cmd.id)} style={{...S.btn("#EF4444"),padding:"4px 10px",fontSize:11}}>🗑️ Supprimer</button>
@@ -2992,6 +3137,7 @@ function BossokApp({ session, onLogout }) {
                   {cmd.statut==="Livré"&&(
                     <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
                       <button onClick={()=>imprimerFactureCommande(cmd)} style={{...S.btn("#374151"),padding:"4px 10px",fontSize:11}}>🖨️ Imprimer facture</button>
+                      <button onClick={()=>imprimerBonLivraison(cmd)} style={{...S.btn("#7C3AED"),padding:"4px 10px",fontSize:11}}>📦 Bon de livraison</button>
                       <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
                     </div>
                   )}
@@ -3267,6 +3413,8 @@ function BossokApp({ session, onLogout }) {
                         <div style={{display:"flex",gap:4}}>
                           <button onClick={()=>marquerLivre(stop.id)} disabled={saving}
                             style={{...S.btn("#059669"),padding:"3px 8px",fontSize:10}}>✓ Livré</button>
+                          <button onClick={()=>imprimerBonLivraison(stop)}
+                            style={{...S.btn("#7C3AED"),padding:"3px 8px",fontSize:10}}>📦</button>
                           <button onClick={()=>{openEditCmd(stop);setPage("commandes");}}
                             style={{...S.btn("#1D4ED8"),padding:"3px 8px",fontSize:10}}>✏️</button>
                           <button onClick={()=>supprimerCommande(stop.id)}
