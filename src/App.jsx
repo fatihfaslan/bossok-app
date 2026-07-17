@@ -1173,6 +1173,7 @@ function BossokApp({ session, onLogout }) {
   const [receptionProduit, setReceptionProduit] = useState(null);
   const [receptionForm, setReceptionForm] = useState({});
   const [showPerteForm, setShowPerteForm] = useState(false);
+  const [stockDraft, setStockDraft] = useState({});
   const [perteProduit, setPerteProduit] = useState(null);
   const [perteForm, setPerteForm] = useState({});
   const [showEventForm, setShowEventForm] = useState(false);
@@ -3712,7 +3713,16 @@ function BossokApp({ session, onLogout }) {
                 <td style={{padding:"7px 12px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:4}}>
                     <button onClick={()=>updateStock(p.id,(stock[p.id]||0)-1)} style={{width:26,height:26,border:"1px solid #E5E7EB",borderRadius:6,background:"#F9FAFB",cursor:"pointer",fontWeight:700}}>−</button>
-                    <input type="number" min="0" value={q} onChange={e=>updateStock(p.id,parseInt(e.target.value)||0)} style={{width:54,textAlign:"center",padding:"3px 4px",border:"1px solid #D1D5DB",borderRadius:6,fontSize:13,outline:"none"}}/>
+                    <input type="number" min="0"
+                      value={stockDraft[p.id]!==undefined ? stockDraft[p.id] : q}
+                      onChange={e=>setStockDraft(prev=>({...prev,[p.id]:e.target.value}))}
+                      onBlur={()=>{
+                        if (stockDraft[p.id]===undefined) return;
+                        updateStock(p.id, parseInt(stockDraft[p.id])||0);
+                        setStockDraft(prev=>{const n={...prev}; delete n[p.id]; return n;});
+                      }}
+                      onKeyDown={e=>{if(e.key==="Enter") e.target.blur();}}
+                      style={{width:54,textAlign:"center",padding:"3px 4px",border:"1px solid #D1D5DB",borderRadius:6,fontSize:13,outline:"none"}}/>
                     <button onClick={()=>updateStock(p.id,(stock[p.id]||0)+1)} style={{width:26,height:26,border:"1px solid #E5E7EB",borderRadius:6,background:"#F9FAFB",cursor:"pointer",fontWeight:700}}>+</button>
                   </div>
                 </td>
