@@ -2682,35 +2682,36 @@ function BossokApp({ session, onLogout }) {
     </div>
 
     {/* ── KPIs Row 1 : indicateurs financiers (priorité visuelle) ── */}
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:10}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:12,marginBottom:12}}>
       {[
-        {l:"CA Total",v:fmtFull(ca),c:"#1D4ED8",icon:"💶",sub:factActives.length+" factures"},
-        {l:margeCouverture===100?"Marge réelle":"Marge (estimée partielle)",v:fmtFull(marge),c:"#7C3AED",icon:"📈",sub:margePct+"% du CA · "+margeCouverture+"% données réelles"},
-        {l:"Encaissé",v:fmtFull(caPayee),c:"#059669",icon:"✅",sub:dashFacts.filter(f=>f.statut==="Payée").length+" payées"},
-        {l:"Impayés",v:fmtFull(impaye),c:"#DC2626",icon:"⚠️",sub:dashFacts.filter(f=>f.statut==="Impayée").length+" factures"},
+        {l:"CA Total",v:fmtFull(ca),c:"#1D4ED8",bg:"#EFF6FF",icon:"💶",sub:factActives.length+" factures"},
+        {l:margeCouverture===100?"Marge réelle":"Marge (estimée)",v:fmtFull(marge),c:"#7C3AED",bg:"#F5F3FF",icon:"📈",sub:margePct+"% du CA"},
+        {l:"Encaissé",v:fmtFull(caPayee),c:"#059669",bg:"#ECFDF5",icon:"✅",sub:dashFacts.filter(f=>f.statut==="Payée").length+" payées"},
+        {l:"Impayés",v:fmtFull(impaye),c:"#DC2626",bg:"#FEF2F2",icon:"⚠️",sub:dashFacts.filter(f=>f.statut==="Impayée").length+" factures"},
       ].map((s,i)=>(
-        <div key={i} style={S.kpi(s.c)}>
-          <div style={{fontSize:18,marginBottom:2}}>{s.icon}</div>
-          <div style={{fontSize:17,fontWeight:800,color:s.c}}>{s.v}</div>
-          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
-          <div style={{fontSize:10,color:"#9CA3AF"}}>{s.sub}</div>
+        <div key={i} style={{...S.card,padding:"18px 20px"}}>
+          <div style={{width:40,height:40,borderRadius:10,background:s.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,marginBottom:10}}>{s.icon}</div>
+          <div style={{fontSize:26,fontWeight:800,color:"#0F172A",letterSpacing:"-0.5px",lineHeight:1.1}}>{s.v}</div>
+          <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginTop:4}}>{s.l}</div>
+          <div style={{fontSize:11,color:s.c,fontWeight:600,marginTop:2}}>{s.sub}</div>
         </div>
       ))}
     </div>
 
-    {/* ── KPIs Row 2 : indicateurs opérationnels (secondaires, teinte neutre) ── */}
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
+    {/* ── KPIs Row 2 : indicateurs opérationnels (secondaires) ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:16}}>
       {[
-        {l:"Clients actifs",v:nbClients,c:"#64748B",icon:"👥",sub:"sur la période"},
-        {l:"Nouveaux clients",v:nouveauxClients,c:"#64748B",icon:"✨",sub:"sur la période"},
-        {l:"Panier moyen",v:fmtFull(panierMoyen),c:"#64748B",icon:"🛒",sub:"par facture"},
-        {l:"Livraisons",v:(sefaCmds+mikailCmds),c:"#64748B",icon:"🚚",sub:`Sefa ${sefaCmds} · Mikail ${mikailCmds}`},
+        {l:"Clients actifs",v:nbClients,icon:"👥",sub:"sur la période"},
+        {l:"Nouveaux clients",v:nouveauxClients,icon:"✨",sub:"sur la période"},
+        {l:"Panier moyen",v:fmtFull(panierMoyen),icon:"🛒",sub:"par facture"},
+        {l:"Livraisons",v:(sefaCmds+mikailCmds),icon:"🚚",sub:`Sefa ${sefaCmds} · Mikail ${mikailCmds}`},
       ].map((s,i)=>(
-        <div key={i} style={S.kpi(s.c)}>
-          <div style={{fontSize:18,marginBottom:2}}>{s.icon}</div>
-          <div style={{fontSize:17,fontWeight:800,color:s.c}}>{s.v}</div>
-          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
-          <div style={{fontSize:10,color:"#9CA3AF"}}>{s.sub}</div>
+        <div key={i} style={{...S.card,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
+          <div style={{fontSize:18,flexShrink:0}}>{s.icon}</div>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:16,fontWeight:800,color:"#374151",lineHeight:1.1}}>{s.v}</div>
+            <div style={{fontSize:10,color:"#9CA3AF",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.l}</div>
+          </div>
         </div>
       ))}
     </div>
@@ -2745,40 +2746,40 @@ function BossokApp({ session, onLogout }) {
     {/* ── Charts row 1 ── */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>📊 CA mensuel (payé vs impayé)</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>📊 CA mensuel (payé vs impayé)</div>
         {historiquePeriode.length>0&&(
           <div style={{fontSize:10,color:"#9CA3AF",marginBottom:8}}>📁 Inclut {historiquePeriode.length} mois de données historiques (avant l'app)</div>
         )}
         {chartData.length>0?(
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={chartData} margin={{top:0,right:10,left:0,bottom:0}}>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={chartData} margin={{top:8,right:10,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
-              <XAxis dataKey="label" tick={{fontSize:9}} tickFormatter={(v)=>{
+              <XAxis dataKey="label" tick={{fontSize:10}} tickFormatter={(v)=>{
                 const [y,m]=String(v).split("-");
                 const noms=["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Aoû","Sep","Oct","Nov","Déc"];
                 return m ? noms[parseInt(m)-1]+" "+y.slice(2) : v;
               }}/>
-              <YAxis tick={{fontSize:9}} tickFormatter={fmt2} width={48}/>
+              <YAxis tick={{fontSize:10}} tickFormatter={fmt2} width={50}/>
               <Tooltip formatter={(v,n)=>[fmtFull(v),n==="paye"?"Encaissé":"Impayé"]}/>
               <Bar dataKey="paye" stackId="a" fill="#1D4ED8" name="paye" radius={[0,0,0,0]}/>
-              <Bar dataKey="impaye" stackId="a" fill="#EF4444" name="impaye" radius={[3,3,0,0]}/>
+              <Bar dataKey="impaye" stackId="a" fill="#EF4444" name="impaye" radius={[4,4,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
-        ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"50px 0",fontSize:12}}>Aucune donnée sur la période</div>}
+        ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"70px 0",fontSize:12}}>Aucune donnée sur la période</div>}
       </div>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>⚠️ Impayés cumulés</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>⚠️ Impayés cumulés</div>
         {impayeChart.length>0?(
-          <ResponsiveContainer width="100%" height={180}>
+          <ResponsiveContainer width="100%" height={228}>
             <BarChart data={impayeChart} margin={{top:0,right:5,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
-              <XAxis dataKey="label" tick={{fontSize:8}}/>
-              <YAxis tick={{fontSize:8}} tickFormatter={fmt2} width={45}/>
+              <XAxis dataKey="label" tick={{fontSize:9}}/>
+              <YAxis tick={{fontSize:9}} tickFormatter={fmt2} width={45}/>
               <Tooltip formatter={(v)=>[fmtFull(v),"Impayé"]}/>
-              <Bar dataKey="v" fill="#EF4444" radius={[3,3,0,0]}/>
+              <Bar dataKey="v" fill="#EF4444" radius={[4,4,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
-        ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"50px 0",fontSize:12}}>Aucun impayé</div>}
+        ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"70px 0",fontSize:12}}>Aucun impayé</div>}
       </div>
     </div>
 
@@ -2786,7 +2787,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:700,fontSize:13}}>🍺 Top produits</div>
+          <div style={{fontWeight:700,fontSize:14}}>🍺 Top produits</div>
           <div style={{display:"flex",gap:4}}>
             {[["quantite","Ventes"],["marge","Marge"]].map(([k,l])=>(
               <button key={k} onClick={()=>setDashProduitTri(k)}
@@ -2818,7 +2819,7 @@ function BossokApp({ session, onLogout }) {
       </div>
 
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>📍 CA par zone</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>📍 CA par zone</div>
         {topZones.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
         topZones.map((z,i)=>{
           const maxCA=topZones[0].ca;
@@ -2843,28 +2844,28 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:700,fontSize:13}}>🏆 Top clients par CA</div>
+          <div style={{fontWeight:700,fontSize:14}}>🏆 Top clients par CA</div>
         </div>
         {topClients.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead>
             <tr style={{borderBottom:"1px solid #E5E7EB"}}>
               {["Client","Type","Zone","CA","Marge","Nb"].map(h=>(
-                <th key={h} style={{padding:"4px 6px",textAlign:h==="CA"||h==="Marge"||h==="Nb"?"right":"left",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
+                <th key={h} style={{padding:"7px 8px",textAlign:h==="CA"||h==="Marge"||h==="Nb"?"right":"left",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {topClients.map((c,i)=>(
               <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB",background:i%2===0?"#fff":"#FAFAFA"}}>
-                <td style={{padding:"4px 6px",fontWeight:600,color:i===0?"#1D4ED8":"#374151"}}>
+                <td style={{padding:"7px 8px",fontWeight:600,color:i===0?"#1D4ED8":"#374151"}}>
                   {i===0?"🥇 ":i===1?"🥈 ":i===2?"🥉 ":""}{c.nom}
                 </td>
-                <td style={{padding:"4px 6px",color:"#6B7280"}}>{c.type}</td>
-                <td style={{padding:"4px 6px",color:"#6B7280"}}>{c.region}</td>
-                <td style={{padding:"4px 6px",textAlign:"right",fontWeight:600}}>{fmtFull(c.ca)}</td>
-                <td style={{padding:"4px 6px",textAlign:"right",color:"#059669"}}>{fmtFull(c.marge)}</td>
-                <td style={{padding:"4px 6px",textAlign:"right",color:"#6B7280"}}>{c.nb}</td>
+                <td style={{padding:"7px 8px",color:"#6B7280"}}>{c.type}</td>
+                <td style={{padding:"7px 8px",color:"#6B7280"}}>{c.region}</td>
+                <td style={{padding:"7px 8px",textAlign:"right",fontWeight:600}}>{fmtFull(c.ca)}</td>
+                <td style={{padding:"7px 8px",textAlign:"right",color:"#059669"}}>{fmtFull(c.marge)}</td>
+                <td style={{padding:"7px 8px",textAlign:"right",color:"#6B7280"}}>{c.nb}</td>
               </tr>
             ))}
           </tbody>
@@ -2872,7 +2873,7 @@ function BossokApp({ session, onLogout }) {
       </div>
 
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>📊 Marge par type de client</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>📊 Marge par type de client</div>
         {topTypes.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
         <div>
           {topTypes.map((t,i)=>{
@@ -2904,12 +2905,12 @@ function BossokApp({ session, onLogout }) {
     {/* ── Bottom row ── */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🧾 Dernières factures</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>🧾 Dernières factures</div>
         {dashFacts.length===0?<div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune facture sur la période</div>:
         [...dashFacts].reverse().slice(0,6).map(f=>{
           const {total}=totalFact(f.lignes);
           return(
-            <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #F1F5F9",fontSize:11}}>
+            <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #F1F5F9",fontSize:12}}>
               <span style={{color:"#9CA3AF",width:55,flexShrink:0}}>{f.date}</span>
               <span style={{fontWeight:500,flex:1,marginLeft:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.client_nom}</span>
               <span style={{fontWeight:700,marginRight:6,whiteSpace:"nowrap"}}>{fmtFull(total)}</span>
@@ -2919,11 +2920,11 @@ function BossokApp({ session, onLogout }) {
         })}
       </div>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>📋 Commandes en attente</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>📋 Commandes en attente</div>
         {commandes.filter(c=>c.statut==="En attente").length===0?
           <div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune commande</div>:
           commandes.filter(c=>c.statut==="En attente").slice(0,6).map(c=>(
-            <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #F1F5F9",fontSize:11}}>
+            <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #F1F5F9",fontSize:12}}>
               <span style={{fontWeight:500,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.client_nom}</span>
               <span style={{fontSize:10,color:"#6B7280",marginRight:6}}>{c.client_region}</span>
               <span style={S.badge(c.chauffeur==="A"?"#E0F2FE":"#EDE9FE",c.chauffeur==="A"?"#0EA5E9":"#8B5CF6")}>{c.chauffeur==="A"?"Sefa":"Mikail"}</span>
