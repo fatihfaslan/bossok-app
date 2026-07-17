@@ -1308,6 +1308,7 @@ function BossokApp({ session, onLogout }) {
   const [dashZone, setDashZone] = useState("");
   const [dashChauffeur, setDashChauffeur] = useState("");
   const [dashProduit, setDashProduit] = useState("");
+  const [dashStatut, setDashStatut] = useState("");
 
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now()+86400000).toISOString().split("T")[0];
@@ -2568,6 +2569,7 @@ function BossokApp({ session, onLogout }) {
     if (activeTo && f.date > activeTo) return false;
     if (dashClient && f.client_id !== dashClient) return false;
     if (dashZone) { const cl=clients.find(c=>c.id===f.client_id); if(cl?.region!==dashZone) return false; }
+    if (dashStatut && f.statut !== dashStatut) return false;
     return true;
   });
 
@@ -2698,7 +2700,38 @@ function BossokApp({ session, onLogout }) {
     const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href=url; a.download="dashboard_bossok.csv";
+    a.href=url; a.download="factures_bossok_"+new Date().toISOString().split("T")[0]+".csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+
+  const exportStock = () => {
+    const rows = [["Produit","Catégorie","Type emballage","Stock (caisses)","Coût moyen pondéré","Prix Snack","Statut"]];
+    produits.forEach(p=>{
+      const q = stock[p.id]||0;
+      const cm = getCoutMoyenPondere(p.id, receptionsStock);
+      rows.push([p.nom, p.categorie, p.type_emballage, q, cm!=null?cm.toFixed(2):"", (p.prix?.Snack||0).toFixed(2), p.statut||"Actif"]);
+    });
+    const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\n");
+    const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url; a.download="stock_bossok_"+new Date().toISOString().split("T")[0]+".csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+
+  const exportCommandes = () => {
+    const rows = [["Date","Client","Zone","Chauffeur","Statut","Produits","Notes"]];
+    dashCmds.forEach(c=>{
+      const produitsStr = (c.produits||[]).map(p=>`${p.nom} x${p.qte}`).join(", ");
+      rows.push([c.date_livraison||c.date_commande||"", c.client_nom, c.client_region||"", c.chauffeur==="A"?"Sefa":"Mikail", c.statut, produitsStr, c.notes||""]);
+    });
+    const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\n");
+    const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url; a.download="commandes_bossok_"+new Date().toISOString().split("T")[0]+".csv";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
@@ -2709,7 +2742,7 @@ function BossokApp({ session, onLogout }) {
   <div>
     {/* ── Filtres ── */}
     <div style={{...S.card,marginBottom:14,padding:"12px 16px"}}>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
         {[["semaine","Semaine"],["mois","Mois"],["trimestre","Trimestre"],["annee","Année"],["13mois","13 mois"]].map(([k,l])=>(
           <button key={k} onClick={()=>applyPeriod(k)}
             style={{...S.btn(dashPeriod===k?"#1D4ED8":"#F1F5F9",dashPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:dashPeriod===k?700:400}}>
@@ -2723,9 +2756,8 @@ function BossokApp({ session, onLogout }) {
           <input type="date" value={dashDateTo} onChange={e=>{setDashDateTo(e.target.value);setDashPeriod("custom");}}
             style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
         </div>
-        <button onClick={exportDash} style={{...S.btn("#059669"),padding:"5px 12px",fontSize:12,marginLeft:"auto"}}>📥 Export CSV</button>
       </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
         <select value={dashClient} onChange={e=>setDashClient(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:180}}>
           <option value="">Tous les clients ({clients.length})</option>
@@ -2752,13 +2784,26 @@ function BossokApp({ session, onLogout }) {
           {produits.map(p=><option key={p.id} value={p.nom}>{p.nom}</option>)}
           {dashProduit&&<option value={dashProduit}>{dashProduit}</option>}
         </select>
-        {(dashClient||dashZone||dashChauffeur||dashProduit)&&(
-          <button onClick={()=>{setDashClient("");setDashZone("");setDashChauffeur("");setDashProduit("");}}
+        <select value={dashStatut} onChange={e=>setDashStatut(e.target.value)}
+          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
+          <option value="">Tous statuts</option>
+          <option value="Payée">Payées</option>
+          <option value="Impayée">Impayées</option>
+          <option value="Avoir">Avoirs</option>
+        </select>
+        {(dashClient||dashZone||dashChauffeur||dashProduit||dashStatut)&&(
+          <button onClick={()=>{setDashClient("");setDashZone("");setDashChauffeur("");setDashProduit("");setDashStatut("");}}
             style={{...S.btn("#FEE2E2","#DC2626"),padding:"5px 10px",fontSize:12}}>✕ Reset filtres</button>
         )}
         <span style={{fontSize:11,color:"#6B7280",marginLeft:"auto",fontWeight:600}}>
           {factActives.length} factures · {activeFrom} → {activeTo}
         </span>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",borderTop:"1px solid #F1F5F9",paddingTop:10}}>
+        <span style={{fontSize:11,color:"#9CA3AF",fontWeight:600,marginRight:4}}>Exporter :</span>
+        <button onClick={exportDash} style={{...S.btn("#059669"),padding:"5px 12px",fontSize:12}}>🧾 Factures</button>
+        <button onClick={exportCommandes} style={{...S.btn("#1D4ED8"),padding:"5px 12px",fontSize:12}}>📋 Commandes</button>
+        <button onClick={exportStock} style={{...S.btn("#7C3AED"),padding:"5px 12px",fontSize:12}}>📦 Stock</button>
       </div>
     </div>
 
