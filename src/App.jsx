@@ -1177,6 +1177,11 @@ function BossokApp({ session, onLogout }) {
   const [perteProduit, setPerteProduit] = useState(null);
   const [perteForm, setPerteForm] = useState({});
   const [showEventForm, setShowEventForm] = useState(false);
+  const [showPaiementForm, setShowPaiementForm] = useState(false);
+  const [paiementFacture, setPaiementFacture] = useState(null);
+  const [paiementForm, setPaiementForm] = useState({});
+  const [caissePeriode, setCaissePeriode] = useState("semaine");
+  const [caisseRef, setCaisseRef] = useState(()=>new Date().toISOString().split("T")[0]);
   const [editEvent, setEditEvent] = useState(null);
   const [eventForm, setEventForm] = useState({});
   const [calMonth, setCalMonth] = useState(()=>{const d=new Date();return {year:d.getFullYear(),month:d.getMonth()};});
@@ -1593,11 +1598,19 @@ function BossokApp({ session, onLogout }) {
     finally { setSaving(false); }
   };
 
-  const marquerPayee = async (id) => {
+  const saveModePaiement = async () => {
+    if (!paiementFacture || !paiementForm.mode) return;
     setSaving(true);
     try {
-      await db.update("factures", id, {statut:"Payée"});
-      setFactures(prev=>prev.map(f=>f.id===id?{...f,statut:"Payée"}:f));
+      await db.update("factures", paiementFacture.id, {
+        statut: "Payée",
+        mode_paiement: paiementForm.mode,
+        date_paiement: paiementForm.date || new Date().toISOString().split("T")[0],
+      });
+      await loadAll();
+      setShowPaiementForm(false);
+      setPaiementFacture(null);
+      setPaiementForm({});
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -1905,6 +1918,7 @@ function BossokApp({ session, onLogout }) {
   const NAV = [
     {k:"calendrier",icon:"📅",label:"Calendrier"},
     {k:"dashboard",icon:"📊",label:"Dashboard"},
+    {k:"caisse",icon:"💰",label:"Caisse"},
     {k:"clients",icon:"👥",label:"Clients"},
     {k:"factures",icon:"🧾",label:"Factures"},
     {k:"commandes",icon:"📋",label:"Commandes"},
@@ -1915,7 +1929,7 @@ function BossokApp({ session, onLogout }) {
     {k:"zones",icon:"🗺️",label:"Zones"},
   ];
 
-  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",clients:"Clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
+  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",caisse:"Caisse",clients:"Clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8FAFC",fontFamily:"Inter,system-ui,sans-serif"}}>
@@ -2018,6 +2032,133 @@ function BossokApp({ session, onLogout }) {
         </div>
 
         <div style={S.page}>
+
+{/* ══ CAISSE ═════════════════════════════════════════════════════ */}
+{page==="caisse" && (()=>{
+  const monthNames = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+  const refD = new Date(caisseRef+"T00:00:00");
+  let periodStart, periodEnd, periodLabel;
+
+  if (caissePeriode === "semaine") {
+    const dow = (refD.getDay()+6)%7;
+    const weekStart = new Date(refD); weekStart.setDate(refD.getDate()-dow);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+    periodStart = weekStart.toISOString().split("T")[0];
+    periodEnd = weekEnd.toISOString().split("T")[0];
+    periodLabel = `${weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})} → ${weekEnd.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit',year:'numeric'})}`;
+  } else {
+    const monthStart = new Date(refD.getFullYear(), refD.getMonth(), 1);
+    const monthEnd = new Date(refD.getFullYear(), refD.getMonth()+1, 0);
+    periodStart = monthStart.toISOString().split("T")[0];
+    periodEnd = monthEnd.toISOString().split("T")[0];
+    periodLabel = `${monthNames[refD.getMonth()]} ${refD.getFullYear()}`;
+  }
+
+  const changePeriod = (delta) => {
+    const d = new Date(caisseRef+"T00:00:00");
+    if (caissePeriode === "semaine") d.setDate(d.getDate() + delta*7);
+    else d.setMonth(d.getMonth() + delta);
+    setCaisseRef(d.toISOString().split("T")[0]);
+  };
+
+  const facturesPeriode = factures.filter(f => {
+    if (f.statut !== "Payée") return false;
+    const d = f.date_paiement || f.date;
+    return d >= periodStart && d <= periodEnd;
+  }).sort((a,b)=>(b.date_paiement||b.date).localeCompare(a.date_paiement||a.date));
+
+  const sansMode = facturesPeriode.filter(f => !f.mode_paiement);
+  const totalParMode = {"Espèces":0, "Carte":0, "Virement":0};
+  facturesPeriode.forEach(f => {
+    if (f.mode_paiement && totalParMode[f.mode_paiement] !== undefined) {
+      totalParMode[f.mode_paiement] += totalFact(f.lignes).total;
+    }
+  });
+  const totalGeneral = facturesPeriode.reduce((s,f)=>s+totalFact(f.lignes).total,0);
+
+  return(
+  <div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,...S.card,padding:"10px 16px"}}>
+      <button onClick={()=>changePeriod(-1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>‹</button>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{fontWeight:700,fontSize:15}}>{periodLabel}</div>
+        <button onClick={()=>setCaisseRef(new Date().toISOString().split("T")[0])}
+          style={{...S.btn("#EFF6FF","#1D4ED8"),padding:"4px 10px",fontSize:11}}>Aujourd'hui</button>
+      </div>
+      <button onClick={()=>changePeriod(1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>›</button>
+    </div>
+
+    <div style={{display:"flex",gap:4,marginBottom:14}}>
+      {[["semaine","Semaine"],["mois","Mois"]].map(([k,l])=>(
+        <button key={k} onClick={()=>setCaissePeriode(k)}
+          style={{...S.btn(caissePeriode===k?"#1D4ED8":"#F1F5F9",caissePeriode===k?"#fff":"#374151"),padding:"6px 16px",fontSize:12}}>{l}</button>
+      ))}
+    </div>
+
+    {sansMode.length>0&&(
+      <div style={{...S.card,marginBottom:14,background:"#FFFBEB",border:"1px solid #FDE68A",display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:18}}>💡</span>
+        <div style={{fontSize:12,color:"#92400E"}}>
+          <strong>{sansMode.length} facture{sansMode.length>1?"s":""}</strong> payée{sansMode.length>1?"s":""} sur cette période sans moyen de paiement renseigné.
+          Clique sur 💰 depuis la liste ci-dessous pour le compléter.
+        </div>
+      </div>
+    )}
+
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
+      {[
+        {l:"Espèces",v:totalParMode["Espèces"],c:"#059669",icon:"💵"},
+        {l:"Carte",v:totalParMode["Carte"],c:"#1D4ED8",icon:"💳"},
+        {l:"Virement",v:totalParMode["Virement"],c:"#7C3AED",icon:"🏦"},
+        {l:"Total encaissé",v:totalGeneral,c:"#0F172A",icon:"💰"},
+      ].map((s,i)=>(
+        <div key={i} style={S.kpi(s.c)}>
+          <div style={{fontSize:18,marginBottom:2}}>{s.icon}</div>
+          <div style={{fontSize:17,fontWeight:800,color:s.c}}>{fmtFull(s.v)}</div>
+          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{s.l}</div>
+        </div>
+      ))}
+    </div>
+
+    <div style={S.card}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>Encaissements — {facturesPeriode.length} facture{facturesPeriode.length>1?"s":""}</div>
+      {facturesPeriode.length===0?(
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"30px 0",fontSize:12}}>Aucun encaissement sur cette période</div>
+      ):(
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
+                {["Date encaissement","N° Facture","Client","Montant","Mode",""].map(h=>(
+                  <th key={h} style={{textAlign:"left",padding:"7px 10px",color:"#6B7280",fontWeight:600}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {facturesPeriode.map(f=>{
+                const modeStyle = f.mode_paiement==="Espèces"?{bg:"#DCFCE7",text:"#166534"}:f.mode_paiement==="Carte"?{bg:"#DBEAFE",text:"#1D4ED8"}:f.mode_paiement==="Virement"?{bg:"#EDE9FE",text:"#6D28D9"}:{bg:"#FEF3C7",text:"#92400E"};
+                return(
+                  <tr key={f.id} style={{borderBottom:"1px solid #F1F5F9"}}>
+                    <td style={{padding:"6px 10px"}}>{f.date_paiement||f.date}</td>
+                    <td style={{padding:"6px 10px",fontWeight:600}}>{f.numero}</td>
+                    <td style={{padding:"6px 10px"}}>{f.client_nom}</td>
+                    <td style={{padding:"6px 10px",fontWeight:700}}>{fmtFull(totalFact(f.lignes).total)}</td>
+                    <td style={{padding:"6px 10px"}}><span style={S.badge(modeStyle.bg,modeStyle.text)}>{f.mode_paiement||"Non renseigné"}</span></td>
+                    <td style={{padding:"6px 10px"}}>
+                      <button title="Modifier le mode" onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:f.mode_paiement||"",date:f.date_paiement||f.date});setShowPaiementForm(true);}}
+                        style={{...S.btn("#F3F4F6","#374151"),padding:"3px 8px",fontSize:10}}>💰</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+  );
+})()}
 
 {/* ══ CALENDRIER ═════════════════════════════════════════════════ */}
 {page==="calendrier" && (()=>{
@@ -3006,8 +3147,9 @@ function BossokApp({ session, onLogout }) {
                   <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}><span style={S.badge(sc,st)}>{sl}</span></td>
                   <td style={{padding:"6px 6px"}}>
                     <div style={{display:"flex",gap:2,alignItems:"center"}}>
-                      {f.statut==="Impayée"&&<button title="Marquer Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"3px 5px",fontSize:10}}>✓</button>}
+                      {f.statut==="Impayée"&&<button title="Marquer Payée" onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}} style={{...S.btn("#059669"),padding:"3px 5px",fontSize:10}}>✓</button>}
                       {f.statut==="Payée"&&<button title="Remettre Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"3px 5px",fontSize:10}}>↺</button>}
+                      {f.statut==="Payée"&&<button title={f.mode_paiement?"Mode : "+f.mode_paiement:"Assigner un mode de paiement"} onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:f.mode_paiement||"",date:f.date_paiement||f.date});setShowPaiementForm(true);}} style={{...S.btn(f.mode_paiement?"#DCFCE7":"#FEF3C7",f.mode_paiement?"#166534":"#92400E"),padding:"3px 5px",fontSize:10}}>💰</button>}
                       <button title="Modifier" onClick={()=>openEditFacture(f)} style={{...S.btn("#1D4ED8"),padding:"3px 5px",fontSize:10}}>✏️</button>
                       <button title="Dupliquer" onClick={()=>dupliquerFacture(f)} style={{...S.btn("#0EA5E9"),padding:"3px 5px",fontSize:10}}>📋</button>
                       <button title="Imprimer PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}} style={{...S.btn("#374151"),padding:"3px 5px",fontSize:10}}>🖨️</button>
@@ -3987,7 +4129,7 @@ function BossokApp({ session, onLogout }) {
                   <span style={{color:"#6B7280",flex:1}}>{f.date}</span>
                   <span style={{fontWeight:600}}>{fmtFull(total)}</span>
                   <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2",f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
-                  {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>marquerPayee(f.id)} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
+                  {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
                   {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"2px 8px",fontSize:11}}>↺</button>}
                   <button title="Imprimer" onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,selClient,imp,solde);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
                   <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"2px 8px",fontSize:11}}>🗑️</button>
@@ -4676,6 +4818,51 @@ function BossokApp({ session, onLogout }) {
         <button onClick={saveEvenement} disabled={saving||!eventForm.titre||!eventForm.date_debut}
           style={{...S.btn(),flex:2,opacity:(saving||!eventForm.titre||!eventForm.date_debut)?0.5:1}}>
           {saving?"Sauvegarde...":editEvent?"Enregistrer":"Créer l'événement"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL MODE DE PAIEMENT ══════════════════════════════════════ */}
+  {showPaiementForm&&paiementFacture&&(
+  <div style={S.modal} onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}}>
+    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>💰 Moyen de paiement</h2>
+        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>
+        Facture {paiementFacture.numero} — {paiementFacture.client_nom}
+      </div>
+
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Payé par *</label>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+            {[["Espèces","💵"],["Carte","💳"],["Virement","🏦"]].map(([m,icon])=>(
+              <button key={m} onClick={()=>setPaiementForm(p=>({...p,mode:m}))}
+                style={{
+                  padding:"14px 8px",borderRadius:10,border:paiementForm.mode===m?"2px solid #1D4ED8":"2px solid #E5E7EB",
+                  background:paiementForm.mode===m?"#EFF6FF":"#fff",cursor:"pointer",textAlign:"center",
+                }}>
+                <div style={{fontSize:22,marginBottom:4}}>{icon}</div>
+                <div style={{fontSize:12,fontWeight:600,color:paiementForm.mode===m?"#1D4ED8":"#374151"}}>{m}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date d'encaissement</label>
+          <input type="date" value={paiementForm.date||""} onChange={e=>setPaiementForm(p=>({...p,date:e.target.value}))} style={S.input}/>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveModePaiement} disabled={saving||!paiementForm.mode}
+          style={{...S.btn(),flex:2,opacity:(saving||!paiementForm.mode)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Confirmer"}
         </button>
       </div>
     </div>
