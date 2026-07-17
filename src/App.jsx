@@ -1178,6 +1178,7 @@ function BossokApp({ session, onLogout }) {
   const [perteForm, setPerteForm] = useState({});
   const [showEventForm, setShowEventForm] = useState(false);
   const [showPaiementForm, setShowPaiementForm] = useState(false);
+  const [openFactureMenu, setOpenFactureMenu] = useState(null);
   const [paiementFacture, setPaiementFacture] = useState(null);
   const [paiementForm, setPaiementForm] = useState({});
   const [caissePeriode, setCaissePeriode] = useState("semaine");
@@ -1962,6 +1963,7 @@ function BossokApp({ session, onLogout }) {
         tbody tr { transition: background 0.1s ease; }
         tbody tr:hover { background:#F8FAFC !important; }
         .nav-hover:hover { background:#F8FAFC !important; }
+        .menu-item:hover { background:#F9FAFB !important; }
         ::selection { background: #BFDBFE; }
         html, body { overflow-x: hidden; max-width: 100%; }
       `}</style>
@@ -3145,17 +3147,41 @@ function BossokApp({ session, onLogout }) {
                     {echeanceDepassee&&<span title="Échéance dépassée" style={{marginLeft:4,fontSize:10}}>🔴</span>}
                   </td>
                   <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}><span style={S.badge(sc,st)}>{sl}</span></td>
-                  <td style={{padding:"6px 6px"}}>
-                    <div style={{display:"flex",gap:2,alignItems:"center"}}>
-                      {f.statut==="Impayée"&&<button title="Marquer Payée" onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}} style={{...S.btn("#059669"),padding:"3px 5px",fontSize:10}}>✓</button>}
-                      {f.statut==="Payée"&&<button title="Remettre Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"3px 5px",fontSize:10}}>↺</button>}
-                      {f.statut==="Payée"&&<button title={f.mode_paiement?"Mode : "+f.mode_paiement:"Assigner un mode de paiement"} onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:f.mode_paiement||"",date:f.date_paiement||f.date});setShowPaiementForm(true);}} style={{...S.btn(f.mode_paiement?"#DCFCE7":"#FEF3C7",f.mode_paiement?"#166534":"#92400E"),padding:"3px 5px",fontSize:10}}>💰</button>}
-                      <button title="Modifier" onClick={()=>openEditFacture(f)} style={{...S.btn("#1D4ED8"),padding:"3px 5px",fontSize:10}}>✏️</button>
-                      <button title="Dupliquer" onClick={()=>dupliquerFacture(f)} style={{...S.btn("#0EA5E9"),padding:"3px 5px",fontSize:10}}>📋</button>
-                      <button title="Imprimer PDF" onClick={()=>{const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}} style={{...S.btn("#374151"),padding:"3px 5px",fontSize:10}}>🖨️</button>
-                      {(f.statut==="Impayée"||f.statut==="Payée")&&<button title="Créer un avoir" onClick={()=>creerAvoir(f)} style={{...S.btn("#8B5CF6"),padding:"3px 5px",fontSize:10}}>↩️</button>}
-                      <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"3px 5px",fontSize:10}}>🗑️</button>
-                    </div>
+                  <td style={{padding:"6px 6px",position:"relative"}}>
+                    <button onClick={()=>setOpenFactureMenu(openFactureMenu===f.id?null:f.id)}
+                      style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:14,fontWeight:700}}>⋯</button>
+                    {openFactureMenu===f.id&&(
+                      <>
+                        <div onClick={()=>setOpenFactureMenu(null)} style={{position:"fixed",inset:0,zIndex:250}}/>
+                        <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:"#fff",border:"1px solid #E5E7EB",borderRadius:10,boxShadow:"0 12px 32px rgba(15,23,42,0.18)",zIndex:260,minWidth:200,overflow:"hidden"}}>
+                          {f.statut==="Impayée"&&(
+                            <button onClick={()=>{setOpenFactureMenu(null);setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}}
+                              className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#059669"}}>✓ Marquer Payée</button>
+                          )}
+                          {f.statut==="Payée"&&(
+                            <button onClick={()=>{setOpenFactureMenu(null);marquerImpayee(f.id);}}
+                              className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#D97706"}}>↺ Remettre Impayée</button>
+                          )}
+                          {f.statut==="Payée"&&(
+                            <button onClick={()=>{setOpenFactureMenu(null);setPaiementFacture(f);setPaiementForm({mode:f.mode_paiement||"",date:f.date_paiement||f.date});setShowPaiementForm(true);}}
+                              className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>💰 {f.mode_paiement?"Mode : "+f.mode_paiement:"Assigner un mode"}</button>
+                          )}
+                          <button onClick={()=>{setOpenFactureMenu(null);openEditFacture(f);}}
+                            className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
+                          <button onClick={()=>{setOpenFactureMenu(null);dupliquerFacture(f);}}
+                            className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
+                          <button onClick={()=>{setOpenFactureMenu(null);const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}}
+                            className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer PDF</button>
+                          {(f.statut==="Impayée"||f.statut==="Payée")&&(
+                            <button onClick={()=>{setOpenFactureMenu(null);creerAvoir(f);}}
+                              className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#8B5CF6"}}>↩️ Créer un avoir</button>
+                          )}
+                          <div style={{borderTop:"1px solid #F1F5F9"}}/>
+                          <button onClick={()=>{setOpenFactureMenu(null);supprimerFacture(f.id,f.numero);}}
+                            className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#EF4444"}}>🗑️ Supprimer</button>
+                        </div>
+                      </>
+                    )}
                   </td>
                 </tr>
               );
