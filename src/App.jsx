@@ -2271,18 +2271,21 @@ function BossokApp({ session, onLogout }) {
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
             {cells.map((day,idx)=>{
-              if (day===null) return <div key={idx} style={{minHeight:86}}/>;
+              if (day===null) return <div key={idx} style={{minHeight:96}}/>;
               const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
               const dayEvents = getEventsForDate(dateStr);
               const isToday = dateStr===todayStr;
+              const isWeekend = idx%7>=5;
               return(
                 <div key={idx} onClick={()=>openDayEvent(day)}
-                  style={{minHeight:86,border:"1px solid "+(isToday?"#1D4ED8":"#F1F5F9"),borderRadius:8,padding:5,cursor:"pointer",background:isToday?"#EFF6FF":"#fff",display:"flex",flexDirection:"column",gap:2}}>
-                  <div style={{fontSize:11,fontWeight:isToday?800:600,color:isToday?"#1D4ED8":"#374151"}}>{day}</div>
+                  style={{minHeight:96,border:"1px solid #F1F5F9",borderRadius:8,padding:"5px 5px",cursor:"pointer",background:isWeekend?"#FAFBFC":"#fff",display:"flex",flexDirection:"column",gap:2}}>
+                  <div style={{display:"flex",justifyContent:"flex-end"}}>
+                    <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:isToday?800:600,background:isToday?"#1D4ED8":"transparent",color:isToday?"#fff":"#374151"}}>{day}</div>
+                  </div>
                   {dayEvents.slice(0,3).map(evt=>(
                     <div key={evt.id} onClick={(e)=>openEditEvent(evt,e)}
-                      style={{fontSize:9.5,padding:"1px 5px",borderRadius:4,background:evt.couleur+"22",color:evt.couleur,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                      {!evt.toute_journee&&evt.heure_debut&&<span>{evt.heure_debut.slice(0,5)}{evt.heure_fin?`-${evt.heure_fin.slice(0,5)}`:""} </span>}{evt.titre}
+                      style={{fontSize:9.5,padding:"2px 6px",borderRadius:4,background:evt.couleur,color:"#fff",fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      {!evt.toute_journee&&evt.heure_debut&&<span>{evt.heure_debut.slice(0,5)} </span>}{evt.titre}
                     </div>
                   ))}
                   {dayEvents.length>3&&<div style={{fontSize:9,color:"#9CA3AF"}}>+{dayEvents.length-3} de plus</div>}
@@ -2291,32 +2294,90 @@ function BossokApp({ session, onLogout }) {
             })}
           </div>
         </div>
-        ) : (
-        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8}}>
-          {weekDays.map((d,idx)=>{
-            const dateStr = d.toISOString().split("T")[0];
-            const dayEvents = getEventsForDate(dateStr);
-            const isToday = dateStr===todayStr;
-            return(
-              <div key={idx} style={{...S.card,padding:10,minHeight:220,border:"1px solid "+(isToday?"#1D4ED8":"#E5E7EB"),background:isToday?"#EFF6FF":"#fff",cursor:"pointer"}}
-                onClick={()=>openDayEventDate(dateStr)}>
-                <div style={{fontSize:11,fontWeight:600,color:"#9CA3AF"}}>{jourNoms[idx].slice(0,3)}</div>
-                <div style={{fontSize:15,fontWeight:isToday?800:700,color:isToday?"#1D4ED8":"#374151",marginBottom:8}}>{d.getDate()}</div>
-                <div style={{display:"grid",gap:4}}>
-                  {dayEvents.map(evt=>(
-                    <div key={evt.id} onClick={(e)=>openEditEvent(evt,e)}
-                      style={{fontSize:11,padding:"4px 6px",borderRadius:5,background:evt.couleur+"22",color:evt.couleur,fontWeight:600}}>
-                      {!evt.toute_journee&&evt.heure_debut&&<div style={{fontSize:9,opacity:0.85}}>{evt.heure_debut.slice(0,5)}{evt.heure_fin?`–${evt.heure_fin.slice(0,5)}`:""}</div>}
-                      <div style={{whiteSpace:"normal"}}>{evt.titre}</div>
-                    </div>
-                  ))}
-                  {dayEvents.length===0&&<div style={{fontSize:10,color:"#D1D5DB"}}>—</div>}
-                </div>
+        ) : (()=>{
+          const HOUR_START = 7, HOUR_END = 20, HOUR_HEIGHT = 48;
+          const hours = []; for (let h=HOUR_START; h<=HOUR_END; h++) hours.push(h);
+          const gridHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
+          const timeToY = (t) => { if(!t) return 0; const [h,m]=t.split(":").map(Number); return Math.max(0,((h-HOUR_START)+m/60)*HOUR_HEIGHT); };
+          const now = new Date();
+          const nowY = timeToY(`${now.getHours()}:${now.getMinutes()}`);
+
+          return(
+          <div style={{...S.card,padding:0,overflow:"hidden"}}>
+            {/* En-tête jours */}
+            <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",borderBottom:"1px solid #E5E7EB"}}>
+              <div/>
+              {weekDays.map((d,idx)=>{
+                const dateStr = d.toISOString().split("T")[0];
+                const isToday = dateStr===todayStr;
+                return(
+                  <div key={idx} style={{textAlign:"center",padding:"8px 4px",borderLeft:"1px solid #F1F5F9"}}>
+                    <div style={{fontSize:10,fontWeight:600,color:"#9CA3AF",textTransform:"uppercase"}}>{jourNoms[idx].slice(0,3)}</div>
+                    <div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"2px auto 0",fontSize:13,fontWeight:isToday?800:600,background:isToday?"#1D4ED8":"transparent",color:isToday?"#fff":"#374151"}}>{d.getDate()}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Événements toute la journée */}
+            <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",borderBottom:"2px solid #E5E7EB",minHeight:26}}>
+              <div style={{fontSize:8,color:"#D1D5DB",textAlign:"right",paddingRight:5,paddingTop:5}}>Jour</div>
+              {weekDays.map((d,idx)=>{
+                const dateStr = d.toISOString().split("T")[0];
+                const allDayEvts = getEventsForDate(dateStr).filter(e=>e.toute_journee);
+                return(
+                  <div key={idx} onClick={()=>openDayEventDate(dateStr)} style={{borderLeft:"1px solid #F1F5F9",padding:2,cursor:"pointer"}}>
+                    {allDayEvts.map(evt=>(
+                      <div key={evt.id} onClick={(e)=>openEditEvent(evt,e)}
+                        style={{fontSize:9.5,padding:"2px 5px",borderRadius:4,background:evt.couleur,color:"#fff",fontWeight:600,marginBottom:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{evt.titre}</div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+            {/* Grille horaire */}
+            <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",maxHeight:560,overflowY:"auto"}}>
+              <div>
+                {hours.map(h=>(
+                  <div key={h} style={{height:HOUR_HEIGHT,textAlign:"right",paddingRight:5,fontSize:10,color:"#9CA3AF",position:"relative",top:-6}}>{h}:00</div>
+                ))}
               </div>
-            );
-          })}
-        </div>
-        )}
+              {weekDays.map((d,idx)=>{
+                const dateStr = d.toISOString().split("T")[0];
+                const timedEvts = getEventsForDate(dateStr).filter(e=>!e.toute_journee&&e.heure_debut);
+                const isToday = dateStr===todayStr;
+                return(
+                  <div key={idx} style={{borderLeft:"1px solid #F1F5F9",position:"relative",background:isToday?"#FAFBFF":"transparent"}}>
+                    {hours.map(h=>(
+                      <div key={h} onClick={()=>{
+                        setEditEvent(null);
+                        setEventForm({titre:"",description:"",date_debut:dateStr,date_fin:"",toute_journee:false,heure_debut:`${String(h).padStart(2,'0')}:00`,heure_fin:`${String(h+1).padStart(2,'0')}:00`,couleur:"#1D4ED8"});
+                        setShowEventForm(true);
+                      }} style={{height:HOUR_HEIGHT,borderBottom:"1px solid #F1F5F9",cursor:"pointer"}}/>
+                    ))}
+                    {isToday&&nowY>=0&&nowY<=gridHeight&&(
+                      <div style={{position:"absolute",left:0,right:0,top:nowY,borderTop:"2px solid #EF4444",zIndex:5}}>
+                        <div style={{width:6,height:6,borderRadius:"50%",background:"#EF4444",position:"absolute",left:-3,top:-4}}/>
+                      </div>
+                    )}
+                    {timedEvts.map(evt=>{
+                      const top = timeToY(evt.heure_debut);
+                      const bottom = evt.heure_fin ? timeToY(evt.heure_fin) : top+HOUR_HEIGHT/2;
+                      const height = Math.max(20, bottom-top);
+                      return(
+                        <div key={evt.id} onClick={(e)=>openEditEvent(evt,e)}
+                          style={{position:"absolute",top,height,left:2,right:2,borderRadius:6,background:evt.couleur,color:"#fff",padding:"3px 6px",overflow:"hidden",fontSize:10,fontWeight:600,cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,0.15)",zIndex:2}}>
+                          <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{evt.titre}</div>
+                          {height>32&&<div style={{fontSize:9,opacity:0.85}}>{evt.heure_debut.slice(0,5)}{evt.heure_fin?`–${evt.heure_fin.slice(0,5)}`:""}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          );
+        })()}
       </div>
 
       <div style={S.card}>
