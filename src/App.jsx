@@ -1143,7 +1143,7 @@ function BossokApp({ session, onLogout }) {
   const [notesPersonnelles, setNotesPersonnelles] = useState([]);
   const [myNote, setMyNote] = useState("");
   const [myNoteSaved, setMyNoteSaved] = useState(true);
-  const [calViewMode, setCalViewMode] = useState("mois");
+  const [calViewMode, setCalViewMode] = useState("semaine");
   const [calWeekRef, setCalWeekRef] = useState(()=>new Date().toISOString().split("T")[0]);
 
   // UI
@@ -2216,7 +2216,7 @@ function BossokApp({ session, onLogout }) {
   const upcoming = evenements
     .filter(e=>(e.date_fin||e.date_debut) >= todayStr)
     .sort((a,b)=>a.date_debut.localeCompare(b.date_debut))
-    .slice(0,6);
+    .slice(0,4);
 
   // Vue semaine
   const jourNoms = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
@@ -2240,7 +2240,7 @@ function BossokApp({ session, onLogout }) {
 
   return(
   <div>
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.7fr 1.3fr",gap:16}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2.4fr 1fr",gap:16}}>
       <div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,...S.card,padding:"10px 16px"}}>
           <button onClick={()=>calViewMode==="mois"?changeMonth(-1):changeWeek(-1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>‹</button>
@@ -2271,14 +2271,14 @@ function BossokApp({ session, onLogout }) {
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
             {cells.map((day,idx)=>{
-              if (day===null) return <div key={idx} style={{minHeight:96}}/>;
+              if (day===null) return <div key={idx} style={{minHeight:120}}/>;
               const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
               const dayEvents = getEventsForDate(dateStr);
               const isToday = dateStr===todayStr;
               const isWeekend = idx%7>=5;
               return(
                 <div key={idx} onClick={()=>openDayEvent(day)}
-                  style={{minHeight:96,border:"1px solid #F1F5F9",borderRadius:8,padding:"5px 5px",cursor:"pointer",background:isWeekend?"#FAFBFC":"#fff",display:"flex",flexDirection:"column",gap:2}}>
+                  style={{minHeight:120,border:"1px solid #F1F5F9",borderRadius:8,padding:"5px 5px",cursor:"pointer",background:isWeekend?"#FAFBFC":"#fff",display:"flex",flexDirection:"column",gap:2}}>
                   <div style={{display:"flex",justifyContent:"flex-end"}}>
                     <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:isToday?800:600,background:isToday?"#1D4ED8":"transparent",color:isToday?"#fff":"#374151"}}>{day}</div>
                   </div>
@@ -2295,7 +2295,7 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
         ) : (()=>{
-          const HOUR_START = 7, HOUR_END = 20, HOUR_HEIGHT = 48;
+          const HOUR_START = 7, HOUR_END = 20, HOUR_HEIGHT = 64;
           const hours = []; for (let h=HOUR_START; h<=HOUR_END; h++) hours.push(h);
           const gridHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
           const timeToY = (t) => { if(!t) return 0; const [h,m]=t.split(":").map(Number); return Math.max(0,((h-HOUR_START)+m/60)*HOUR_HEIGHT); };
@@ -2335,7 +2335,7 @@ function BossokApp({ session, onLogout }) {
               })}
             </div>
             {/* Grille horaire */}
-            <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",maxHeight:560,overflowY:"auto"}}>
+            <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",maxHeight:740,overflowY:"auto"}}>
               <div>
                 {hours.map(h=>(
                   <div key={h} style={{height:HOUR_HEIGHT,textAlign:"right",paddingRight:5,fontSize:10,color:"#9CA3AF",position:"relative",top:-6}}>{h}:00</div>
@@ -2380,28 +2380,27 @@ function BossokApp({ session, onLogout }) {
         })()}
       </div>
 
-      <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>📅 Prochains événements</div>
+      <div style={{...S.card,padding:14}}>
+        <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.3px"}}>📅 Prochains événements</div>
         {upcoming.length===0?(
-          <div style={{textAlign:"center",color:"#9CA3AF",fontSize:12,padding:"24px 0"}}>Aucun événement à venir</div>
+          <div style={{textAlign:"center",color:"#9CA3AF",fontSize:11,padding:"14px 0"}}>Aucun événement à venir</div>
         ):(
-          <div style={{display:"grid",gap:8}}>
+          <div style={{display:"grid",gap:5}}>
             {upcoming.map(evt=>(
               <div key={evt.id} onClick={()=>openEditEvent(evt,null)}
-                style={{padding:"8px 10px",borderRadius:8,borderLeft:"3px solid "+evt.couleur,background:"#F9FAFB",cursor:"pointer"}}>
-                <div style={{fontWeight:600,fontSize:12}}>{evt.titre}</div>
-                <div style={{fontSize:11,color:"#6B7280",marginTop:2}}>
+                style={{padding:"5px 8px",borderRadius:6,borderLeft:"3px solid "+evt.couleur,background:"#F9FAFB",cursor:"pointer"}}>
+                <div style={{fontWeight:600,fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{evt.titre}</div>
+                <div style={{fontSize:10,color:"#6B7280"}}>
                   {new Date(evt.date_debut+"T00:00:00").toLocaleDateString('fr-LU',{weekday:'short',day:'numeric',month:'short'})}
                   {!evt.toute_journee&&evt.heure_debut?` · ${evt.heure_debut.slice(0,5)}${evt.heure_fin?`-${evt.heure_fin.slice(0,5)}`:""}`:evt.toute_journee?" · Toute la journée":""}
                 </div>
-                {evt.cree_par&&<div style={{fontSize:10,color:"#9CA3AF",marginTop:2}}>Par {evt.cree_par.split('@')[0]}</div>}
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12}}>
         <div style={{...S.card,background:"#FEFCE8",border:"1px solid #FDE68A",position:"relative"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
             <div style={{fontWeight:700,fontSize:13,color:"#92400E"}}>📌 Pense-bête</div>
@@ -2412,7 +2411,7 @@ function BossokApp({ session, onLogout }) {
             onChange={e=>{setStickyNote(e.target.value);setStickyNoteSaved(false);}}
             onBlur={()=>saveStickyNote(stickyNote)}
             placeholder="Note partagée entre tous les utilisateurs..."
-            rows={5}
+            rows={9}
             style={{width:"100%",border:"none",background:"transparent",resize:"vertical",fontSize:13,fontFamily:"inherit",outline:"none",color:"#78350F",boxSizing:"border-box"}}
           />
         </div>
@@ -2427,7 +2426,7 @@ function BossokApp({ session, onLogout }) {
             onChange={e=>{setMyNote(e.target.value);setMyNoteSaved(false);}}
             onBlur={()=>saveMyNote(myNote)}
             placeholder="Note personnelle, visible par toi uniquement..."
-            rows={5}
+            rows={9}
             style={{width:"100%",border:"none",background:"transparent",resize:"vertical",fontSize:13,fontFamily:"inherit",outline:"none",color:"#1E3A8A",boxSizing:"border-box"}}
           />
         </div>
