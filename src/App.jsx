@@ -1118,6 +1118,13 @@ function App({ session, onLogout }) {
 
 function BossokApp({ session, onLogout }) {
   const [page, setPage] = useState("calendrier");
+  const [isMobile, setIsMobile] = useState(()=>typeof window!=="undefined"&&window.innerWidth<=768);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  useEffect(()=>{
+    const onResize = ()=>setIsMobile(window.innerWidth<=768);
+    window.addEventListener("resize", onResize);
+    return ()=>window.removeEventListener("resize", onResize);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1889,16 +1896,18 @@ function BossokApp({ session, onLogout }) {
   // ── STYLES ─────────────────────────────────────────────────────
   const S = {
     app:{fontFamily:"'Inter',system-ui,sans-serif",background:"#F8FAFC",minHeight:"100vh",display:"flex"},
-    sidebar:{width:224,background:"#fff",color:"#0F172A",borderRight:"1px solid #E5E7EB",display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:100},
-    main:{marginLeft:224,flex:1,minWidth:0},
-    topbar:{background:"linear-gradient(90deg,#1E3A8A,#172554)",padding:"0 28px",height:64,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 8px rgba(15,23,42,0.2)"},
-    page:{padding:"24px 28px",maxWidth:1100,margin:"0 auto"},
-    card:{background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:18,boxShadow:"0 1px 2px rgba(15,23,42,0.04)"},
+    sidebar:{width:224,background:"#fff",color:"#0F172A",borderRight:"1px solid #E5E7EB",display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:200,
+      transform: isMobile ? (sidebarOpen?"translateX(0)":"translateX(-100%)") : "none",
+      transition:"transform 0.2s ease", boxShadow: isMobile&&sidebarOpen ? "8px 0 24px rgba(15,23,42,0.15)" : "none"},
+    main:{marginLeft: isMobile?0:224, flex:1, minWidth:0},
+    topbar:{background:"linear-gradient(90deg,#1E3A8A,#172554)",padding: isMobile?"0 14px":"0 28px",height:64,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 8px rgba(15,23,42,0.2)"},
+    page:{padding: isMobile?"16px 14px":"24px 28px", maxWidth:1100, margin:"0 auto"},
+    card:{background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding: isMobile?14:18,boxShadow:"0 1px 2px rgba(15,23,42,0.04)"},
     btn:(bg,col)=>({padding:"9px 18px",background:bg||"#1D4ED8",color:col||"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:saving?0.7:1,letterSpacing:"0.1px"}),
     input:{width:"100%",padding:"9px 12px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:"inherit"},
     badge:(bg,col)=>({fontSize:11,padding:"3px 9px",borderRadius:999,background:bg,color:col,fontWeight:600,display:"inline-block"}),
-    modal:{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16},
-    modalBox:{background:"#fff",borderRadius:16,padding:26,maxWidth:640,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(15,23,42,0.18)"},
+    modal:{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:300,display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",padding: isMobile?0:16},
+    modalBox:{background:"#fff",borderRadius: isMobile?"16px 16px 0 0":16,padding: isMobile?18:26,maxWidth:640,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(15,23,42,0.18)"},
     tab:(a)=>({padding:"8px 16px",border:"none",borderBottom:a?"2px solid #1D4ED8":"2px solid transparent",background:"transparent",cursor:"pointer",fontSize:13,fontWeight:a?700:500,color:a?"#1D4ED8":"#6B7280"}),
     kpi:(c)=>({background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:"16px 18px",borderLeft:"4px solid "+c,boxShadow:"0 1px 2px rgba(15,23,42,0.04)"}),
     navItem:(a)=>({display:"flex",alignItems:"center",gap:11,padding:"10px 14px",borderRadius:8,cursor:"pointer",marginBottom:2,background:a?"#EFF6FF":"transparent",color:a?"#1D4ED8":"#475569",fontSize:14,fontWeight:a?600:500,borderLeft:a?"3px solid #1D4ED8":"3px solid transparent"}),
@@ -1951,7 +1960,11 @@ function BossokApp({ session, onLogout }) {
         tbody tr:hover { background:#F8FAFC !important; }
         .nav-hover:hover { background:#F8FAFC !important; }
         ::selection { background: #BFDBFE; }
+        html, body { overflow-x: hidden; max-width: 100%; }
       `}</style>
+      {isMobile&&sidebarOpen&&(
+        <div onClick={()=>setSidebarOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",zIndex:150}}/>
+      )}
       {/* SIDEBAR */}
       <div style={S.sidebar}>
         <div style={{padding:"18px 16px",borderBottom:"1px solid #F1F5F9"}}>
@@ -1967,7 +1980,7 @@ function BossokApp({ session, onLogout }) {
           {NAV.map(n=>{
             const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=STOCK_BAS_SEUIL).length : 0;
             return(
-              <div key={n.k} className={page===n.k?"":"nav-hover"} style={S.navItem(page===n.k)} onClick={()=>setPage(n.k)}>
+              <div key={n.k} className={page===n.k?"":"nav-hover"} style={S.navItem(page===n.k)} onClick={()=>{setPage(n.k);if(isMobile)setSidebarOpen(false);}}>
                 <span>{n.icon}</span><span style={{flex:1}}>{n.label}</span>
                 {stockAlerteCount>0&&(
                   <span style={{background:"#DC2626",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>
@@ -1982,14 +1995,23 @@ function BossokApp({ session, onLogout }) {
           {saving && <span style={{color:"#1D4ED8",fontWeight:600}}>💾 Sauvegarde...</span>}
           {!saving && <span>✅ {clientsActifs.length} clients actifs</span>}
         </div>
+        <div style={{padding:"10px 16px 16px",borderTop:"1px solid #F1F5F9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontSize:11,color:"#94A3B8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session?.user?.email}</span>
+          <button onClick={onLogout} style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",fontSize:11,fontWeight:600,flexShrink:0,marginLeft:6}}>Déconnexion</button>
+        </div>
       </div>
 
       {/* MAIN */}
       <div style={S.main}>
         <div style={S.topbar}>
-          <div style={{fontWeight:700,fontSize:18,color:"#fff",letterSpacing:"-0.2px"}}>{PAGE_TITLES[page]}</div>
+          <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
+            {isMobile&&(
+              <button onClick={()=>setSidebarOpen(true)} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",width:36,height:36,borderRadius:8,fontSize:16,cursor:"pointer",flexShrink:0}}>☰</button>
+            )}
+            <div style={{fontWeight:700,fontSize:isMobile?15:18,color:"#fff",letterSpacing:"-0.2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{PAGE_TITLES[page]}</div>
+          </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours"});setShowClientForm(true);}}>+ Nouveau client</button>}
+            {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours"});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
             {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{
   const today = new Date().toISOString().split("T")[0];
   setShowFactForm(true);setFactClientId(null);setFactLignes([]);
@@ -1998,15 +2020,11 @@ function BossokApp({ session, onLogout }) {
   setFactNumero(genererNumeroFacture(today));
   const echInit = new Date(today); echInit.setDate(echInit.getDate()+7);
   setFactEcheance(echInit.toISOString().split("T")[0]);
-}}>+ Nouvelle facture</button>}
-            {page==="commandes" && <button style={{...S.btn("#fff","#1D4ED8"),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>✅ Enregistrer</button>}
-            {page==="produits" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>+ Nouveau produit</button>}
-            {page==="calendrier" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:new Date().toISOString().split("T")[0],date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>+ Nouvel événement</button>}
+}}>{isMobile?"+":"+ Nouvelle facture"}</button>}
+            {page==="commandes" && <button style={{...S.btn("#fff","#1D4ED8"),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>}
+            {page==="produits" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>{isMobile?"+":"+ Nouveau produit"}</button>}
+            {page==="calendrier" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:new Date().toISOString().split("T")[0],date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>{isMobile?"+":"+ Nouvel événement"}</button>}
             <button style={S.btn("rgba(255,255,255,0.15)","#fff")} onClick={loadAll}>🔄</button>
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"5px 10px",background:"rgba(255,255,255,0.12)",borderRadius:8}}>
-              <span style={{fontSize:12,color:"#fff"}}>{session?.user?.email}</span>
-              <button onClick={onLogout} style={{background:"none",border:"none",color:"#FCA5A5",cursor:"pointer",fontSize:12,fontWeight:600}}>Déconnexion</button>
-            </div>
           </div>
         </div>
 
@@ -2089,7 +2107,7 @@ function BossokApp({ session, onLogout }) {
 
   return(
   <div>
-    <div style={{display:"grid",gridTemplateColumns:"1.7fr 1.3fr",gap:16}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.7fr 1.3fr",gap:16}}>
       <div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,...S.card,padding:"10px 16px"}}>
           <button onClick={()=>calViewMode==="mois"?changeMonth(-1):changeWeek(-1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>‹</button>
@@ -2189,7 +2207,7 @@ function BossokApp({ session, onLogout }) {
         )}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
         <div style={{...S.card,background:"#FEFCE8",border:"1px solid #FDE68A",position:"relative"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
             <div style={{fontWeight:700,fontSize:13,color:"#92400E"}}>📌 Pense-bête</div>
@@ -2471,7 +2489,7 @@ function BossokApp({ session, onLogout }) {
     </div>
 
     {/* ── KPIs Row 1 : indicateurs financiers (priorité visuelle) ── */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:10}}>
       {[
         {l:"CA Total",v:fmtFull(ca),c:"#1D4ED8",icon:"💶",sub:factActives.length+" factures"},
         {l:margeCouverture===100?"Marge réelle":"Marge (estimée partielle)",v:fmtFull(marge),c:"#7C3AED",icon:"📈",sub:margePct+"% du CA · "+margeCouverture+"% données réelles"},
@@ -2488,7 +2506,7 @@ function BossokApp({ session, onLogout }) {
     </div>
 
     {/* ── KPIs Row 2 : indicateurs opérationnels (secondaires, teinte neutre) ── */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Clients actifs",v:nbClients,c:"#64748B",icon:"👥",sub:"sur la période"},
         {l:"Nouveaux clients",v:nouveauxClients,c:"#64748B",icon:"✨",sub:"sur la période"},
@@ -2532,7 +2550,7 @@ function BossokApp({ session, onLogout }) {
     })()}
 
     {/* ── Charts row 1 ── */}
-    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>📊 CA mensuel (payé vs impayé)</div>
         {historiquePeriode.length>0&&(
@@ -2572,7 +2590,7 @@ function BossokApp({ session, onLogout }) {
     </div>
 
     {/* ── Charts row 2: Top produits + CA par zone ── */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div style={{fontWeight:700,fontSize:13}}>🍺 Top produits</div>
@@ -2629,7 +2647,7 @@ function BossokApp({ session, onLogout }) {
     </div>
 
     {/* ── Row 3: Top clients + Marge par type ── */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div style={{fontWeight:700,fontSize:13}}>🏆 Top clients par CA</div>
@@ -2691,7 +2709,7 @@ function BossokApp({ session, onLogout }) {
     </div>
 
     {/* ── Bottom row ── */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
       <div style={S.card}>
         <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🧾 Dernières factures</div>
         {dashFacts.length===0?<div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune facture sur la période</div>:
@@ -2729,7 +2747,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && (
   <div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(5,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:clients.length,c:"#1D4ED8"},
         {l:"Actifs",v:clientsActifs.length,c:"#059669"},
@@ -2886,7 +2904,7 @@ function BossokApp({ session, onLogout }) {
   return(
   <div>
     {/* KPIs */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:factures.filter(f=>f.statut!=="Avoir"&&f.statut!=="Annulée").length,c:"#1D4ED8",s:"Tous"},
         {l:"Payées",v:factures.filter(f=>f.statut==="Payée").length,c:"#059669",s:"Payée"},
@@ -3042,7 +3060,7 @@ function BossokApp({ session, onLogout }) {
 )()}
 {/* ══ COMMANDES ══════════════════════════════════════════════════ */}
 {page==="commandes" && (
-  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+  <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
     <div style={S.card}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{fontWeight:700,fontSize:14}}>{editingCmd?"✏️ Modifier la commande":"➕ Nouvelle commande"}</div>
@@ -3378,7 +3396,7 @@ function BossokApp({ session, onLogout }) {
       })}
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:isPastWeek?"Livrées":"Commandes",v:dayCommandes.length,c:"#1D4ED8",icon:isPastWeek?"✅":"📋"},
         {l:"Total caisses",v:totalCaisses,c:"#7C3AED",icon:"📦"},
@@ -3409,7 +3427,7 @@ function BossokApp({ session, onLogout }) {
         </div>
       </div>
     ):(
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14}}>
         {[{driver:"A",name:"Sefa",schedule:scheduleA,col:"#0EA5E9",bg:"#E0F2FE"},
           {driver:"B",name:"Mikail",schedule:scheduleB,col:"#8B5CF6",bg:"#EDE9FE"}].map(({driver,name,schedule,col,bg})=>(
           <div key={driver} style={{...S.card,borderTop:"4px solid "+col}}>
@@ -3545,7 +3563,7 @@ function BossokApp({ session, onLogout }) {
     </div>
 
     {/* Planning recap cards */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:16}}>
       {[
         {name:"Sefa",col:"#0EA5E9",bg:"#E0F2FE",schedule:[
           {day:"Lundi",zones:"Centre-ville · Nord · France"},
@@ -3635,7 +3653,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ STOCK ══════════════════════════════════════════════════════ */}
 {page==="stock" && (
   <div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Ruptures",v:produits.filter(p=>!(stock[p.id]>0)).length,c:"#DC2626"},
         {l:"Stock bas (≤"+STOCK_BAS_SEUIL+")",v:produits.filter(p=>stock[p.id]>0&&stock[p.id]<=STOCK_BAS_SEUIL).length,c:"#D97706"},
@@ -3738,7 +3756,7 @@ function BossokApp({ session, onLogout }) {
 
       return (
         <div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
             <div style={S.kpi("#7C3AED")}>
               <div style={{fontSize:22,fontWeight:800,color:"#7C3AED"}}>{fmtFull(totalGlobal)}</div>
               <div style={{fontSize:11,color:"#6B7280"}}>Valeur consignes en circulation</div>
@@ -3820,7 +3838,7 @@ function BossokApp({ session, onLogout }) {
 
   return(
   <div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:produits.length,c:"#1D4ED8",s:"Tous"},
         {l:"Actifs",v:nbActifs,c:"#059669",s:"Actif"},
@@ -4006,7 +4024,7 @@ function BossokApp({ session, onLogout }) {
             </div>
             {showVisiteForm&&(
               <div style={{background:"#F0F9FF",border:"1px solid #BFDBFE",borderRadius:8,padding:12,marginBottom:12}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8,marginBottom:8}}>
                   <div>
                     <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:3}}>Date de la visite</label>
                     <input type="date" value={visiteDate} onChange={e=>setVisiteDate(e.target.value)} style={S.input}/>
@@ -4111,7 +4129,7 @@ function BossokApp({ session, onLogout }) {
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editingFacture ? "Modifier la facture" : "Nouvelle facture"}</h2>
         <button onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");setFactEcheance("");}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
         <div>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Client *</label>
           {factClientId?(
@@ -4378,7 +4396,7 @@ function BossokApp({ session, onLogout }) {
           <input value={produitForm.nom||""} onChange={e=>setProduitForm(p=>({...p,nom:e.target.value}))}
             placeholder="Ex: COCA COLA CANS 24x33cl" style={S.input}/>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Catégorie *</label>
             <input value={produitForm.categorie||""} onChange={e=>setProduitForm(p=>({...p,categorie:e.target.value}))}
@@ -4414,7 +4432,7 @@ function BossokApp({ session, onLogout }) {
             placeholder="0.00" style={{...S.input,maxWidth:180,borderColor:"#7C3AED"}}/>
         </div>
         <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginTop:4}}>Prix par type de client (€)</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
           {[["Snack","prix_Snack"],["Restaurant","prix_Restaurant"],["Administratif","prix_Administrative"],["Market","prix_Market"],["Café","prix_Café"],["Crèche","prix_Creche"],["Distributor","prix_Distributor"]].map(([l,k])=>(
             <div key={k}>
               <label style={{fontSize:11,color:"#9CA3AF",display:"block",marginBottom:2}}>{l}</label>
@@ -4447,7 +4465,7 @@ function BossokApp({ session, onLogout }) {
       <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>{receptionProduit.nom}</div>
 
       <div style={{display:"grid",gap:10}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Quantité reçue (caisses) *</label>
             <input type="number" min="0" step="1" value={receptionForm.quantite||""}
@@ -4461,7 +4479,7 @@ function BossokApp({ session, onLogout }) {
               placeholder="0.00" style={S.input}/>
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Fournisseur</label>
             <input value={receptionForm.fournisseur||""} onChange={e=>setReceptionForm(p=>({...p,fournisseur:e.target.value}))}
@@ -4521,7 +4539,7 @@ function BossokApp({ session, onLogout }) {
       <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>{perteProduit.nom} · Stock actuel : {stock[perteProduit.id]||0} cs</div>
 
       <div style={{display:"grid",gap:10}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Quantité perdue (caisses) *</label>
             <input type="number" min="0" max={stock[perteProduit.id]||0} step="1" value={perteForm.quantite||""}
@@ -4604,7 +4622,7 @@ function BossokApp({ session, onLogout }) {
           <textarea value={eventForm.description||""} onChange={e=>setEventForm(p=>({...p,description:e.target.value}))}
             placeholder="Optionnel" rows={2} style={{...S.input,resize:"vertical",fontFamily:"inherit"}}/>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date de début *</label>
             <input type="date" value={eventForm.date_debut||""} onChange={e=>setEventForm(p=>({...p,date_debut:e.target.value}))} style={S.input}/>
@@ -4619,7 +4637,7 @@ function BossokApp({ session, onLogout }) {
           Toute la journée
         </label>
         {eventForm.toute_journee===false&&(
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
             <div>
               <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Heure de début</label>
               <input type="time" value={eventForm.heure_debut||""} onChange={e=>{
