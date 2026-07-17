@@ -494,7 +494,7 @@ const TYPE_COLORS = {
   Snack:{bg:"#FFF3E0",text:"#E65100"},Restaurant:{bg:"#E8F5E9",text:"#1B5E20"},
   Café:{bg:"#FCE4EC",text:"#880E4F"},Market:{bg:"#E3F2FD",text:"#0D47A1"},
   Administrative:{bg:"#F3E5F5",text:"#4A148C"},Creche:{bg:"#E0F2F1",text:"#004D40"},
-  Distributor:{bg:"#FFF8E1",text:"#FF6F00"},
+  Distributor:{bg:"#FFF8E1",text:"#FF6F00"},Privé:{bg:"#EDE9FE",text:"#5B21B6"},
 };
 const tc = (t) => TYPE_COLORS[t]||{bg:"#F3F4F6",text:"#374151"};
 const totalFact = (lignes=[]) => {
@@ -1383,6 +1383,7 @@ function BossokApp({ session, onLogout }) {
         Café: parseFloat(produitForm.prix_Café) || 0,
         Creche: parseFloat(produitForm.prix_Creche) || 0,
         Distributor: parseFloat(produitForm.prix_Distributor) || 0,
+        Privé: parseFloat(produitForm.prix_Privé) || 0,
       };
       const payload = {
         nom: produitForm.nom,
@@ -2027,7 +2028,7 @@ function BossokApp({ session, onLogout }) {
   setFactEcheance(echInit.toISOString().split("T")[0]);
 }}>{isMobile?"+":"+ Nouvelle facture"}</button>}
             {page==="commandes" && <button style={{...S.btn("#fff","#1D4ED8"),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>}
-            {page==="produits" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>{isMobile?"+":"+ Nouveau produit"}</button>}
+            {page==="produits" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>{isMobile?"+":"+ Nouveau produit"}</button>}
             {page==="calendrier" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:new Date().toISOString().split("T")[0],date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>{isMobile?"+":"+ Nouvel événement"}</button>}
             <button style={S.btn("rgba(255,255,255,0.15)","#fff")} onClick={loadAll}>🔄</button>
           </div>
@@ -2897,7 +2898,7 @@ function BossokApp({ session, onLogout }) {
       <input value={searchC} onChange={e=>setSearchC(e.target.value)} placeholder="🔍 Rechercher un client..." style={{...S.input,flex:1,minWidth:160}}/>
       <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
         <option value="Tous">Type : Tous</option>
-        {["Snack","Restaurant","Café","Market","Administrative","Creche","Distributor"].map(t=><option key={t} value={t}>{t}</option>)}
+        {["Snack","Restaurant","Café","Market","Administrative","Creche","Distributor","Privé"].map(t=><option key={t} value={t}>{t}</option>)}
       </select>
       <select value={filterStatut} onChange={e=>setFilterStatut(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
         <option value="Tous">Statut : Tous</option>
@@ -4070,6 +4071,7 @@ function BossokApp({ session, onLogout }) {
                           prix_Administrative:p.prix?.Administrative??"", prix_Market:p.prix?.Market??"",
                           prix_Café:p.prix?.Café??"", prix_Creche:p.prix?.Creche??"",
                           prix_Distributor:p.prix?.Distributor??"",
+                          prix_Privé:p.prix?.Privé??"",
                           prix_achat:p.prix_achat??"",
                         });
                         setShowProduitForm(true);
@@ -4530,7 +4532,7 @@ function BossokApp({ session, onLogout }) {
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          {[["Type","type",["Snack","Restaurant","Café","Market","Administrative","Creche","Distributor"]],["Statut","statut",["Actif","Passif"]],["Conditions","conditions",["Comptant","7 jours","15 jours","30 jours","45 jours","60 jours"]]].map(([l,k,opts])=>(
+          {[["Type","type",["Snack","Restaurant","Café","Market","Administrative","Creche","Distributor","Privé"]],["Statut","statut",["Actif","Passif"]],["Conditions","conditions",["Comptant","7 jours","15 jours","30 jours","45 jours","60 jours"]]].map(([l,k,opts])=>(
             <div key={k}>
               <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{l}</label>
               <select value={clientForm[k]||opts[0]} onChange={e=>setClientForm(p=>({...p,[k]:e.target.value}))} style={S.input}>
@@ -4599,7 +4601,7 @@ function BossokApp({ session, onLogout }) {
         </div>
         <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginTop:4}}>Prix par type de client (€)</div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
-          {[["Snack","prix_Snack"],["Restaurant","prix_Restaurant"],["Administratif","prix_Administrative"],["Market","prix_Market"],["Café","prix_Café"],["Crèche","prix_Creche"],["Distributor","prix_Distributor"]].map(([l,k])=>(
+          {[["Snack","prix_Snack"],["Restaurant","prix_Restaurant"],["Administratif","prix_Administrative"],["Market","prix_Market"],["Café","prix_Café"],["Crèche","prix_Creche"],["Distributor","prix_Distributor"],["Privé","prix_Privé"]].map(([l,k])=>(
             <div key={k}>
               <label style={{fontSize:11,color:"#9CA3AF",display:"block",marginBottom:2}}>{l}</label>
               <input type="number" step="0.01" min="0" value={produitForm[k]??""}
