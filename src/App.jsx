@@ -1722,12 +1722,9 @@ function BossokApp({ session, onLogout }) {
       for (const p of (cmd.produits||[])) {
         const prod = findProduitByNom(produits, p.nom);
         if (!prod) continue;
-        const current = stock.find(s=>s.produit_id===prod.id);
-        const currentQte = current?.quantite||0;
+        const currentQte = stock[prod.id] || 0;
         const newQte = Math.max(0, currentQte - p.qte);
-        if (current) {
-          await db.update("stock", prod.id, {quantite:newQte, updated_at:new Date().toISOString()});
-        }
+        await updateStock(prod.id, newQte);
       }
 
       // Create invoice automatically
@@ -1830,11 +1827,11 @@ function BossokApp({ session, onLogout }) {
     try {
       const existing = await db.get("stock", `produit_id=eq.${produitId}`);
       if (existing.length > 0) {
-        await db.update("stock", existing[0].produit_id, {quantite: newQte, updated_at: new Date().toISOString()});
+        await sb(`stock?produit_id=eq.${produitId}`, "PATCH", {quantite: newQte, updated_at: new Date().toISOString()});
       } else {
         await sb("stock", "POST", {produit_id: produitId, quantite: newQte});
       }
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error(e); alert("Erreur lors de la sauvegarde du stock : "+e.message); }
   };
 
   const saveRetour = async () => {
