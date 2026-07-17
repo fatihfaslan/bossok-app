@@ -1650,11 +1650,24 @@ function BossokApp({ session, onLogout }) {
   const [editingCmd, setEditingCmd] = useState(null);
 
   const supprimerCommande = async (id) => {
-    if (!window.confirm("Supprimer cette commande ?")) return;
+    if (!window.confirm("Supprimer cette commande ? Le stock sera restauré et la facture associée annulée.")) return;
     setSaving(true);
     try {
+      const cmd = commandes.find(c=>c.id===id);
+      if (cmd) {
+        for (const p of (cmd.produits||[])) {
+          const prod = findProduitByNom(produits, p.nom);
+          if (!prod) continue;
+          const currentQte = stock[prod.id] || 0;
+          await updateStock(prod.id, currentQte + p.qte);
+        }
+        const facture = factures.find(f => f.notes === `Commande #${id}`);
+        if (facture) {
+          await db.update("factures", facture.id, {statut: "Annulée"});
+        }
+      }
       await db.delete("commandes", id);
-      setCommandes(prev=>prev.filter(c=>c.id!==id));
+      await loadAll();
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -1683,6 +1696,20 @@ function BossokApp({ session, onLogout }) {
     setSaving(true);
     try {
       if (editingCmd) {
+        // Ajuster le stock par la différence entre l'ancienne et la nouvelle liste
+        // de produits, pour ne jamais déduire/restaurer deux fois.
+        const oldMap = {}; (editingCmd.produits||[]).forEach(p=>{oldMap[p.nom]=(oldMap[p.nom]||0)+p.qte;});
+        const newMap = {}; cmdProduits.forEach(p=>{newMap[p.nom]=(newMap[p.nom]||0)+p.qte;});
+        const tousNoms = new Set([...Object.keys(oldMap), ...Object.keys(newMap)]);
+        for (const nom of tousNoms) {
+          const delta = (newMap[nom]||0) - (oldMap[nom]||0);
+          if (delta === 0) continue;
+          const prod = findProduitByNom(produits, nom);
+          if (!prod) continue;
+          const currentQte = stock[prod.id] || 0;
+          await updateStock(prod.id, Math.max(0, currentQte - delta));
+        }
+
         await db.update("commandes", editingCmd.id, {
           client_id: cmdClientId, client_nom: client?.nom||"",
           client_adresse: client?.adresse||"", client_region: client?.region||"",
@@ -1690,10 +1717,22 @@ function BossokApp({ session, onLogout }) {
           produits: cmdProduits, notes: cmdNotes,
           chauffeur: getChauffeur(client?.region||""),
         });
+
+        // Répercuter les nouvelles lignes sur la facture déjà créée pour cette commande
+        const facture = factures.find(f => f.notes === `Commande #${editingCmd.id}`);
+        if (facture) {
+          const lignes = cmdProduits.map(p => {
+            const produit = findProduitByNom(produits, p.nom);
+            const pu = produit ? getClientPrix(produit, client) : 0;
+            const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
+            return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
+          });
+          await db.update("factures", facture.id, { lignes });
+        }
         setEditingCmd(null);
       } else {
         const suggested = getSuggestedDay(client?.region||"");
-      await db.insert("commandes", {
+        const created = await db.insert("commandes", {
           client_id: cmdClientId, client_nom: client?.nom||"",
           client_adresse: client?.adresse||"", client_region: client?.region||"",
           client_tel: client?.telephone||"",
@@ -1701,6 +1740,32 @@ function BossokApp({ session, onLogout }) {
           chauffeur: suggested.dayIdx <= 1 ? "A" : getChauffeur(client?.region||""),
           date_commande: today, date_livraison: suggested.date||tomorrow,
           jour_livraison: suggested.day,
+        });
+        const newCmd = Array.isArray(created) ? created[0] : created;
+
+        // Déduire le stock immédiatement (les commandes finissent quasi toujours livrées)
+        for (const p of cmdProduits) {
+          const prod = findProduitByNom(produits, p.nom);
+          if (!prod) continue;
+          const currentQte = stock[prod.id] || 0;
+          await updateStock(prod.id, Math.max(0, currentQte - p.qte));
+        }
+
+        // Créer la facture immédiatement, liée à cette commande
+        const ech = new Date(); ech.setDate(ech.getDate()+7);
+        const num = genererNumeroFacture(today);
+        const lignes = cmdProduits.map(p => {
+          const produit = findProduitByNom(produits, p.nom);
+          const pu = produit ? getClientPrix(produit, client) : 0;
+          const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
+          return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
+        });
+        await db.insert("factures", {
+          numero: num, client_id: cmdClientId,
+          client_nom: client?.nom||"", client_adresse: client?.adresse||"",
+          client_tva: client?.tva||"",
+          date: today, echeance: ech.toISOString().split("T")[0],
+          lignes, statut: "Impayée", notes: `Commande #${newCmd.id}`, retours: []
         });
       }
       await loadAll();
@@ -1715,63 +1780,16 @@ function BossokApp({ session, onLogout }) {
       const cmd = commandes.find(c=>c.id===id);
       if (!cmd) return;
 
-      // Mark as delivered
       await db.update("commandes", id, {statut:"Livré"});
-      
-      // Update stock - reduce quantities
-      for (const p of (cmd.produits||[])) {
-        const prod = findProduitByNom(produits, p.nom);
-        if (!prod) continue;
-        const currentQte = stock[prod.id] || 0;
-        const newQte = Math.max(0, currentQte - p.qte);
-        await updateStock(prod.id, newQte);
-      }
-
-      // Create invoice automatically
-      const client = clients.find(c=>c.id===cmd.client_id);
-      const today = new Date().toISOString().split("T")[0];
-      const ech = new Date(); ech.setDate(ech.getDate()+7);
-      const num = genererNumeroFacture(today);
-
-      // Build lignes from commande produits
-      const lignes = (cmd.produits||[]).map(p => {
-        const produit = findProduitByNom(produits, p.nom);
-        const pu = produit ? getClientPrix(produit, client) : 0;
-        const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
-        return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
-      });
-
-      await db.insert("factures", {
-        numero: num,
-        client_id: cmd.client_id,
-        client_nom: cmd.client_nom,
-        client_adresse: cmd.client_adresse,
-        client_tva: client?.tva||"",
-        date: today,
-        echeance: ech.toISOString().split("T")[0],
-        lignes,
-        statut: "Impayée",
-        notes: `Commande #${cmd.id}`,
-        retours: []
-      });
-
       await loadAll();
-      // Show print modal
-      setLastFacture({
-        facture: {
-          numero: num,
-          client_id: cmd.client_id,
-          client_nom: cmd.client_nom,
-          client_adresse: cmd.client_adresse,
-          client_tva: client?.tva||"",
-          date: today,
-          echeance: ech.toISOString().split("T")[0],
-          lignes,
-          statut: "Impayée",
-          notes: `Commande #${cmd.id}`
-        },
-        client
-      });
+
+      // Le stock et la facture sont déjà créés depuis la commande — on propose
+      // simplement d'imprimer la facture existante.
+      const facture = factures.find(f => f.notes === `Commande #${id}`);
+      if (facture) {
+        const client = clients.find(c=>c.id===cmd.client_id);
+        setLastFacture({ facture, client });
+      }
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -1788,33 +1806,6 @@ function BossokApp({ session, onLogout }) {
     generatePDF(facture, client, imp, solde);
   };
 
-  // Aperçu de facture pour une commande pas encore livrée : mêmes lignes/prix que
-  // la vraie facture qui serait créée à la livraison, mais rien n'est enregistré
-  // en base — c'est purement un document imprimable à l'avance.
-  const apercuFactureCommande = (cmd) => {
-    const client = clients.find(c => c.id === cmd.client_id);
-    const lignes = (cmd.produits||[]).map(p => {
-      const produit = findProduitByNom(produits, p.nom);
-      const pu = produit ? getClientPrix(produit, client) : 0;
-      const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
-      return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
-    });
-    const today = new Date().toISOString().split("T")[0];
-    const ech = new Date(); ech.setDate(ech.getDate()+7);
-    const imp = factures.filter(x => x.client_id === cmd.client_id && x.statut === "Impayée");
-    const solde = soldeConsignes(cmd.client_id).reduce((s, r) => s + r.solde * r.consigne, 0);
-    generatePDF({
-      numero: "APERÇU-CMD" + cmd.id,
-      client_id: cmd.client_id,
-      client_nom: cmd.client_nom,
-      client_adresse: cmd.client_adresse,
-      client_tva: client?.tva || "",
-      date: today,
-      echeance: ech.toISOString().split("T")[0],
-      lignes,
-      statut: "Impayée",
-    }, client, imp, solde);
-  };
 
   const imprimerBonLivraison = (cmd) => {
     const client = clients.find(c => c.id === cmd.client_id);
@@ -3229,7 +3220,7 @@ function BossokApp({ session, onLogout }) {
                   {cmd.statut!=="Livré"&&(
                     <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
                       <button onClick={()=>marquerLivre(cmd.id)} style={{...S.btn("#059669"),padding:"4px 10px",fontSize:11}}>✓ Livré</button>
-                      <button onClick={()=>apercuFactureCommande(cmd)} style={{...S.btn("#374151"),padding:"4px 10px",fontSize:11}}>🖨️ Aperçu facture</button>
+                      <button onClick={()=>imprimerFactureCommande(cmd)} style={{...S.btn("#374151"),padding:"4px 10px",fontSize:11}}>🖨️ Imprimer facture</button>
                       <button onClick={()=>imprimerBonLivraison(cmd)} style={{...S.btn("#7C3AED"),padding:"4px 10px",fontSize:11}}>📦 Bon de livraison</button>
                       <button onClick={()=>openEditCmd(cmd)} style={{...S.btn("#1D4ED8"),padding:"4px 10px",fontSize:11}}>✏️ Modifier</button>
                       <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
