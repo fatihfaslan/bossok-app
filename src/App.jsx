@@ -1011,7 +1011,8 @@ function LoginPage({ onLogin, recoveryToken, onRecoveryDone }) {
     setLoading(true);
     setError("");
     try {
-      await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+      const redirectTo = encodeURIComponent(window.location.origin);
+      await fetch(`${SUPABASE_URL}/auth/v1/recover?redirect_to=${redirectTo}`, {
         method: "POST",
         headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
