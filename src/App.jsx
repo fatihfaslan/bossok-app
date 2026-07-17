@@ -972,13 +972,16 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
 // ═══════════════════════════════════════════════════════════════════
 // LOGIN PAGE
 // ═══════════════════════════════════════════════════════════════════
-function LoginPage({ onLogin }) {
+function LoginPage({ onLogin, recoveryToken, onRecoveryDone }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState("login"); // login | reset
+  const [mode, setMode] = useState(recoveryToken ? "newpassword" : "login"); // login | reset | newpassword
   const [resetSent, setResetSent] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [recoverySuccess, setRecoverySuccess] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) return;
@@ -1020,6 +1023,33 @@ function LoginPage({ onLogin }) {
     setLoading(false);
   };
 
+  const handleSetNewPassword = async () => {
+    if (!newPassword || newPassword.length < 6) { setError("Le mot de passe doit contenir au moins 6 caractères"); return; }
+    if (newPassword !== newPasswordConfirm) { setError("Les mots de passe ne correspondent pas"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: "PUT",
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${recoveryToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRecoverySuccess(true);
+      } else {
+        setError(data.msg || data.error_description || "Lien expiré ou invalide. Redemande un email de réinitialisation.");
+      }
+    } catch(e) {
+      setError("Erreur de connexion");
+    }
+    setLoading(false);
+  };
+
   const inputStyle = { width: "100%", padding: "10px 12px", background: "#0F172A", border: "1px solid #334155", borderRadius: 8, color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" };
 
   return (
@@ -1030,7 +1060,43 @@ function LoginPage({ onLogin }) {
           <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>le distributeur Premium de vos boissons</div>
         </div>
 
-        {mode === "login" ? (
+        {mode === "newpassword" ? (
+          <>
+            {!recoverySuccess ? (
+              <>
+                <div style={{ marginBottom: 8, fontSize: 13, color: "#94A3B8", lineHeight: 1.5 }}>
+                  Choisis ton nouveau mot de passe.
+                </div>
+                <div style={{ margin: "16px 0" }}>
+                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Nouveau mot de passe</label>
+                  <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                    placeholder="••••••••" style={inputStyle}/>
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Confirmer le mot de passe</label>
+                  <input type="password" value={newPasswordConfirm} onChange={e => setNewPasswordConfirm(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleSetNewPassword()}
+                    placeholder="••••••••" style={inputStyle}/>
+                </div>
+                {error && <div style={{ background: "#450A0A", border: "1px solid #DC2626", borderRadius: 8, padding: "10px 12px", color: "#FCA5A5", fontSize: 13, marginBottom: 16, marginTop: 8 }}>{error}</div>}
+                <button onClick={handleSetNewPassword} disabled={loading}
+                  style={{ width: "100%", padding: "12px 0", background: loading ? "#1E3A8A" : "#1D4ED8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                  {loading ? "Enregistrement..." : "Définir le mot de passe"}
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ background: "#052E16", border: "1px solid #16A34A", borderRadius: 8, padding: "14px", color: "#86EFAC", fontSize: 13, margin: "16px 0", textAlign: "center" }}>
+                  ✅ Mot de passe mis à jour ! Tu peux maintenant te connecter.
+                </div>
+                <button onClick={onRecoveryDone}
+                  style={{ width: "100%", padding: "12px 0", background: "#1D4ED8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                  Aller à la connexion
+                </button>
+              </>
+            )}
+          </>
+        ) : mode === "login" ? (
           <>
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Email</label>
@@ -1101,7 +1167,21 @@ function LoginPage({ onLogin }) {
 // ═══════════════════════════════════════════════════════════════════
 export default function AppWrapper() {
   const [session, setSession] = useState(getSession());
+  const [recoveryToken] = useState(() => {
+    const hash = window.location.hash || "";
+    if (hash.includes("type=recovery") && hash.includes("access_token=")) {
+      const match = hash.match(/access_token=([^&]+)/);
+      return match ? decodeURIComponent(match[1]) : null;
+    }
+    return null;
+  });
 
+  if (recoveryToken) {
+    return <LoginPage onLogin={setSession} recoveryToken={recoveryToken} onRecoveryDone={() => {
+      window.location.hash = "";
+      window.location.reload();
+    }} />;
+  }
   if (!session) return <LoginPage onLogin={setSession} />;
 
   return (
