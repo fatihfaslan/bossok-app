@@ -583,42 +583,33 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
 
   const soldeConsignesHTML = (totalNouvellesConsignes > 0 || soldeClient > 0) ? `
     <div class="consignes-box">
-      <p>Solde consignes après cette facture</p>
-      ${newConsignes.map(l => `
-        <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:#555">
-          <span>${l.nom} × ${l.qte} cs</span>
-          <span>${fmtEur(l.qte * l.consigne)}</span>
+      <p>Consignes à rendre</p>
+      ${soldeDetail.length > 0 ? soldeDetail.map(d => `
+        <div style="display:flex;justify-content:space-between;color:#555">
+          <span>${d.nom}</span><span>${d.solde} cs</span>
+        </div>
+      `).join("") : newConsignes.map(l => `
+        <div style="display:flex;justify-content:space-between;color:#555">
+          <span>${l.nom}</span><span>${l.qte} cs</span>
         </div>
       `).join("")}
-      ${creditDeduit > 0 ? `<div style="display:flex;justify-content:space-between;color:#999"><span>Crédit déduit</span><span>- ${fmtEur(creditDeduit)}</span></div>` : ""}
-      ${soldeClient > 0 ? `<div style="display:flex;justify-content:space-between;color:#999"><span>Solde précédent</span><span>${fmtEur(soldeClient)}</span></div>` : ""}
-      <div style="border-top:1px solid #EAEAEA;margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:600;color:#111">
-        <span>Total consignes dues</span><span>${fmtEur(soldeClient + totalNouvellesConsignes - creditDeduit)}</span>
+      <div style="border-top:1px solid #EAEAEA;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-weight:600;color:#111">
+        <span>Valeur totale</span><span>${fmtEur(soldeClient + totalNouvellesConsignes - creditDeduit)}</span>
       </div>
-      ${soldeDetail.length > 0 ? `
-        <div style="margin-top:5px">
-          <p style="font-size:6.5pt;color:#AAA;margin-bottom:2px">Détail des casiers à rapporter</p>
-          ${soldeDetail.map(d => `
-            <div style="display:flex;justify-content:space-between;font-size:7pt;color:#777">
-              <span>${d.nom}</span><span>${d.solde} caisse${d.solde>1?"s":""}</span>
-            </div>
-          `).join("")}
-        </div>
-      ` : ""}
     </div>
   ` : "";
 
   const impayeesHTML = impayees.length > 0 ? `
     <div class="impayees">
-      <p class="impayees-title">Rappel — factures impayées</p>
+      <p class="impayees-title">Factures impayées</p>
       ${impayees.map(f => {
         const ft = (f.lignes||[]).reduce((s,l) => s + l.qte*(l.pu+(l.consigne||0)), 0);
-        return `<div style="display:flex;justify-content:space-between;margin-bottom:2px;color:#555">
-          <span>${f.numero} · ${f.date}</span>
+        return `<div style="display:flex;justify-content:space-between;color:#555">
+          <span>${f.numero}</span>
           <span>${fmtEur(ft)}</span>
         </div>`;
       }).join("")}
-      <div style="border-top:1px solid #EAEAEA;margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:600;color:#111">
+      <div style="border-top:1px solid #EAEAEA;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-weight:600;color:#111">
         <span>Total dû</span>
         <span>${fmtEur(impayees.reduce((s,f) => s + (f.lignes||[]).reduce((ss,l) => ss + l.qte*(l.pu+(l.consigne||0)), 0), 0))}</span>
       </div>
@@ -646,33 +637,33 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
     body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:12mm 14mm; min-height:100vh; display:flex; flex-direction:column; }
     .no-print { position:fixed; top:8px; right:8px; z-index:999; }
     .no-print button { padding:8px 16px; background:#1D4ED8; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; }
-    h1 { font-size:12.5pt; font-weight:600; color:#111; margin-bottom:2px; letter-spacing:-0.2px; }
+    h1 { font-size:12.5pt; font-weight:700; color:#1D4ED8; margin-bottom:2px; letter-spacing:-0.2px; }
     .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
     .company p { font-size:8pt; line-height:1.5; color:#333; }
     .logo img { width:70px; opacity:0.9; }
-    hr { border:none; border-top:1px solid #EAEAEA; margin:10px 0; }
-    .meta { display:flex; justify-content:space-between; margin:14px 0; font-size:8.5pt; }
-    .meta-left p { line-height:1.8; color:#444; }
-    .client-name { font-size:10.5pt; font-weight:600; color:#111; }
-    .paid-stamp { display:inline-block; margin-top:6px; font-size:8pt; color:#374151; }
-    .paid-stamp b { color:#111; }
-    .note-client { margin:10px 0; padding:8px 0 8px 10px; border-left:2px solid #D1D5DB; font-size:8pt; color:#555; font-style:italic; }
-    table { width:100%; border-collapse:collapse; margin:12px 0; font-size:8.5pt; }
-    thead tr { border-bottom:1px solid #111; }
-    th { padding:0 6px 6px; text-align:left; font-size:7pt; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:0.4px; }
-    td { padding:6px 6px; border-bottom:1px solid #F0F0F0; color:#222; }
-    .bottom { display:flex; justify-content:space-between; align-items:flex-start; margin-top:10px; }
-    .sig { font-size:7.5pt; color:#999; line-height:2.2; }
+    hr { border:none; border-top:1px solid #EAEAEA; margin:12px 0; }
+    .meta { display:flex; justify-content:space-between; margin:16px 0; font-size:8.5pt; }
+    .meta-left p { line-height:1.9; color:#555; }
+    .meta-left p strong { color:#111; }
+    .client-name { font-size:11pt; font-weight:600; color:#111; }
+    .paid-stamp { display:inline-block; margin-top:8px; padding:3px 8px; background:#F0F5FF; border-radius:4px; font-size:7.5pt; color:#1D4ED8; font-weight:600; }
+    .note-client { margin:14px 0; padding:8px 0 8px 10px; border-left:2px solid #C7D6FB; font-size:8pt; color:#555; font-style:italic; }
+    table { width:100%; border-collapse:collapse; margin:16px 0; font-size:8.5pt; }
+    thead tr { border-bottom:1.5px solid #111; }
+    th { padding:0 6px 7px; text-align:left; font-size:7pt; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.4px; }
+    td { padding:7px 6px; border-bottom:1px solid #F0F0F0; color:#222; }
+    .bottom { display:flex; justify-content:space-between; align-items:flex-start; margin-top:16px; }
+    .sig { font-size:7.5pt; color:#AAA; line-height:2.2; }
     .totals-table { width:220px; font-size:8.5pt; }
-    .totals-table td { padding:3px 0; border:none; color:#555; }
-    .totals-table .total-row td { border-top:1px solid #111; font-weight:600; font-size:10.5pt; padding-top:6px; color:#111; }
-    .footer { margin-top:auto; padding-top:10px; border-top:1px solid #EAEAEA; font-size:7pt; color:#999; }
+    .totals-table td { padding:4px 0; border:none; color:#666; }
+    .totals-table .total-row td { border-top:1.5px solid #1D4ED8; font-weight:700; font-size:11.5pt; padding-top:8px; color:#1D4ED8; }
+    .footer { margin-top:auto; padding-top:14px; border-top:1px solid #EAEAEA; font-size:7pt; color:#999; }
     .footer .bank { color:#555; }
-    .merci { text-align:left; font-weight:400; font-style:italic; font-size:8pt; margin-top:6px; color:#999; }
-    .impayees { border-top:1px solid #E5E7EB; padding-top:6px; font-size:7.5pt; }
-    .impayees-title { font-weight:600; color:#111; margin-bottom:4px; font-size:7pt; text-transform:uppercase; letter-spacing:0.3px; }
-    .consignes-box { border-top:1px solid #E5E7EB; padding-top:6px; font-size:7.5pt; }
-    .consignes-box p { font-weight:600; color:#111; margin-bottom:4px; font-size:7pt; text-transform:uppercase; letter-spacing:0.3px; }
+    .merci { text-align:left; font-weight:400; font-style:italic; font-size:8pt; margin-top:8px; color:#999; }
+    .impayees { padding:10px 12px; background:#FAFAFA; border-radius:6px; font-size:7.5pt; }
+    .impayees-title { font-weight:700; color:#111; margin-bottom:6px; font-size:7pt; text-transform:uppercase; letter-spacing:0.4px; }
+    .consignes-box { padding:10px 12px; background:#FAFAFA; border-radius:6px; font-size:7.5pt; }
+    .consignes-box p { font-weight:700; color:#111; margin-bottom:6px; font-size:7pt; text-transform:uppercase; letter-spacing:0.4px; }
     @media print {
       .no-print { display:none; }
       body { padding:8mm 10mm; }
@@ -761,7 +752,7 @@ ${noteClientHTML}
 </div>
 
 ${(soldeConsignesHTML || impayeesHTML) ? `
-<div style="display:flex;gap:10px;margin-top:6px;align-items:flex-start">
+<div style="display:flex;gap:14px;margin-top:16px;align-items:flex-start">
   <div style="flex:1;min-width:0">${soldeConsignesHTML}</div>
   <div style="flex:1;min-width:0">${impayeesHTML}</div>
 </div>
@@ -5122,5 +5113,3 @@ function BossokApp({ session, onLogout }) {
     </div>
   );
 }
-
-  
