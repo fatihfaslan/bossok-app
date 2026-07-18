@@ -1458,7 +1458,8 @@ function BossokApp({ session, onLogout }) {
     setSaving(true);
     try {
       if (editClient) {
-        await db.update("clients", editClient.id, {...clientForm});
+        const { id, created_at, ...payload } = clientForm;
+        await db.update("clients", editClient.id, payload);
       } else {
         await db.insert("clients", {...clientForm, prix_individuels: {}});
       }
