@@ -668,7 +668,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
     .totals-table .total-row td { border-top:1.5px solid #1D4ED8; font-weight:700; font-size:10pt; padding-top:4px; color:#1D4ED8; }
     .footer { margin-top:auto; padding-top:6px; border-top:1px solid #E5E7EB; font-size:7pt; color:#333; }
     .footer .bank { color:#1D4ED8; font-weight:700; }
-    .merci { text-align:center; font-weight:700; font-size:9pt; margin-top:6px; color:#1D4ED8; }
+    .merci { text-align:left; font-weight:700; font-size:9pt; margin-top:6px; color:#1D4ED8; }
     .impayees { border:1px solid #C0392B; border-radius:3px; padding:5px 8px; margin-top:6px; font-size:7.5pt; }
     .impayees-title { font-weight:700; color:#C0392B; margin-bottom:3px; }
     .consignes-box { border:1px solid #7C3AED; border-radius:3px; padding:5px 8px; margin-top:6px; font-size:7.5pt; }
@@ -748,8 +748,6 @@ ${noteClientHTML}
       Reçu marchandise en bon état : ──────────────────────<br/>
       Pour acquit BOSSOK Distribution Sàrl : ─────────────
     </div>
-    ${soldeConsignesHTML}
-    ${impayeesHTML}
   </div>
   <div>
     <table class="totals-table">
@@ -760,21 +758,23 @@ ${noteClientHTML}
     </table>
   </div>
 </div>
+
+${(soldeConsignesHTML || impayeesHTML) ? `
+<div style="display:flex;gap:10px;margin-top:6px;align-items:flex-start">
+  <div style="flex:1;min-width:0">${soldeConsignesHTML}</div>
+  <div style="flex:1;min-width:0">${impayeesHTML}</div>
+</div>
+` : ""}
 </div>
 
 <!-- FOOTER -->
 <div class="footer">
   <p>Pour toute question : <strong>Bossok Distribution Sàrl</strong> · 661-620-620</p>
   <p class="bank">Conditions : 7 jours date de facture &nbsp;|&nbsp; BIC: BGLLLULL · LU14 0030 1895 5248 0000 &nbsp;|&nbsp; BIC: REVOLT21 · LT85 3250 0571 2868 0584</p>
-  <p class="bank" style="text-align:center">Titulaire : BOSSOK DISTRIBUTION S.A.R.L</p>
+  <p class="bank">Titulaire : BOSSOK DISTRIBUTION S.A.R.L</p>
   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px">
-    <div>
-      <p class="merci" style="text-align:left">— MERCI DE VOTRE CONFIANCE —</p>
-    </div>
-    <div style="text-align:center">
-      <div id="qrcode" style="display:inline-block"></div>
-      <p style="font-size:6.5pt;color:#555;margin-top:2px">Scanner pour payer<br/><strong>${fmtEur(total)}</strong></p>
-    </div>
+    <p class="merci">— MERCI DE VOTRE CONFIANCE —</p>
+    <div id="qrcode" style="display:inline-block"></div>
   </div>
 </div>
 
