@@ -549,7 +549,7 @@ const calcMargeFacture = (facture, produits, receptionsStock) => {
 // ═══════════════════════════════════════════════════════════════════
 // PDF GENERATOR
 // ═══════════════════════════════════════════════════════════════════
-const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
+const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetail = []) => {
   const lignes = facture.lignes || [];
   const sousTotal = lignes.reduce((s, l) => s + l.qte * l.pu, 0);
   const totalConsignes = lignes.reduce((s, l) => s + l.qte * (l.consigne || 0), 0);
@@ -595,6 +595,16 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
       <div style="border-top:1px solid #555;margin-top:3px;padding-top:3px;display:flex;justify-content:space-between;font-weight:700">
         <span>Total consignes dues :</span><span>${fmtEur(soldeClient + totalNouvellesConsignes - creditDeduit)}</span>
       </div>
+      ${soldeDetail.length > 0 ? `
+        <div style="border-top:1px dashed #999;margin-top:4px;padding-top:3px">
+          <p style="font-size:6.5pt;color:#666;margin-bottom:2px">Détail des casiers à rapporter :</p>
+          ${soldeDetail.map(d => `
+            <div style="display:flex;justify-content:space-between;font-size:7pt;color:#444">
+              <span>${d.nom}</span><span style="font-weight:600">${d.solde} caisse${d.solde>1?"s":""}</span>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
     </div>
   ` : "";
 
@@ -615,6 +625,16 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
     </div>
   ` : "";
 
+  const payeeStampHTML = facture.statut === "Payée" ? `
+    <div class="paid-stamp">
+      ✅ PAYÉE${facture.date_paiement ? " le " + facture.date_paiement : ""}${facture.mode_paiement ? " · " + facture.mode_paiement : ""}
+    </div>
+  ` : "";
+
+  const noteClientHTML = facture.note_client ? `
+    <div class="note-client">💬 ${facture.note_client}</div>
+  ` : "";
+
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -623,33 +643,35 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:12mm 14mm; }
+    body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:12mm 14mm; min-height:100vh; display:flex; flex-direction:column; }
     .no-print { position:fixed; top:8px; right:8px; z-index:999; }
     .no-print button { padding:8px 16px; background:#1D4ED8; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; }
-    h1 { font-size:13pt; font-weight:700; color:#C0392B; margin-bottom:2px; }
+    h1 { font-size:13pt; font-weight:700; color:#1D4ED8; margin-bottom:2px; letter-spacing:-0.2px; }
     .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
     .company p { font-size:8pt; line-height:1.5; color:#333; }
     .logo img { width:80px; }
-    hr { border:none; border-top:1px solid #999; margin:6px 0; }
+    hr { border:none; border-top:1px solid #E5E7EB; margin:6px 0; }
     .meta { display:flex; justify-content:space-between; margin:8px 0; font-size:8.5pt; }
     .meta-left p { line-height:1.7; }
     .client-name { font-size:11pt; font-weight:700; color:#111; }
+    .paid-stamp { display:inline-block; margin-top:4px; padding:3px 10px; background:#ECFDF5; border:1px solid #059669; border-radius:5px; color:#059669; font-weight:700; font-size:8pt; }
+    .note-client { margin:6px 0; padding:6px 10px; background:#EFF6FF; border-left:3px solid #1D4ED8; border-radius:4px; font-size:8pt; color:#1E3A8A; font-style:italic; }
     table { width:100%; border-collapse:collapse; margin:8px 0; font-size:8.5pt; }
-    thead tr { background:#111; color:#fff; }
+    thead tr { background:#1D4ED8; color:#fff; }
     th { padding:4px 6px; text-align:left; font-size:8pt; font-weight:600; }
-    tbody tr:nth-child(even) { background:#f7f7f7; }
-    td { padding:3px 6px; border-bottom:1px solid #ddd; }
+    tbody tr:nth-child(even) { background:#F8FAFC; }
+    td { padding:3px 6px; border-bottom:1px solid #E5E7EB; }
     .bottom { display:flex; justify-content:space-between; align-items:flex-start; margin-top:6px; }
     .sig { font-size:7.5pt; color:#333; line-height:2.2; }
     .totals-table { width:240px; font-size:8.5pt; }
     .totals-table td { padding:2px 6px; border:none; }
-    .totals-table .total-row td { border-top:1.5px solid #111; font-weight:700; font-size:10pt; padding-top:4px; }
-    .footer { margin-top:8px; padding-top:6px; border-top:1px solid #999; font-size:7pt; color:#333; }
-    .footer .bank { color:#C0392B; font-weight:700; }
-    .merci { text-align:center; font-weight:700; font-size:9pt; margin-top:6px; }
+    .totals-table .total-row td { border-top:1.5px solid #1D4ED8; font-weight:700; font-size:10pt; padding-top:4px; color:#1D4ED8; }
+    .footer { margin-top:auto; padding-top:6px; border-top:1px solid #E5E7EB; font-size:7pt; color:#333; }
+    .footer .bank { color:#1D4ED8; font-weight:700; }
+    .merci { text-align:center; font-weight:700; font-size:9pt; margin-top:6px; color:#1D4ED8; }
     .impayees { border:1px solid #C0392B; border-radius:3px; padding:5px 8px; margin-top:6px; font-size:7.5pt; }
     .impayees-title { font-weight:700; color:#C0392B; margin-bottom:3px; }
-    .consignes-box { border:1px solid #555; border-radius:3px; padding:5px 8px; margin-top:6px; font-size:7.5pt; }
+    .consignes-box { border:1px solid #7C3AED; border-radius:3px; padding:5px 8px; margin-top:6px; font-size:7.5pt; }
     @media print {
       .no-print { display:none; }
       body { padding:8mm 10mm; }
@@ -662,6 +684,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
   <button onclick="window.print()">🖨️ Imprimer</button>
 </div>
 
+<div>
 <!-- HEADER -->
 <div class="header">
   <div class="company">
@@ -684,6 +707,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
     <p><strong>Date :</strong> ${facture.date || ""}</p>
     <p><strong>N° Facture :</strong> <strong>${facture.numero}</strong></p>
     <p><strong>Échéance :</strong> ${facture.echeance || ""}</p>
+    ${payeeStampHTML}
   </div>
   <div style="text-align:right">
     <p style="font-size:7.5pt;color:#555;margin-bottom:2px">Facturé à :</p>
@@ -697,6 +721,8 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
 </div>
 
 <hr/>
+
+${noteClientHTML}
 
 <!-- TABLE -->
 <table>
@@ -733,6 +759,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0) => {
       <tr class="total-row"><td>TOTAL TTC</td><td style="text-align:right">${fmtEur(total)}</td></tr>
     </table>
   </div>
+</div>
 </div>
 
 <!-- FOOTER -->
@@ -1282,6 +1309,7 @@ function BossokApp({ session, onLogout }) {
   const [factLignes, setFactLignes] = useState([]);
   const [factDate, setFactDate] = useState(new Date().toISOString().split("T")[0]);
   const [factNotes, setFactNotes] = useState("");
+  const [factNoteClient, setFactNoteClient] = useState("");
   const [factNumero, setFactNumero] = useState("");
   const [factEcheance, setFactEcheance] = useState("");
   const [searchFactClient, setSearchFactClient] = useState("");
@@ -1636,6 +1664,7 @@ function BossokApp({ session, onLogout }) {
     setFactLignes(f.lignes || []);
     setFactDate(f.date || new Date().toISOString().split("T")[0]);
     setFactNotes(f.notes || "");
+    setFactNoteClient(f.note_client || "");
     setFactNumero(f.numero || "");
     setFactEcheance(f.echeance || "");
     setSearchFactClient("");
@@ -1657,7 +1686,7 @@ function BossokApp({ session, onLogout }) {
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
           date: factDate, echeance: echDate,
-          lignes: factLignes, notes: factNotes,
+          lignes: factLignes, notes: factNotes, note_client: factNoteClient,
         });
         await loadAll();
         setEditingFacture(null);
@@ -1668,15 +1697,15 @@ function BossokApp({ session, onLogout }) {
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
           date: factDate, echeance: echDate,
-          lignes: factLignes, statut: "Impayée", notes: factNotes, retours: []
+          lignes: factLignes, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: []
         });
         await loadAll();
         const newFact = {numero:num, client_id:factClientId,
           client_nom:client?.nom||"", client_adresse:client?.adresse||"",
-          client_tva:client?.tva||"", date:factDate, lignes:factLignes, statut:"Impayée"};
+          client_tva:client?.tva||"", date:factDate, lignes:factLignes, statut:"Impayée", note_client:factNoteClient};
         setLastFacture({facture:newFact, client});
       }
-      setFactLignes([]); setFactNotes(""); setFactClientId(null);
+      setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactClientId(null);
       setFactNumero(""); setSearchFactClient(""); setShowFactForm(false);
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
@@ -1900,7 +1929,7 @@ function BossokApp({ session, onLogout }) {
     const client = clients.find(c => c.id === cmd.client_id);
     const imp = factures.filter(x => x.client_id === cmd.client_id && x.statut === "Impayée" && x.id !== facture.id);
     const solde = soldeConsignes(cmd.client_id).reduce((s, r) => s + r.solde * r.consigne, 0);
-    generatePDF(facture, client, imp, solde);
+    generatePDF(facture, client, imp, solde, soldeConsignes(cmd.client_id));
   };
 
 
@@ -3358,7 +3387,7 @@ function BossokApp({ session, onLogout }) {
                             className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
                           <button onClick={()=>{setOpenFactureMenu(null);dupliquerFacture(f);}}
                             className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
-                          <button onClick={()=>{setOpenFactureMenu(null);const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde);}}
+                          <button onClick={()=>{setOpenFactureMenu(null);const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde,soldeConsignes(f.client_id));}}
                             className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer PDF</button>
                           {(f.statut==="Impayée"||f.statut==="Payée")&&(
                             <button onClick={()=>{setOpenFactureMenu(null);creerAvoir(f);}}
@@ -4346,7 +4375,7 @@ function BossokApp({ session, onLogout }) {
                   <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2",f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
                   {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
                   {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"2px 8px",fontSize:11}}>↺</button>}
-                  <button title="Imprimer" onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,selClient,imp,solde);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
+                  <button title="Imprimer" onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,selClient,imp,solde,soldeConsignes(f.client_id));}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
                   <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"2px 8px",fontSize:11}}>🗑️</button>
                 </div>
               );
@@ -4599,8 +4628,12 @@ function BossokApp({ session, onLogout }) {
         </div>
       )}
       <div style={{marginBottom:12}}>
-        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
-        <input value={factNotes} onChange={e=>setFactNotes(e.target.value)} placeholder="Notes optionnelles..." style={S.input}/>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes internes</label>
+        <input value={factNotes} onChange={e=>setFactNotes(e.target.value)} placeholder="Notes optionnelles, non visibles par le client..." style={S.input}/>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Message pour le client <span style={{color:"#9CA3AF"}}>(imprimé sur la facture)</span></label>
+        <input value={factNoteClient} onChange={e=>setFactNoteClient(e.target.value)} placeholder="Ex: Merci pour votre commande, à bientôt !" style={S.input}/>
       </div>
       <div style={{display:"flex",gap:8}}>
         <button onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");setFactEcheance("");}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
@@ -4661,7 +4694,7 @@ function BossokApp({ session, onLogout }) {
         <button onClick={()=>{
           const imp=factures.filter(x=>x.client_id===lastFacture.facture.client_id&&x.statut==="Impayée"&&x.numero!==lastFacture.facture.numero);
           const solde=soldeConsignes(lastFacture.facture.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);
-          generatePDF(lastFacture.facture,lastFacture.client,imp,solde);
+          generatePDF(lastFacture.facture,lastFacture.client,imp,solde,soldeConsignes(lastFacture.facture.client_id));
           setLastFacture(null);
         }} style={{padding:"10px 20px",background:"#1D4ED8",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer"}}>
           🖨️ Imprimer la facture
