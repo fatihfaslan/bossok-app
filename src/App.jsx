@@ -839,35 +839,40 @@ const generateBonLivraison = (commande, client) => {
   <title>Bon de livraison ${numeroBL}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:14mm 16mm; }
+    body { font-family:Arial,sans-serif; font-size:9pt; color:#222; padding:14mm 16mm; min-height:100vh; display:flex; flex-direction:column; }
     .no-print { position:fixed; top:8px; right:8px; z-index:999; }
     .no-print button { padding:8px 16px; background:#1D4ED8; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; }
     @media print { .no-print { display:none; } }
-    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
-    .company h1 { font-size:14pt; font-weight:700; color:#1D4ED8; margin-bottom:3px; }
-    .company p { font-size:8pt; color:#555; line-height:1.5; }
-    .logo img { width:56px; height:56px; object-fit:contain; }
-    hr { border:none; border-top:1px solid #E5E7EB; margin:10px 0; }
-    .title-band { background:#1D4ED8; color:#fff; padding:8px 14px; border-radius:8px; margin:14px 0; display:flex; justify-content:space-between; align-items:center; }
-    .title-band h2 { font-size:13pt; font-weight:700; }
-    .meta { display:flex; justify-content:space-between; margin-bottom:14px; }
-    .meta-left p { font-size:9pt; margin-bottom:3px; }
-    .client-name { font-size:11pt; font-weight:700; margin-bottom:2px; }
-    table { width:100%; border-collapse:collapse; margin-top:8px; }
-    th { background:#F3F4F6; text-align:left; padding:7px 10px; font-size:8.5pt; color:#374151; border-bottom:2px solid #E5E7EB; }
-    td { padding:7px 10px; border-bottom:1px solid #F1F5F9; }
-    .total-row td { border-top:2px solid #1D4ED8; font-weight:700; font-size:10pt; padding-top:10px; }
-    .sig-zone { display:flex; justify-content:space-between; margin-top:36px; gap:24px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+    .company h1 { font-size:12.5pt; font-weight:700; color:#1D4ED8; margin-bottom:3px; letter-spacing:-0.2px; }
+    .company p { font-size:8pt; color:#666; line-height:1.5; }
+    .logo img { width:48px; height:48px; object-fit:contain; opacity:0.9; }
+    hr { border:none; border-top:1px solid #EAEAEA; margin:12px 0; }
+    .title-row { display:flex; justify-content:space-between; align-items:baseline; margin:16px 0; }
+    .title-row h2 { font-size:11pt; font-weight:700; color:#111; text-transform:uppercase; letter-spacing:0.4px; }
+    .title-row .ref { text-align:right; font-size:8.5pt; color:#666; }
+    .title-row .ref b { color:#111; }
+    .meta { display:flex; justify-content:space-between; margin-bottom:16px; }
+    .meta-left p { font-size:8.5pt; margin-bottom:4px; color:#555; }
+    .meta-left p strong { color:#111; }
+    .client-name { font-size:10.5pt; font-weight:600; color:#111; margin-bottom:2px; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:8.5pt; }
+    thead tr { border-bottom:1.5px solid #111; }
+    th { text-align:left; padding:0 8px 7px; font-size:7pt; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.4px; }
+    td { padding:7px 8px; border-bottom:1px solid #F0F0F0; color:#222; }
+    .total-row td { border-top:1.5px solid #1D4ED8; font-weight:700; font-size:10pt; padding-top:8px; color:#1D4ED8; }
+    .sig-zone { display:flex; justify-content:space-between; margin-top:40px; gap:24px; }
     .sig-box { flex:1; }
-    .sig-box .label { font-size:9pt; font-weight:700; margin-bottom:40px; }
-    .sig-box .line { border-top:1px solid #111; padding-top:4px; font-size:7.5pt; color:#555; }
-    .footer { margin-top:30px; text-align:center; font-size:7.5pt; color:#9CA3AF; }
-    .notes-box { margin-top:14px; padding:10px; background:#F9FAFB; border-radius:8px; font-size:8.5pt; }
+    .sig-box .label { font-size:8.5pt; font-weight:600; color:#111; margin-bottom:40px; }
+    .sig-box .line { border-top:1px solid #111; padding-top:4px; font-size:7.5pt; color:#999; }
+    .footer { margin-top:auto; padding-top:14px; border-top:1px solid #EAEAEA; text-align:center; font-size:7pt; color:#999; }
+    .notes-box { margin-top:14px; padding:8px 0 8px 10px; border-left:2px solid #C7D6FB; font-size:8pt; color:#555; font-style:italic; }
   </style>
 </head>
 <body>
   <div class="no-print"><button onclick="window.print()">🖨️ Imprimer / PDF</button></div>
 
+  <div>
   <div class="header">
     <div class="company">
       <h1>BOSSOK DISTRIBUTION Sàrl</h1>
@@ -881,23 +886,23 @@ const generateBonLivraison = (commande, client) => {
 
   <hr/>
 
-  <div class="title-band">
-    <h2>📦 BON DE LIVRAISON</h2>
-    <div style="text-align:right;font-size:9pt">
-      <div><strong>N° :</strong> ${numeroBL}</div>
-      <div><strong>Date :</strong> ${dateLivraison}</div>
+  <div class="title-row">
+    <h2>Bon de livraison</h2>
+    <div class="ref">
+      <div><b>${numeroBL}</b></div>
+      <div>${dateLivraison}</div>
     </div>
   </div>
 
   <div class="meta">
     <div class="meta-left">
-      <p><strong>Chauffeur :</strong> ${commande.chauffeur === "A" ? "Sefa" : commande.chauffeur === "B" ? "Mikail" : "—"}</p>
-      <p><strong>Zone :</strong> ${commande.client_region || "—"}</p>
+      <p><strong>Chauffeur</strong> · ${commande.chauffeur === "A" ? "Sefa" : commande.chauffeur === "B" ? "Mikail" : "—"}</p>
+      <p><strong>Zone</strong> · ${commande.client_region || "—"}</p>
     </div>
     <div style="text-align:right">
-      <p style="font-size:7.5pt;color:#555;margin-bottom:2px">Livré à :</p>
+      <p style="font-size:7.5pt;color:#999;margin-bottom:2px">Livré à</p>
       <p class="client-name">${commande.client_nom || ""}</p>
-      <p style="font-size:8pt;color:#333;line-height:1.6">
+      <p style="font-size:8pt;color:#666;line-height:1.6">
         ${commande.client_adresse || client?.adresse || ""}<br/>
         ${client?.telephone ? "Tél : " + client.telephone : ""}
       </p>
@@ -916,12 +921,12 @@ const generateBonLivraison = (commande, client) => {
       ${emptyRows}
       <tr class="total-row">
         <td style="text-align:center">${totalCaisses}</td>
-        <td>TOTAL CAISSES LIVRÉES</td>
+        <td>Total caisses livrées</td>
       </tr>
     </tbody>
   </table>
 
-  ${commande.notes ? `<div class="notes-box"><strong>Notes :</strong> ${commande.notes}</div>` : ""}
+  ${commande.notes ? `<div class="notes-box">${commande.notes}</div>` : ""}
 
   <div class="sig-zone">
     <div class="sig-box">
@@ -929,9 +934,10 @@ const generateBonLivraison = (commande, client) => {
       <div class="line">BOSSOK Distribution Sàrl</div>
     </div>
     <div class="sig-box">
-      <div class="label">Signature client — Reçu en bon état</div>
+      <div class="label">Signature client — reçu en bon état</div>
       <div class="line">${commande.client_nom || ""}</div>
     </div>
+  </div>
   </div>
 
   <div class="footer">
