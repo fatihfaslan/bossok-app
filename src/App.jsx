@@ -659,7 +659,6 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
     .totals-table .total-row td { border-top:1.5px solid #1D4ED8; font-weight:700; font-size:11.5pt; padding-top:8px; color:#1D4ED8; }
     .footer { margin-top:auto; padding-top:14px; border-top:1px solid #EAEAEA; font-size:7pt; color:#999; }
     .footer .bank { color:#555; }
-    .merci { text-align:left; font-weight:400; font-style:italic; font-size:8pt; margin-top:8px; color:#999; }
     .impayees { padding:10px 12px; background:#FAFAFA; border-radius:6px; font-size:7.5pt; }
     .impayees-title { font-weight:700; color:#111; margin-bottom:6px; font-size:7pt; text-transform:uppercase; letter-spacing:0.4px; }
     .consignes-box { padding:10px 12px; background:#FAFAFA; border-radius:6px; font-size:7.5pt; }
@@ -750,22 +749,20 @@ ${noteClientHTML}
     </table>
   </div>
 </div>
-
-${(soldeConsignesHTML || impayeesHTML) ? `
-<div style="display:flex;gap:14px;margin-top:16px;align-items:flex-start">
-  <div style="flex:1;min-width:0">${soldeConsignesHTML}</div>
-  <div style="flex:1;min-width:0">${impayeesHTML}</div>
-</div>
-` : ""}
 </div>
 
 <!-- FOOTER -->
 <div class="footer">
   <p>Pour toute question : <strong>Bossok Distribution Sàrl</strong> · 661-620-620</p>
+  ${(soldeConsignesHTML || impayeesHTML) ? `
+  <div style="display:flex;gap:14px;align-items:flex-start;margin:14px 0">
+    <div style="flex:1;min-width:0">${soldeConsignesHTML}</div>
+    <div style="flex:1;min-width:0">${impayeesHTML}</div>
+  </div>
+  ` : ""}
   <p class="bank">Conditions : 7 jours date de facture &nbsp;|&nbsp; BIC: BGLLLULL · LU14 0030 1895 5248 0000 &nbsp;|&nbsp; BIC: REVOLT21 · LT85 3250 0571 2868 0584</p>
   <p class="bank">Titulaire : BOSSOK DISTRIBUTION S.A.R.L</p>
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px">
-    <p class="merci">— MERCI DE VOTRE CONFIANCE —</p>
+  <div style="display:flex;justify-content:flex-end;margin-top:6px">
     <div id="qrcode" style="display:inline-block"></div>
   </div>
 </div>
