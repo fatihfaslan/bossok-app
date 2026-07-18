@@ -1265,6 +1265,7 @@ function BossokApp({ session, onLogout }) {
   const [filterType, setFilterType] = useState("Tous");
   const [filterStatut, setFilterStatut] = useState("Tous");
   const [filterZone, setFilterZone] = useState("Tous");
+  const [filterFidelite, setFilterFidelite] = useState("Tous");
   const [showClientForm, setShowClientForm] = useState(false);
   const [editClient, setEditClient] = useState(null);
   const [clientForm, setClientForm] = useState({});
@@ -1400,8 +1401,9 @@ function BossokApp({ session, onLogout }) {
     return matchSearch
       &&(filterType==="Tous"||c.type===filterType)
       &&(filterStatut==="Tous"||c.statut===filterStatut)
-      &&(filterZone==="Tous"||c.region===filterZone);
-  }).sort((a,b)=>(a.nom||"").localeCompare(b.nom||"")),[clients,searchC,filterType,filterStatut,filterZone]);
+      &&(filterZone==="Tous"||c.region===filterZone)
+      &&(filterFidelite==="Tous"||c.categorie_fidelite===filterFidelite);
+  }).sort((a,b)=>(a.nom||"").localeCompare(b.nom||"")),[clients,searchC,filterType,filterStatut,filterZone,filterFidelite]);
 
   const clientFactures = (cid) => factures.filter(f=>f.client_id===cid);
   const clientImpayees = (cid) => clientFactures(cid).filter(f=>f.statut==="Impayée");
@@ -2123,7 +2125,7 @@ function BossokApp({ session, onLogout }) {
             <div style={{fontWeight:700,fontSize:isMobile?15:18,color:"#fff",letterSpacing:"-0.2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{PAGE_TITLES[page]}</div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours"});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
+            {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
             {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{
   const today = new Date().toISOString().split("T")[0];
   setShowFactForm(true);setFactClientId(null);setFactLignes([]);
@@ -3091,13 +3093,14 @@ function BossokApp({ session, onLogout }) {
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && (
   <div>
-    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(5,1fr)",gap:10,marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:clients.length,c:"#1D4ED8"},
         {l:"Actifs",v:clientsActifs.length,c:"#059669"},
         {l:"Passifs",v:clients.filter(c=>c.statut==="Passif").length,c:"#D97706"},
         {l:"Impayées",v:factures.filter(f=>f.statut==="Impayée").length,c:"#DC2626"},
         {l:"TVA manquante",v:clients.filter(c=>EXPORT_REGIONS.includes(c.region)&&!tvaIntracomValide(c)).length,c:"#DC2626"},
+        {l:"Gold / Silver",v:clients.filter(c=>c.categorie_fidelite==="Gold").length+" / "+clients.filter(c=>c.categorie_fidelite==="Silver").length,c:"#92400E"},
       ].map((s,i)=>(
         <div key={i} style={S.kpi(s.c)}>
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
@@ -3120,8 +3123,13 @@ function BossokApp({ session, onLogout }) {
         <option value="Tous">Zone : Toutes</option>
         {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France"].map(z=><option key={z} value={z}>{z}</option>)}
       </select>
-      {(filterType!=="Tous"||filterStatut!=="Tous"||filterZone!=="Tous"||searchC)&&(
-        <button onClick={()=>{setFilterType("Tous");setFilterStatut("Tous");setFilterZone("Tous");setSearchC("");}}
+      <select value={filterFidelite} onChange={e=>setFilterFidelite(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
+        <option value="Tous">Fidélité : Toutes</option>
+        <option value="Gold">🥇 Gold</option>
+        <option value="Silver">🥈 Silver</option>
+      </select>
+      {(filterType!=="Tous"||filterStatut!=="Tous"||filterZone!=="Tous"||filterFidelite!=="Tous"||searchC)&&(
+        <button onClick={()=>{setFilterType("Tous");setFilterStatut("Tous");setFilterZone("Tous");setFilterFidelite("Tous");setSearchC("");}}
           style={{...S.btn("#FEE2E2","#DC2626"),padding:"6px 10px",fontSize:12}}>✕ Reset</button>
       )}
     </div>
@@ -3141,6 +3149,8 @@ function BossokApp({ session, onLogout }) {
                 <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:4}}>
                   <span style={S.badge(tc(c.type).bg,tc(c.type).text)}>{c.type}</span>
                   <span style={S.badge(c.statut==="Actif"?"#DCFCE7":"#FEF3C7",c.statut==="Actif"?"#166534":"#92400E")}>{c.statut}</span>
+                  {c.categorie_fidelite==="Gold"&&<span style={S.badge("#FEF3C7","#92400E")}>🥇 Gold</span>}
+                  {c.categorie_fidelite==="Silver"&&<span style={S.badge("#F1F5F9","#475569")}>🥈 Silver</span>}
                   {imp.length>0&&<span style={S.badge("#FEE2E2","#DC2626")}>⚠ {imp.length}</span>}
                   {EXPORT_REGIONS.includes(c.region)&&!tvaIntracomValide(c)&&(
                     <span title="Pas de n° TVA intracommunautaire valide — l'exonération 0% n'est pas justifiée" style={S.badge("#FEE2E2","#DC2626")}>🧾 TVA manquante</span>
@@ -4746,11 +4756,11 @@ function BossokApp({ session, onLogout }) {
           )}
         </div>
 
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          {[["Type","type",["Snack","Restaurant","Café","Market","Administrative","Creche","Distributor","Privé"]],["Statut","statut",["Actif","Passif"]],["Conditions","conditions",["Comptant","7 jours","15 jours","30 jours","45 jours","60 jours"]]].map(([l,k,opts])=>(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10}}>
+          {[["Type","type",["Snack","Restaurant","Café","Market","Administrative","Creche","Distributor","Privé"]],["Statut","statut",["Actif","Passif"]],["Conditions","conditions",["Comptant","7 jours","15 jours","30 jours","45 jours","60 jours"]],["Fidélité","categorie_fidelite",["Aucune","Gold","Silver"]]].map(([l,k,opts])=>(
             <div key={k}>
               <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{l}</label>
-              <select value={clientForm[k]||opts[0]} onChange={e=>setClientForm(p=>({...p,[k]:e.target.value}))} style={S.input}>
+              <select value={clientForm[k]||opts[0]} onChange={e=>setClientForm(p=>({...p,[k]:e.target.value==="Aucune"?"":e.target.value}))} style={S.input}>
                 {opts.map(o=><option key={o}>{o}</option>)}
               </select>
             </div>
