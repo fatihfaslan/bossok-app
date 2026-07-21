@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -127,6 +127,25 @@ const REGION_COORDS = {
 
 // Aspelt departure point
 const DEPOT = {lat:49.5281, lng:6.1450};
+
+// Géocodage d'adresse via Nominatim (OpenStreetMap) — gratuit, sans clé API.
+// Respecte la limite d'usage de Nominatim (max ~1 requête/seconde côté appelant).
+const geocodeAddress = async (address) => {
+  if (!address || !address.trim()) return null;
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`,
+      { headers: { "Accept-Language": "fr" } }
+    );
+    const data = await res.json();
+    if (data && data[0]) {
+      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+};
 
 const distKm = (a, b) => {
   const R = 6371;
@@ -959,6 +978,64 @@ const generateBonLivraison = (commande, client) => {
 };
 
 
+// Carte des clients — Leaflet chargé dynamiquement via CDN (gratuit, sans clé API)
+function ClientsMap({ clients }) {
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const [leafletReady, setLeafletReady] = useState(typeof window !== "undefined" && !!window.L);
+
+  useEffect(() => {
+    if (window.L) { setLeafletReady(true); return; }
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+    if (!document.getElementById("leaflet-js")) {
+      const script = document.createElement("script");
+      script.id = "leaflet-js";
+      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      script.onload = () => setLeafletReady(true);
+      document.head.appendChild(script);
+    } else {
+      const check = setInterval(() => { if (window.L) { setLeafletReady(true); clearInterval(check); } }, 200);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!leafletReady || !mapRef.current || !window.L) return;
+    if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
+    const map = window.L.map(mapRef.current).setView([49.75, 6.15], 10);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap",
+      maxZoom: 18,
+    }).addTo(map);
+
+    const bounds = [];
+    clients.forEach(c => {
+      const color = c.categorie_fidelite === "Gold" ? "#D97706" : c.categorie_fidelite === "Silver" ? "#64748B" : "#1D4ED8";
+      const marker = window.L.circleMarker([c.lat, c.lng], {
+        radius: 7, fillColor: color, color: "#fff", weight: 2, fillOpacity: 0.9,
+      }).addTo(map);
+      marker.bindPopup(`<strong>${c.nom || ""}</strong><br/>${c.adresse || ""}<br/><span style="color:#6B7280">${c.type || ""}${c.categorie_fidelite ? " · " + c.categorie_fidelite : ""}</span>`);
+      bounds.push([c.lat, c.lng]);
+    });
+    if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30] });
+
+    mapInstanceRef.current = map;
+    return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
+  }, [leafletReady, clients]);
+
+  return (
+    <div>
+      <div ref={mapRef} style={{ width: "100%", height: 620, borderRadius: 8, background: "#F1F5F9" }} />
+      {!leafletReady && <div style={{ textAlign: "center", padding: 40, color: "#9CA3AF", fontSize: 13 }}>Chargement de la carte...</div>}
+    </div>
+  );
+}
+
 function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, getChauffeur}) {
   return(
     <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px"}}>
@@ -1266,6 +1343,7 @@ function BossokApp({ session, onLogout }) {
   const [filterStatut, setFilterStatut] = useState("Tous");
   const [filterZone, setFilterZone] = useState("Tous");
   const [filterFidelite, setFilterFidelite] = useState("Tous");
+  const [geocodingProgress, setGeocodingProgress] = useState(null); // {done, total} | null
   const [showClientForm, setShowClientForm] = useState(false);
   const [editClient, setEditClient] = useState(null);
   const [clientForm, setClientForm] = useState({});
@@ -1457,16 +1535,47 @@ function BossokApp({ session, onLogout }) {
     if (!clientForm.nom) return;
     setSaving(true);
     try {
+      let coords = null;
+      const adresseChanged = !editClient || (clientForm.adresse||"") !== (editClient.adresse||"");
+      if (adresseChanged && clientForm.adresse) {
+        coords = await geocodeAddress(clientForm.adresse);
+      }
       if (editClient) {
         const { id, created_at, ...payload } = clientForm;
+        if (coords) { payload.lat = coords.lat; payload.lng = coords.lng; }
         await db.update("clients", editClient.id, payload);
       } else {
-        await db.insert("clients", {...clientForm, prix_individuels: {}});
+        const payload = {...clientForm, prix_individuels: {}};
+        if (coords) { payload.lat = coords.lat; payload.lng = coords.lng; }
+        await db.insert("clients", payload);
       }
       await loadAll();
       setShowClientForm(false);
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
+  };
+
+  const geocoderClientsExistants = async () => {
+    const aGeocoder = clients.filter(c => c.adresse && (!c.lat || !c.lng));
+    if (aGeocoder.length === 0) { alert("Tous les clients avec une adresse sont déjà géolocalisés."); return; }
+    if (!window.confirm(`Géolocaliser ${aGeocoder.length} client(s) ? Ça peut prendre quelques minutes (1 par seconde).`)) return;
+    setGeocodingProgress({ done: 0, total: aGeocoder.length });
+    let echecs = 0;
+    for (let i = 0; i < aGeocoder.length; i++) {
+      const c = aGeocoder[i];
+      const coords = await geocodeAddress(c.adresse);
+      if (coords) {
+        try { await db.update("clients", c.id, { lat: coords.lat, lng: coords.lng }); }
+        catch(e) { echecs++; }
+      } else {
+        echecs++;
+      }
+      setGeocodingProgress({ done: i + 1, total: aGeocoder.length });
+      await new Promise(r => setTimeout(r, 1100)); // respecte la limite Nominatim (1 req/s)
+    }
+    await loadAll();
+    setGeocodingProgress(null);
+    alert(`Géolocalisation terminée : ${aGeocoder.length - echecs} réussi(s)${echecs > 0 ? ", " + echecs + " échec(s) (adresse introuvable)" : ""}.`);
   };
 
   const genererIdProduit = (categorie) => {
@@ -2031,6 +2140,7 @@ function BossokApp({ session, onLogout }) {
     {k:"dashboard",icon:"📊",label:"Dashboard"},
     {k:"caisse",icon:"💰",label:"Caisse"},
     {k:"clients",icon:"👥",label:"Clients"},
+    {k:"carte",icon:"📍",label:"Carte"},
     {k:"factures",icon:"🧾",label:"Factures"},
     {k:"commandes",icon:"📋",label:"Commandes"},
     {k:"planning",icon:"🚚",label:"Planning"},
@@ -2040,7 +2150,7 @@ function BossokApp({ session, onLogout }) {
     {k:"zones",icon:"🗺️",label:"Zones"},
   ];
 
-  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",caisse:"Caisse",clients:"Clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
+  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8FAFC",fontFamily:"Inter,system-ui,sans-serif"}}>
@@ -2267,6 +2377,40 @@ function BossokApp({ session, onLogout }) {
           </table>
         </div>
       )}
+    </div>
+  </div>
+  );
+})()}
+
+{/* ══ CARTE ══════════════════════════════════════════════════════ */}
+{page==="carte" && (()=>{
+  const clientsAvecCoords = clients.filter(c => c.lat && c.lng);
+  const sansCoords = clients.filter(c => c.statut !== "Passif" && (!c.lat || !c.lng));
+
+  return(
+  <div>
+    {sansCoords.length > 0 && (
+      <div style={{...S.card,marginBottom:14,background:"#FFFBEB",border:"1px solid #FDE68A",display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:18}}>💡</span>
+        <div style={{fontSize:12,color:"#92400E"}}>
+          <strong>{sansCoords.length} client{sansCoords.length>1?"s":""} actif{sansCoords.length>1?"s":""}</strong> pas encore géolocalisé{sansCoords.length>1?"s":""}.
+          Va dans l'onglet <strong>Clients</strong> → bouton "📍 Géolocaliser les clients" en haut à droite.
+        </div>
+      </div>
+    )}
+    <div style={S.card}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontWeight:700,fontSize:14}}>🗺️ {clientsAvecCoords.length} client{clientsAvecCoords.length>1?"s":""} sur la carte</div>
+        <div style={{display:"flex",gap:12,alignItems:"center"}}>
+          <div style={{display:"flex",gap:10,fontSize:11,color:"#6B7280"}}>
+            <span><span style={{display:"inline-block",width:9,height:9,borderRadius:"50%",background:"#D97706",marginRight:3}}/>Gold</span>
+            <span><span style={{display:"inline-block",width:9,height:9,borderRadius:"50%",background:"#64748B",marginRight:3}}/>Silver</span>
+            <span><span style={{display:"inline-block",width:9,height:9,borderRadius:"50%",background:"#1D4ED8",marginRight:3}}/>Autres</span>
+          </div>
+          <button onClick={()=>window.print()} style={{...S.btn(),padding:"6px 14px",fontSize:12}}>🖨️ Imprimer</button>
+        </div>
+      </div>
+      <ClientsMap clients={clientsAvecCoords}/>
     </div>
   </div>
   );
@@ -3133,6 +3277,10 @@ function BossokApp({ session, onLogout }) {
         <button onClick={()=>{setFilterType("Tous");setFilterStatut("Tous");setFilterZone("Tous");setFilterFidelite("Tous");setSearchC("");}}
           style={{...S.btn("#FEE2E2","#DC2626"),padding:"6px 10px",fontSize:12}}>✕ Reset</button>
       )}
+      <button onClick={geocoderClientsExistants} disabled={!!geocodingProgress}
+        style={{...S.btn("#7C3AED"),padding:"6px 10px",fontSize:12,marginLeft:"auto",opacity:geocodingProgress?0.6:1}}>
+        {geocodingProgress ? `📍 ${geocodingProgress.done}/${geocodingProgress.total}...` : "📍 Géolocaliser les clients"}
+      </button>
     </div>
     <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{filteredClients.length} client(s)</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
