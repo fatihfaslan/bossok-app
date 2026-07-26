@@ -1343,6 +1343,14 @@ function BossokApp({ session, onLogout }) {
   const [filterStatut, setFilterStatut] = useState("Tous");
   const [filterZone, setFilterZone] = useState("Tous");
   const [filterFidelite, setFilterFidelite] = useState("Tous");
+  const [consignesManuelles, setConsignesManuelles] = useState([]);
+  const [showConsigneForm, setShowConsigneForm] = useState(false);
+  const [consigneForm, setConsigneForm] = useState({});
+  const [consigneClientId, setConsigneClientId] = useState(null);
+  const [manualConsigneLabel, setManualConsigneLabel] = useState("");
+  const [manualConsigneMontant, setManualConsigneMontant] = useState("");
+  const [manualConsigneLabelCmd, setManualConsigneLabelCmd] = useState("");
+  const [manualConsigneMontantCmd, setManualConsigneMontantCmd] = useState("");
   const [geocodingProgress, setGeocodingProgress] = useState(null); // {done, total} | null
   const [showClientForm, setShowClientForm] = useState(false);
   const [editClient, setEditClient] = useState(null);
@@ -1435,7 +1443,7 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -1446,6 +1454,7 @@ function BossokApp({ session, onLogout }) {
         db.get("evenements"),
         db.get("note_partagee"),
         db.get("notes_personnelles"),
+        db.get("consignes_manuelles"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -1460,6 +1469,7 @@ function BossokApp({ session, onLogout }) {
       setStickyNote(note?.[0]?.contenu || "");
       setNotesPersonnelles(mesNotes);
       setMyNote(mesNotes.find(n=>n.user_email===session?.user?.email)?.contenu || "");
+      setConsignesManuelles(consMan);
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
@@ -1528,6 +1538,52 @@ function BossokApp({ session, onLogout }) {
       });
     });
     return Object.values(r).map(x=>({...x,solde:x.envoyé-x.retourné})).filter(x=>x.solde>0);
+  };
+
+  // ── CONSIGNES : retours déclarés manuellement, indépendants d'une facture ──
+  const saveConsigneManuelle = async () => {
+    if (!consigneClientId || !consigneForm.quantite || !consigneForm.consigne_unitaire) return;
+    setSaving(true);
+    try {
+      await db.insert("consignes_manuelles", {
+        client_id: consigneClientId,
+        produit_nom: consigneForm.produit_nom || null,
+        quantite: parseFloat(consigneForm.quantite),
+        consigne_unitaire: parseFloat(consigneForm.consigne_unitaire),
+        date: consigneForm.date || new Date().toISOString().split("T")[0],
+        notes: consigneForm.notes || null,
+        utilise: false,
+      });
+      await loadAll();
+      setShowConsigneForm(false);
+      setConsigneForm({});
+      setConsigneClientId(null);
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
+  };
+
+  const creditManuelDisponibleDetail = (cid) => {
+    const entries = consignesManuelles.filter(c => c.client_id === cid && !c.utilise);
+    const total = entries.reduce((s, c) => s + c.quantite * c.consigne_unitaire, 0);
+    return { total, entries };
+  };
+  const creditManuelDisponible = (cid) => creditManuelDisponibleDetail(cid).total;
+
+  const marquerConsignesUtilisees = async (cid) => {
+    const { entries } = creditManuelDisponibleDetail(cid);
+    for (const e of entries) {
+      await db.update("consignes_manuelles", e.id, { utilise: true });
+    }
+  };
+
+  const supprimerConsigneManuelle = async (id) => {
+    if (!window.confirm("Supprimer ce retour déclaré ?")) return;
+    setSaving(true);
+    try {
+      await db.delete("consignes_manuelles", id);
+      await loadAll();
+    } catch(e) { alert("Erreur : "+e.message); }
+    finally { setSaving(false); }
   };
 
   // ── ACTIONS ────────────────────────────────────────────────────
@@ -1784,6 +1840,7 @@ function BossokApp({ session, onLogout }) {
     const num = factNumero || "F-" + Date.now().toString().slice(-6);
     const echDate = factEcheance || (() => { const e = new Date(factDate); e.setDate(e.getDate()+7); return e.toISOString().split("T")[0]; })();
     const ech = new Date(factDate); ech.setDate(ech.getDate()+7);
+    const contientCredit = factLignes.some(l => l.produitId === "CREDIT_CONSIGNES");
     setSaving(true);
     try {
       if (editingFacture) {
@@ -1795,6 +1852,7 @@ function BossokApp({ session, onLogout }) {
           date: factDate, echeance: echDate,
           lignes: factLignes, notes: factNotes, note_client: factNoteClient,
         });
+        if (contientCredit) await marquerConsignesUtilisees(factClientId);
         await loadAll();
         setEditingFacture(null);
       } else {
@@ -1806,6 +1864,7 @@ function BossokApp({ session, onLogout }) {
           date: factDate, echeance: echDate,
           lignes: factLignes, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: []
         });
+        if (contientCredit) await marquerConsignesUtilisees(factClientId);
         await loadAll();
         const newFact = {numero:num, client_id:factClientId,
           client_nom:client?.nom||"", client_adresse:client?.adresse||"",
@@ -1960,6 +2019,10 @@ function BossokApp({ session, onLogout }) {
             const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
             return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
           });
+          if (manualConsigneMontantCmd && parseFloat(manualConsigneMontantCmd)) {
+            const montant = parseFloat(manualConsigneMontantCmd);
+            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: manualConsigneLabelCmd || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
+          }
           await db.update("factures", facture.id, { lignes });
         }
         setEditingCmd(null);
@@ -1993,6 +2056,10 @@ function BossokApp({ session, onLogout }) {
           const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
           return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
         });
+        if (manualConsigneMontantCmd && parseFloat(manualConsigneMontantCmd)) {
+          const montant = parseFloat(manualConsigneMontantCmd);
+          lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: manualConsigneLabelCmd || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
+        }
         await db.insert("factures", {
           numero: num, client_id: cmdClientId,
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
@@ -2003,6 +2070,7 @@ function BossokApp({ session, onLogout }) {
       }
       await loadAll();
       setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
+      setManualConsigneLabelCmd(""); setManualConsigneMontantCmd("");
     } catch(e) { alert("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
@@ -2089,9 +2157,10 @@ function BossokApp({ session, onLogout }) {
   };
 
   const addCreditConsignes = (clientId) => {
-    const { total, refs } = creditConsignesDetail(clientId);
+    const { total, entries } = creditManuelDisponibleDetail(clientId);
     if (total <= 0) return;
-    const nom = refs ? `Retour consignes (réf. ${refs})` : "Retour consignes";
+    const detail = entries.map(e => `${e.quantite}x ${e.produit_nom||"consigne"}`).join(", ");
+    const nom = detail ? `Retour consignes (${detail})` : "Retour consignes";
     setFactLignes(prev => {
       const filtered = prev.filter(l => !l.isCredit);
       return [...filtered, {
@@ -3703,6 +3772,13 @@ function BossokApp({ session, onLogout }) {
         )}
       </div>
 
+      <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
+        <input value={manualConsigneLabelCmd} onChange={e=>setManualConsigneLabelCmd(e.target.value)}
+          placeholder="♻️ Consigne manuelle — libellé" style={{...S.input,flex:2}}/>
+        <input type="number" step="0.01" value={manualConsigneMontantCmd} onChange={e=>setManualConsigneMontantCmd(e.target.value)}
+          placeholder="Montant (+/-)" style={{...S.input,flex:1}}/>
+      </div>
+
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
         <input value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} placeholder="Instructions spéciales..." style={S.input}/>
@@ -4284,7 +4360,7 @@ function BossokApp({ session, onLogout }) {
       const clientsAvecSolde = clientsActifs.map(c => ({
         ...c,
         sol: soldeConsignes(c.id),
-        credit: creditConsignes(c.id),
+        credit: creditManuelDisponible(c.id),
         total: soldeConsignes(c.id).reduce((s,r)=>s+r.solde*r.consigne,0)
       })).filter(c => c.total > 0 || c.credit > 0).sort((a,b) => b.total - a.total);
 
@@ -4293,6 +4369,10 @@ function BossokApp({ session, onLogout }) {
 
       return (
         <div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+            <button onClick={()=>{setConsigneClientId(null);setConsigneForm({date:new Date().toISOString().split("T")[0]});setShowConsigneForm(true);}}
+              style={S.btn()}>+ Enregistrer un retour</button>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
             <div style={S.kpi("#7C3AED")}>
               <div style={{fontSize:22,fontWeight:800,color:"#7C3AED"}}>{fmtFull(totalGlobal)}</div>
@@ -4300,7 +4380,7 @@ function BossokApp({ session, onLogout }) {
             </div>
             <div style={S.kpi("#059669")}>
               <div style={{fontSize:22,fontWeight:800,color:"#059669"}}>{fmtFull(totalCredit)}</div>
-              <div style={{fontSize:11,color:"#6B7280"}}>Crédits à déduire</div>
+              <div style={{fontSize:11,color:"#6B7280"}}>Crédits à déduire (retours déclarés)</div>
             </div>
             <div style={S.kpi("#1D4ED8")}>
               <div style={{fontSize:22,fontWeight:800,color:"#1D4ED8"}}>{clientsAvecSolde.length}</div>
@@ -4356,6 +4436,40 @@ function BossokApp({ session, onLogout }) {
                     <td></td>
                   </tr>
                 </tfoot>
+              </table>
+            </div>
+          )}
+
+          {consignesManuelles.filter(c=>!c.utilise).length > 0 && (
+            <div style={{...S.card, marginTop:16}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>📋 Retours déclarés, pas encore utilisés</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{borderBottom:"1px solid #E5E7EB"}}>
+                    {["Date","Client","Produit","Qté","Consigne unit.","Montant","",""].map(h=>(
+                      <th key={h} style={{textAlign:"left",padding:"6px 8px",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {consignesManuelles.filter(c=>!c.utilise).sort((a,b)=>b.date.localeCompare(a.date)).map(c=>{
+                    const cl = clients.find(x=>x.id===c.client_id);
+                    return (
+                      <tr key={c.id} style={{borderBottom:"1px solid #F1F5F9"}}>
+                        <td style={{padding:"6px 8px"}}>{c.date}</td>
+                        <td style={{padding:"6px 8px",fontWeight:600}}>{cl?.nom||"—"}</td>
+                        <td style={{padding:"6px 8px",color:"#6B7280"}}>{c.produit_nom||"—"}</td>
+                        <td style={{padding:"6px 8px"}}>{c.quantite}</td>
+                        <td style={{padding:"6px 8px"}}>{fmtFull(c.consigne_unitaire)}</td>
+                        <td style={{padding:"6px 8px",fontWeight:700,color:"#059669"}}>{fmtFull(c.quantite*c.consigne_unitaire)}</td>
+                        <td style={{padding:"6px 8px",color:"#9CA3AF",fontSize:11}}>{c.notes||""}</td>
+                        <td style={{padding:"6px 8px"}}>
+                          <button onClick={()=>supprimerConsigneManuelle(c.id)} style={{...S.btn("#FEE2E2","#DC2626"),padding:"3px 8px",fontSize:10}}>🗑️</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
               </table>
             </div>
           )}
@@ -4781,6 +4895,22 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
       )}
+      <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
+        <input value={manualConsigneLabel} onChange={e=>setManualConsigneLabel(e.target.value)}
+          placeholder="♻️ Consigne manuelle — libellé" style={{...S.input,flex:2}}/>
+        <input type="number" step="0.01" value={manualConsigneMontant} onChange={e=>setManualConsigneMontant(e.target.value)}
+          placeholder="Montant (+/-)" style={{...S.input,flex:1}}/>
+        <button onClick={()=>{
+          const montant = parseFloat(manualConsigneMontant);
+          if (!montant) return;
+          setFactLignes(prev=>[...prev, {
+            produitId:"CONSIGNE_MANUELLE",
+            nom: manualConsigneLabel || (montant<0 ? "Retour consignes (manuel)" : "Consigne supplémentaire"),
+            qte:1, pu:montant, consigne:0, isCredit: montant<0,
+          }]);
+          setManualConsigneLabel(""); setManualConsigneMontant("");
+        }} disabled={!manualConsigneMontant} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"9px 14px",opacity:manualConsigneMontant?1:0.5}}>+ Ajouter</button>
+      </div>
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes internes</label>
         <input value={factNotes} onChange={e=>setFactNotes(e.target.value)} placeholder="Notes optionnelles, non visibles par le client..." style={S.input}/>
@@ -5265,6 +5395,69 @@ function BossokApp({ session, onLogout }) {
         <button onClick={saveModePaiement} disabled={saving||!paiementForm.mode}
           style={{...S.btn(),flex:2,opacity:(saving||!paiementForm.mode)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Confirmer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL RETOUR CONSIGNE MANUEL ═══════════════════════════════ */}
+  {showConsigneForm&&(
+  <div style={S.modal} onClick={()=>{setShowConsigneForm(false);setConsigneClientId(null);}}>
+    <div style={{...S.modalBox,maxWidth:440}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>♻️ Déclarer un retour de consignes</h2>
+        <button onClick={()=>{setShowConsigneForm(false);setConsigneClientId(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Client *</label>
+          <select value={consigneClientId||""} onChange={e=>setConsigneClientId(e.target.value?parseInt(e.target.value):null)} style={S.input}>
+            <option value="">— Choisir —</option>
+            {[...clientsActifs].sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=>(
+              <option key={c.id} value={c.id}>{c.nom}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit <span style={{color:"#D1D5DB"}}>(optionnel)</span></label>
+          <input value={consigneForm.produit_nom||""} onChange={e=>setConsigneForm(p=>({...p,produit_nom:e.target.value}))}
+            placeholder="Ex: Coca VC 24x20cl" style={S.input}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Quantité (caisses) *</label>
+            <input type="number" min="0" value={consigneForm.quantite||""} onChange={e=>setConsigneForm(p=>({...p,quantite:e.target.value}))} style={S.input}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Consigne unitaire (€) *</label>
+            <select value={consigneForm.consigne_unitaire||""} onChange={e=>setConsigneForm(p=>({...p,consigne_unitaire:e.target.value}))} style={S.input}>
+              <option value="">— Choisir —</option>
+              {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
+                <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
+          <input type="date" value={consigneForm.date||""} onChange={e=>setConsigneForm(p=>({...p,date:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={consigneForm.notes||""} onChange={e=>setConsigneForm(p=>({...p,notes:e.target.value}))} placeholder="Optionnel" style={S.input}/>
+        </div>
+        {consigneForm.quantite&&consigneForm.consigne_unitaire&&(
+          <div style={{background:"#ECFDF5",borderRadius:8,padding:10,fontSize:13,fontWeight:700,color:"#059669"}}>
+            Crédit : {fmtFull(parseFloat(consigneForm.quantite)*parseFloat(consigneForm.consigne_unitaire))}
+          </div>
+        )}
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        <button onClick={()=>{setShowConsigneForm(false);setConsigneClientId(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveConsigneManuelle} disabled={saving||!consigneClientId||!consigneForm.quantite||!consigneForm.consigne_unitaire}
+          style={{...S.btn(),flex:2,opacity:(saving||!consigneClientId||!consigneForm.quantite||!consigneForm.consigne_unitaire)?0.5:1}}>
+          {saving?"Enregistrement...":"Enregistrer le retour"}
         </button>
       </div>
     </div>
