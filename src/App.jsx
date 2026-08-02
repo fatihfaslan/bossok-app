@@ -503,7 +503,8 @@ const getChauffeur = (r) => CHAUFFEUR_REGIONS.B.includes(r) ? "B" : "A";
 const getClientPrix = (produit, client) => {
   const pi = client?.prix_individuels || {};
   if (pi[produit.id] !== undefined) return pi[produit.id];
-  return produit.prix[client?.type] || produit.prix["Snack"] || 0;
+  const prix = produit?.prix || {};
+  return prix[client?.type] || prix["Snack"] || 0;
 };
 
 // Régions hors Luxembourg traitées en exonération de TVA intracommunautaire
@@ -2199,7 +2200,7 @@ function BossokApp({ session, onLogout }) {
       await db.update("clients", clientId, {prix_individuels: newPrix});
       setClients(prev=>prev.map(c=>c.id===clientId?{...c,prix_individuels:newPrix}:c));
       if (selClient?.id===clientId) setSelClient(prev=>({...prev,prix_individuels:newPrix}));
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error(e); alert("Erreur lors de la sauvegarde du prix personnalisé : "+e.message); }
   };
 
   const addCreditConsignes = (clientId) => {
@@ -4799,14 +4800,18 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:12,color:"#6B7280",marginBottom:8}}>Tarif standard : {selClient.type}. Entrez un prix pour personnaliser.</div>
           <div style={{maxHeight:360,overflowY:"auto",display:"grid",gap:3}}>
             {produits.filter(p=>p.statut!=="Passif").map(p=>{
-              const standard=p.prix[selClient.type]||p.prix.Snack;
+              const prix = p.prix || {};
+              const standard = prix[selClient.type] || prix.Snack || 0;
               const perso=(selClient.prix_individuels||{})[p.id];
               return(
                 <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",background:"#F9FAFB",borderRadius:6}}>
                   <span style={{fontSize:11,flex:1}}>{p.nom}</span>
                   <span style={{fontSize:11,color:"#9CA3AF",width:60}}>{fmtFull(standard)}</span>
-                  <input type="number" step="0.01" placeholder={standard.toFixed(2)} value={perso!==undefined?perso:""}
-                    onChange={e=>updatePrixIndividuel(selClient.id,p.id,e.target.value)}
+                  <input type="number" step="0.01" placeholder={standard.toFixed(2)}
+                    key={p.id+":"+(perso??"vide")}
+                    defaultValue={perso!==undefined?perso:""}
+                    onBlur={e=>updatePrixIndividuel(selClient.id,p.id,e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter") e.target.blur();}}
                     style={{width:72,padding:"3px 6px",border:(perso!==undefined?"1px solid #7C3AED":"1px solid #E5E7EB"),borderRadius:6,fontSize:11,outline:"none",background:perso!==undefined?"#F5F3FF":"#fff"}}/>
                   {perso!==undefined&&<button onClick={()=>updatePrixIndividuel(selClient.id,p.id,"")} style={{background:"none",border:"none",color:"#9CA3AF",cursor:"pointer"}}>✕</button>}
                 </div>
