@@ -1342,6 +1342,11 @@ function BossokApp({ session, onLogout }) {
 
   // UI
   const [selClient, setSelClient] = useState(null);
+  const [clientReturnPage, setClientReturnPage] = useState("clients");
+  const openClient = (c, tab="info") => {
+    setClientReturnPage(prev => page==="client-detail" ? prev : page);
+    setSelClient(c); setClientTab(tab); setPage("client-detail");
+  };
   const [clientTab, setClientTab] = useState("info");
   const [showVisiteForm, setShowVisiteForm] = useState(false);
   const [visiteDate, setVisiteDate] = useState("");
@@ -2232,39 +2237,59 @@ function BossokApp({ session, onLogout }) {
   };
 
   // ── STYLES ─────────────────────────────────────────────────────
-  const S = {
-    app:{fontFamily:"'Inter',system-ui,sans-serif",background:"#F8FAFC",minHeight:"100vh",display:"flex"},
-    sidebar:{width:224,background:"#fff",color:"#0F172A",borderRight:"1px solid #E5E7EB",display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:200,
-      transform: isMobile ? (sidebarOpen?"translateX(0)":"translateX(-100%)") : "none",
-      transition:"transform 0.2s ease", boxShadow: isMobile&&sidebarOpen ? "8px 0 24px rgba(15,23,42,0.15)" : "none"},
-    main:{marginLeft: isMobile?0:224, flex:1, minWidth:0},
-    topbar:{background:"linear-gradient(90deg,#1E3A8A,#172554)",padding: isMobile?"0 14px":"0 28px",height:64,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 8px rgba(15,23,42,0.2)"},
-    page:{padding: isMobile?"16px 14px":"24px 28px", maxWidth:1100, margin:"0 auto"},
-    card:{background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding: isMobile?14:18,boxShadow:"0 1px 2px rgba(15,23,42,0.04)"},
-    btn:(bg,col)=>({padding:"9px 18px",background:bg||"#1D4ED8",color:col||"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:saving?0.7:1,letterSpacing:"0.1px"}),
-    input:{width:"100%",padding:"9px 12px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:"inherit"},
-    badge:(bg,col)=>({fontSize:11,padding:"3px 9px",borderRadius:999,background:bg,color:col,fontWeight:600,display:"inline-block"}),
-    modal:{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:300,display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",padding: isMobile?0:16},
-    modalBox:{background:"#fff",borderRadius: isMobile?"16px 16px 0 0":16,padding: isMobile?18:26,maxWidth:640,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(15,23,42,0.18)"},
-    tab:(a)=>({padding:"8px 16px",border:"none",borderBottom:a?"2px solid #1D4ED8":"2px solid transparent",background:"transparent",cursor:"pointer",fontSize:13,fontWeight:a?700:500,color:a?"#1D4ED8":"#6B7280"}),
-    kpi:(c)=>({background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:"16px 18px",borderLeft:"4px solid "+c,boxShadow:"0 1px 2px rgba(15,23,42,0.04)"}),
-    navItem:(a)=>({display:"flex",alignItems:"center",gap:11,padding:"10px 14px",borderRadius:8,cursor:"pointer",marginBottom:2,background:a?"#EFF6FF":"transparent",color:a?"#1D4ED8":"#475569",fontSize:14,fontWeight:a?600:500,borderLeft:a?"3px solid #1D4ED8":"3px solid transparent"}),
+  // Palette "outil professionnel" : marine foncée pour la navigation,
+  // fond gris froid pour le contenu, cartes blanches à bordures nettes.
+  const COLOR = {
+    ink:"#101828", inkSoft:"#5D6B82", inkFaint:"#94A3B8",
+    line:"#E3E7ED", bg:"#F4F6F8", surface:"#FFFFFF",
+    navy:"#0F1B2E", navySoft:"#18283F", navyLine:"rgba(255,255,255,0.08)",
+    navyText:"#C7D2E3", navyTextFaint:"#7C8CA8",
+    accent:"#1D4ED8", accentSoft:"#EFF4FF",
   };
+  const S = {
+    app:{fontFamily:"'Inter',system-ui,sans-serif",background:COLOR.bg,minHeight:"100vh",display:"flex"},
+    sidebar:{width:232,background:COLOR.navy,color:"#fff",display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:200,
+      transform: isMobile ? (sidebarOpen?"translateX(0)":"translateX(-100%)") : "none",
+      transition:"transform 0.22s ease", boxShadow: isMobile&&sidebarOpen ? "8px 0 24px rgba(15,23,42,0.25)" : "none"},
+    main:{marginLeft: isMobile?0:232, flex:1, minWidth:0},
+    topbar:{background:COLOR.surface,borderBottom:"1px solid "+COLOR.line,padding: isMobile?"0 14px":"0 28px",height:60,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50},
+    page:{padding: isMobile?"16px 14px":"26px 30px", maxWidth:1120, margin:"0 auto"},
+    card:{background:COLOR.surface,borderRadius:10,border:"1px solid "+COLOR.line,padding: isMobile?14:18,boxShadow:"0 1px 2px rgba(16,24,40,0.03)"},
+    btn:(bg,col)=>({padding:"9px 18px",background:bg||COLOR.accent,color:col||"#fff",border:"none",borderRadius:7,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:saving?0.7:1,letterSpacing:"0.1px"}),
+    input:{width:"100%",padding:"9px 12px",border:"1px solid "+COLOR.line,borderRadius:7,fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:"inherit",color:COLOR.ink},
+    badge:(bg,col)=>({fontSize:11,padding:"3px 9px",borderRadius:6,background:bg,color:col,fontWeight:600,display:"inline-block"}),
+    modal:{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:300,display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",padding: isMobile?0:16},
+    modalBox:{background:"#fff",borderRadius: isMobile?"16px 16px 0 0":12,padding: isMobile?18:26,maxWidth:640,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(15,23,42,0.18)"},
+    tab:(a)=>({padding:"8px 16px",border:"none",borderBottom:a?"2px solid "+COLOR.accent:"2px solid transparent",background:"transparent",cursor:"pointer",fontSize:13,fontWeight:a?700:500,color:a?COLOR.accent:COLOR.inkSoft,transition:"color .12s ease, border-color .12s ease"}),
+    kpi:(c)=>({background:COLOR.surface,borderRadius:10,border:"1px solid "+COLOR.line,padding:"16px 18px",borderLeft:"3px solid "+c,boxShadow:"0 1px 2px rgba(16,24,40,0.03)"}),
+    navItem:(a)=>({display:"flex",alignItems:"center",gap:11,padding:"9px 12px",borderRadius:7,cursor:"pointer",marginBottom:1,background:a?"rgba(255,255,255,0.08)":"transparent",color:a?"#fff":COLOR.navyText,fontSize:13.5,fontWeight:a?600:500,borderLeft:a?"3px solid "+COLOR.accent:"3px solid transparent",transition:"background .12s ease, color .12s ease"}),
+    navGroupLabel:{fontSize:10.5,fontWeight:700,letterSpacing:"0.06em",color:COLOR.navyTextFaint,textTransform:"uppercase",padding:"14px 12px 6px"},
+  };
+  const tabularNums = {fontVariantNumeric:"tabular-nums"};
 
-  const NAV = [
-    {k:"calendrier",icon:"📅",label:"Calendrier"},
-    {k:"dashboard",icon:"📊",label:"Dashboard"},
-    {k:"caisse",icon:"💰",label:"Caisse"},
-    {k:"clients",icon:"👥",label:"Clients"},
-    {k:"carte",icon:"📍",label:"Carte"},
-    {k:"factures",icon:"🧾",label:"Factures"},
-    {k:"commandes",icon:"📋",label:"Commandes"},
-    {k:"planning",icon:"🚚",label:"Planning"},
-    {k:"stock",icon:"📦",label:"Stock"},
-    {k:"consignes",icon:"♻️",label:"Consignes"},
-    {k:"produits",icon:"🍺",label:"Produits"},
-    {k:"zones",icon:"🗺️",label:"Zones"},
+  const NAV_GROUPS = [
+    {label:"Vue d'ensemble", items:[
+      {k:"calendrier",icon:"📅",label:"Calendrier"},
+      {k:"dashboard",icon:"📊",label:"Dashboard"},
+      {k:"caisse",icon:"💰",label:"Caisse"},
+    ]},
+    {label:"Clients & ventes", items:[
+      {k:"clients",icon:"👥",label:"Clients"},
+      {k:"carte",icon:"📍",label:"Carte"},
+      {k:"factures",icon:"🧾",label:"Factures"},
+      {k:"commandes",icon:"📋",label:"Commandes"},
+    ]},
+    {label:"Logistique", items:[
+      {k:"planning",icon:"🚚",label:"Planning"},
+      {k:"zones",icon:"🗺️",label:"Zones"},
+    ]},
+    {label:"Catalogue", items:[
+      {k:"stock",icon:"📦",label:"Stock"},
+      {k:"consignes",icon:"♻️",label:"Consignes"},
+      {k:"produits",icon:"🍺",label:"Produits"},
+    ]},
   ];
+  const NAV = NAV_GROUPS.flatMap(g=>g.items);
 
   const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
@@ -2298,47 +2323,55 @@ function BossokApp({ session, onLogout }) {
         button:active { transform: scale(0.97); }
         tbody tr { transition: background 0.1s ease; }
         tbody tr:hover { background:#F8FAFC !important; }
-        .nav-hover:hover { background:#F8FAFC !important; }
+        .nav-hover:hover { background:rgba(255,255,255,0.06) !important; }
         .menu-item:hover { background:#F9FAFB !important; }
         ::selection { background: #BFDBFE; }
-        html, body { overflow-x: hidden; max-width: 100%; }
+        html, body { overflow-x: hidden; max-width: 100%; font-variant-numeric: tabular-nums; }
+        @keyframes pageFadeIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
+        .page-transition { animation: pageFadeIn 0.2s ease; }
       `}</style>
       {isMobile&&sidebarOpen&&(
         <div onClick={()=>setSidebarOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",zIndex:150}}/>
       )}
       {/* SIDEBAR */}
       <div style={S.sidebar}>
-        <div style={{padding:"18px 16px",borderBottom:"1px solid #F1F5F9"}}>
+        <div style={{padding:"18px 16px",borderBottom:"1px solid "+COLOR.navyLine}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <img src={LOGO} alt="BOSSOK" style={{width:38,height:38,objectFit:"contain",borderRadius:8}}/>
+            <img src={LOGO} alt="BOSSOK" style={{width:36,height:36,objectFit:"contain",borderRadius:7}}/>
             <div>
-              <div style={{fontWeight:800,fontSize:16,color:"#0F172A",letterSpacing:"-0.2px"}}>BOSSOK</div>
-              <div style={{fontSize:11,color:"#94A3B8"}}>Luxembourg</div>
+              <div style={{fontWeight:800,fontSize:15,color:"#fff",letterSpacing:"-0.2px"}}>BOSSOK</div>
+              <div style={{fontSize:10.5,color:COLOR.navyTextFaint}}>Luxembourg</div>
             </div>
           </div>
         </div>
-        <div style={{flex:1,padding:"12px 10px",overflowY:"auto"}}>
-          {NAV.map(n=>{
-            const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=STOCK_BAS_SEUIL).length : 0;
-            return(
-              <div key={n.k} className={page===n.k?"":"nav-hover"} style={S.navItem(page===n.k)} onClick={()=>{setPage(n.k);if(isMobile)setSidebarOpen(false);}}>
-                <span>{n.icon}</span><span style={{flex:1}}>{n.label}</span>
-                {stockAlerteCount>0&&(
-                  <span style={{background:"#DC2626",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>
-                    {stockAlerteCount}
-                  </span>
-                )}
-              </div>
-            );
-          })}
+        <div style={{flex:1,padding:"4px 10px 12px",overflowY:"auto"}}>
+          {NAV_GROUPS.map(group=>(
+            <div key={group.label}>
+              <div style={S.navGroupLabel}>{group.label}</div>
+              {group.items.map(n=>{
+                const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=STOCK_BAS_SEUIL).length : 0;
+                const active = page===n.k || (n.k==="clients" && page==="client-detail");
+                return(
+                  <div key={n.k} className={active?"":"nav-hover"} style={S.navItem(active)} onClick={()=>{setPage(n.k);if(isMobile)setSidebarOpen(false);}}>
+                    <span style={{fontSize:14,opacity:active?1:0.85}}>{n.icon}</span><span style={{flex:1}}>{n.label}</span>
+                    {stockAlerteCount>0&&(
+                      <span style={{background:"#DC2626",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>
+                        {stockAlerteCount}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
-        <div style={{padding:"14px 16px",borderTop:"1px solid #F1F5F9",fontSize:11,color:"#94A3B8"}}>
-          {saving && <span style={{color:"#1D4ED8",fontWeight:600}}>💾 Sauvegarde...</span>}
+        <div style={{padding:"12px 16px",borderTop:"1px solid "+COLOR.navyLine,fontSize:11,color:COLOR.navyTextFaint}}>
+          {saving && <span style={{color:"#93C5FD",fontWeight:600}}>💾 Sauvegarde...</span>}
           {!saving && <span>✅ {clientsActifs.length} clients actifs</span>}
         </div>
-        <div style={{padding:"10px 16px 16px",borderTop:"1px solid #F1F5F9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{fontSize:11,color:"#94A3B8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session?.user?.email}</span>
-          <button onClick={onLogout} style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",fontSize:11,fontWeight:600,flexShrink:0,marginLeft:6}}>Déconnexion</button>
+        <div style={{padding:"10px 16px 16px",borderTop:"1px solid "+COLOR.navyLine,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontSize:11,color:COLOR.navyTextFaint,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session?.user?.email}</span>
+          <button onClick={onLogout} style={{background:"none",border:"none",color:"#F87171",cursor:"pointer",fontSize:11,fontWeight:600,flexShrink:0,marginLeft:6}}>Déconnexion</button>
         </div>
       </div>
 
@@ -2347,13 +2380,15 @@ function BossokApp({ session, onLogout }) {
         <div style={S.topbar}>
           <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
             {isMobile&&(
-              <button onClick={()=>setSidebarOpen(true)} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",width:36,height:36,borderRadius:8,fontSize:16,cursor:"pointer",flexShrink:0}}>☰</button>
+              <button onClick={()=>setSidebarOpen(true)} style={{background:COLOR.bg,border:"1px solid "+COLOR.line,color:COLOR.ink,width:36,height:36,borderRadius:8,fontSize:16,cursor:"pointer",flexShrink:0}}>☰</button>
             )}
-            <div style={{fontWeight:700,fontSize:isMobile?15:18,color:"#fff",letterSpacing:"-0.2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{PAGE_TITLES[page]}</div>
+            <div style={{fontWeight:700,fontSize:isMobile?15:18,color:COLOR.ink,letterSpacing:"-0.2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+              {page==="client-detail" ? (selClient?.nom||"Client") : PAGE_TITLES[page]}
+            </div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
-            {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{
+            {page==="clients" && <button style={S.btn()} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
+            {page==="factures" && <button style={S.btn()} onClick={()=>{
   const today = localDateStr();
   setShowFactForm(true);setFactClientId(null);setFactLignes([]);
   setSearchFactClient("");setEditingFacture(null);
@@ -2362,14 +2397,14 @@ function BossokApp({ session, onLogout }) {
   const echInit = new Date(today); echInit.setDate(echInit.getDate()+7);
   setFactEcheance(echInit.toISOString().split("T")[0]);
 }}>{isMobile?"+":"+ Nouvelle facture"}</button>}
-            {page==="commandes" && <button style={{...S.btn("#fff","#1D4ED8"),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>}
-            {page==="produits" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>{isMobile?"+":"+ Nouveau produit"}</button>}
-            {page==="calendrier" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:localDateStr(),date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>{isMobile?"+":"+ Nouvel événement"}</button>}
-            <button style={S.btn("rgba(255,255,255,0.15)","#fff")} onClick={loadAll}>🔄</button>
+            {page==="commandes" && <button style={{...S.btn(),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>}
+            {page==="produits" && <button style={S.btn()} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>{isMobile?"+":"+ Nouveau produit"}</button>}
+            {page==="calendrier" && <button style={S.btn()} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:localDateStr(),date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>{isMobile?"+":"+ Nouvel événement"}</button>}
+            <button style={S.btn(COLOR.bg,COLOR.ink)} onClick={loadAll}>🔄</button>
           </div>
         </div>
 
-        <div style={S.page}>
+        <div key={page} className="page-transition" style={S.page}>
 
 {/* ══ CAISSE ═════════════════════════════════════════════════════ */}
 {page==="caisse" && (()=>{
@@ -3403,7 +3438,7 @@ function BossokApp({ session, onLogout }) {
       {filteredClients.map(c=>{
         const imp=clientImpayees(c.id);
         return(
-          <div key={c.id} onClick={()=>{setSelClient(c);setClientTab("info");}} style={{...S.card,cursor:"pointer",borderLeft:"3px solid "+tc(c.type).text}}
+          <div key={c.id} onClick={()=>openClient(c,"info")} style={{...S.card,cursor:"pointer",borderLeft:"3px solid "+tc(c.type).text}}
             onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,.08)"}
             onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
             <div style={{display:"flex",gap:10}}>
@@ -4283,7 +4318,7 @@ function BossokApp({ session, onLogout }) {
               <tbody>
                 {zClients.sort((a,b)=>a.nom.localeCompare(b.nom)).map((c,i)=>(
                   <tr key={c.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFAFA",cursor:"pointer"}}
-                    onClick={()=>{setSelClient(c);setClientTab("info");setPage("clients");}}>
+                    onClick={()=>openClient(c,"info")}>
                     <td style={{padding:"5px 8px",fontWeight:600,color:"#1D4ED8"}}>{c.nom}</td>
                     <td style={{padding:"5px 8px",color:"#6B7280",fontSize:10}}>{c.adresse}</td>
                     <td style={{padding:"5px 8px",whiteSpace:"nowrap"}}>{c.telephone}</td>
@@ -4468,7 +4503,7 @@ function BossokApp({ session, onLogout }) {
                         {c.credit>0?`- ${fmtFull(c.credit)}`:"—"}
                       </td>
                       <td style={{padding:"8px 12px"}}>
-                        <button onClick={()=>{setSelClient(c);setClientTab("consignes");}} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
+                        <button onClick={()=>openClient(c,"consignes")} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
                           Voir détail
                         </button>
                       </td>
@@ -4626,25 +4661,33 @@ function BossokApp({ session, onLogout }) {
 })()}
 
 
-  {/* ══ MODAL CLIENT DETAIL ══════════════════════════════════════ */}
-  {selClient&&(
-  <div style={S.modal} onClick={()=>setSelClient(null)}>
-    <div style={{...S.modalBox,maxWidth:680}} onClick={e=>e.stopPropagation()}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-        <div style={{display:"flex",gap:12,alignItems:"center"}}>
-          <div style={{width:44,height:44,borderRadius:12,background:tc(selClient.type).bg,color:tc(selClient.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:14}}>{initials(selClient.nom)}</div>
+  {/* ══ PAGE FICHE CLIENT ══════════════════════════════════════ */}
+  {page==="client-detail" && selClient&&(
+  <div key="client-detail" className="page-transition">
+    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
+      <span onClick={()=>{setPage(clientReturnPage);setSelClient(null);}} style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"flex",alignItems:"center",gap:4}}>← {PAGE_TITLES[clientReturnPage]||"Clients"}</span>
+      <span style={{color:"#CBD5E1"}}>/</span>
+      <span style={{color:"#64748B",fontWeight:500}}>{selClient.nom}</span>
+    </div>
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
+        <div style={{display:"flex",gap:14,alignItems:"center"}}>
+          <div style={{width:48,height:48,borderRadius:12,background:tc(selClient.type).bg,color:tc(selClient.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:15,flexShrink:0}}>{initials(selClient.nom)}</div>
           <div>
-            <div style={{fontWeight:700,fontSize:16}}>{selClient.nom}</div>
-            <div style={{fontSize:12,color:"#6B7280"}}>{selClient.type} · {selClient.region}</div>
+            <div style={{fontWeight:700,fontSize:18,color:"#0F172A"}}>{selClient.nom}</div>
+            <div style={{fontSize:12,color:"#64748B",display:"flex",gap:8,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
+              <span style={S.badge(tc(selClient.type).bg,tc(selClient.type).text)}>{selClient.type}</span>
+              <span>📍 {selClient.region}</span>
+              <span style={S.badge(selClient.statut==="Actif"?"#DCFCE7":"#FEF3C7",selClient.statut==="Actif"?"#166534":"#92400E")}>{selClient.statut}</span>
+            </div>
           </div>
         </div>
-        <div style={{display:"flex",gap:6}}>
-          <button onClick={()=>{setShowFactForm(true);setFactClientId(selClient.id);setFactLignes([]);setSelClient(null);}} style={S.btn()}>+ Facture</button>
-          <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);setSelClient(null);}} style={S.btn("#6B7280")}>✏️</button>
-          <button onClick={()=>setSelClient(null)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{setShowFactForm(true);setFactClientId(selClient.id);setFactLignes([]);}} style={S.btn()}>+ Facture</button>
+          <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);}} style={S.btn("#F1F5F9","#334155")}>✏️ Modifier</button>
         </div>
       </div>
-      <div style={{display:"flex",gap:0,borderBottom:"1px solid #E5E7EB",marginBottom:14}}>
+      <div style={{display:"flex",gap:0,borderBottom:"1px solid #E5E7EB",marginTop:18,marginBottom:18}}>
         {[["info","Infos"],["factures","Factures"],["visites","Visites"],["consignes","Consignes"],["prix","Prix perso"]].map(([k,l])=>(
           <button key={k} style={S.tab(clientTab===k)} onClick={()=>setClientTab(k)}>{l}</button>
         ))}
