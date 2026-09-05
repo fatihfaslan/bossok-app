@@ -2490,6 +2490,15 @@ function BossokApp({ session, onLogout }) {
           {saving && <span style={{color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}><Icon name="refresh" size={11}/> Sauvegarde...</span>}
           {!saving && <span>✅ {clientsActifs.length} clients actifs</span>}
         </div>
+        {/* TEMPORAIRE — à retirer une fois Sentry vérifié */}
+        <div style={{padding:"0 16px 10px"}}>
+          <button onClick={()=>{
+            try { throw new Error("Test Sentry BOSSOK #2 — " + new Date().toISOString()); }
+            catch(e) { logError(e, "test-manuel-sentry-2"); }
+          }} style={{width:"100%",padding:"7px",background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer"}}>
+            🧪 Tester Sentry
+          </button>
+        </div>
         <div style={{padding:"10px 16px 16px",borderTop:"1px solid #F1F5F9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <span style={{fontSize:11,color:"#94A3B8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session?.user?.email}</span>
           <button onClick={onLogout} style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",fontSize:11,fontWeight:600,flexShrink:0,marginLeft:6}}>Déconnexion</button>
