@@ -2,20 +2,35 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════
-// DATE HELPERS (fuseau horaire local, Luxembourg)
+// ICÔNES SVG (dessinées à la main, aucune dépendance externe)
 // ═══════════════════════════════════════════════════════════════════
-// new Date().toISOString() convertit en UTC : entre minuit et 1h du matin
-// (heure d'hiver) ou 2h (heure d'été), ça renvoie encore la date de LA VEILLE.
-// On utilise plutôt les composants de date locaux pour "aujourd'hui".
-function localDateStr(d = new Date()) {
-  const yr = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const da = String(d.getDate()).padStart(2, "0");
-  return `${yr}-${mo}-${da}`;
-}
-function localYearMonth(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+const ICON_PATHS = {
+  calendrier: <><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></>,
+  dashboard: <><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="16" y="3.5" width="4" height="16.5" rx="1"/></>,
+  caisse: <><rect x="3" y="6.5" width="18" height="12.5" rx="2.5"/><path d="M3 10.5h18"/><circle cx="16.2" cy="14.8" r="1.4"/></>,
+  clients: <><circle cx="9" cy="8" r="3"/><path d="M3.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><circle cx="17" cy="9" r="2.3"/><path d="M15.2 13.2c2.4.3 4.3 2.3 4.3 5.3"/></>,
+  carte: <><path d="M12 21s-6.5-5.9-6.5-11A6.5 6.5 0 1 1 18.5 10c0 5.1-6.5 11-6.5 11Z"/><circle cx="12" cy="10" r="2.2"/></>,
+  factures: <><path d="M6 2.5h9l3 3V21H6z"/><path d="M15 2.5v3h3M9 12h6M9 15.5h6M9 8.5h3"/></>,
+  commandes: <><rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2" width="6" height="3.5" rx="1"/><path d="m8.3 12.2 1.6 1.6 3-3M8.3 17.2l1.6 1.6 3-3"/></>,
+  planning: <><path d="M3 7h11v9H3z"/><path d="M14 10.5h4l3 3V16h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></>,
+  zones: <><path d="M9 3 3.5 5v15L9 18l6 2 5.5-2V3L15 5 9 3Z"/><path d="M9 3v15M15 5v15"/></>,
+  stock: <><path d="M3.5 7.5 12 3l8.5 4.5V17L12 21.5 3.5 17Z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9.5"/></>,
+  consignes: <><path d="M4 12a8 8 0 0 1 13.5-5.8"/><path d="m16 3 1.7 3.3-3.5.9"/><path d="M20 12a8 8 0 0 1-13.5 5.8"/><path d="m8 21-1.7-3.3 3.5-.9"/></>,
+  produits: <><path d="M10 2h4v4.2c0 .6.2 1.1.6 1.6l1.8 2.2c.4.5.6 1 .6 1.6V20a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-8.4c0-.6.2-1.1.6-1.6l1.8-2.2c.4-.5.6-1 .6-1.6V2Z"/><path d="M9 13h6"/></>,
+  refresh: <><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></>,
+  menu: <><path d="M4 6h16M4 12h16M4 18h16"/></>,
+  close: <><path d="M6 6l12 12M18 6 6 18"/></>,
+  check: <><path d="m5 13 4 4L19 7"/></>,
+  info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8v.1"/></>,
+  warning: <><path d="M12 3.5 21.5 20h-19L12 3.5Z"/><path d="M12 10v4M12 17v.1"/></>,
+  danger: <><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></>,
+};
+const Icon = ({name, size=15, style}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+    strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,display:"block",...style}}>
+    {ICON_PATHS[name]}
+  </svg>
+);
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE CONFIG
@@ -503,8 +518,7 @@ const getChauffeur = (r) => CHAUFFEUR_REGIONS.B.includes(r) ? "B" : "A";
 const getClientPrix = (produit, client) => {
   const pi = client?.prix_individuels || {};
   if (pi[produit.id] !== undefined) return pi[produit.id];
-  const prix = produit?.prix || {};
-  return prix[client?.type] || prix["Snack"] || 0;
+  return produit.prix[client?.type] || produit.prix["Snack"] || 0;
 };
 
 // Régions hors Luxembourg traitées en exonération de TVA intracommunautaire
@@ -855,7 +869,7 @@ const generateBonLivraison = (commande, client) => {
   const lignes = commande.produits || [];
   const totalCaisses = lignes.reduce((s, p) => s + p.qte, 0);
   const numeroBL = "BL-" + new Date((commande.date_livraison || commande.date_commande || new Date().toISOString())).getFullYear() + "-" + String(commande.id).padStart(5, "0");
-  const dateLivraison = commande.date_livraison || commande.date_commande || localDateStr();
+  const dateLivraison = commande.date_livraison || commande.date_commande || new Date().toISOString().split("T")[0];
 
   const rows = lignes.map(p => `
     <tr>
@@ -1018,7 +1032,6 @@ function ClientsMap({ clients }) {
       document.head.appendChild(script);
     } else {
       const check = setInterval(() => { if (window.L) { setLeafletReady(true); clearInterval(check); } }, 200);
-      return () => clearInterval(check);
     }
   }, []);
 
@@ -1310,6 +1323,10 @@ export default function AppWrapper() {
 }
 
 
+function App({ session, onLogout }) {
+  // renamed internally
+}
+
 function BossokApp({ session, onLogout }) {
   const [page, setPage] = useState("calendrier");
   const [isMobile, setIsMobile] = useState(()=>typeof window!=="undefined"&&window.innerWidth<=768);
@@ -1322,6 +1339,21 @@ function BossokApp({ session, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // ── Notifications maison (remplace alert()) ──────────────────────
+  const [toasts, setToasts] = useState([]);
+  const pushToast = useCallback((message, type="info") => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, {id, message, type}]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500);
+  }, []);
+  const dismissToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
+  const notifyError = (msg) => pushToast(msg, "error");
+  const notifySuccess = (msg) => pushToast(msg, "success");
+
+  // ── Confirmation maison (remplace window.confirm()) ──────────────
+  const [confirmDialog, setConfirmDialog] = useState(null); // {message, onConfirm, danger, confirmLabel}
+  const askConfirm = (message, onConfirm, opts={}) => setConfirmDialog({message, onConfirm, ...opts});
 
   // Data
   const [clients, setClients] = useState([]);
@@ -1338,15 +1370,10 @@ function BossokApp({ session, onLogout }) {
   const [myNote, setMyNote] = useState("");
   const [myNoteSaved, setMyNoteSaved] = useState(true);
   const [calViewMode, setCalViewMode] = useState("semaine");
-  const [calWeekRef, setCalWeekRef] = useState(()=>localDateStr());
+  const [calWeekRef, setCalWeekRef] = useState(()=>new Date().toISOString().split("T")[0]);
 
   // UI
   const [selClient, setSelClient] = useState(null);
-  const [clientReturnPage, setClientReturnPage] = useState("clients");
-  const openClient = (c, tab="info") => {
-    setClientReturnPage(prev => page==="client-detail" ? prev : page);
-    setSelClient(c); setClientTab(tab); setPage("client-detail");
-  };
   const [clientTab, setClientTab] = useState("info");
   const [showVisiteForm, setShowVisiteForm] = useState(false);
   const [visiteDate, setVisiteDate] = useState("");
@@ -1368,14 +1395,8 @@ function BossokApp({ session, onLogout }) {
   const [consigneClientId, setConsigneClientId] = useState(null);
   const [manualConsigneLabel, setManualConsigneLabel] = useState("");
   const [manualConsigneMontant, setManualConsigneMontant] = useState("");
-  const [manualConsigneQte, setManualConsigneQte] = useState("1");
-  const [manualConsigneUnitaire, setManualConsigneUnitaire] = useState("");
-  const [manualConsigneSens, setManualConsigneSens] = useState("plus");
   const [manualConsigneLabelCmd, setManualConsigneLabelCmd] = useState("");
   const [manualConsigneMontantCmd, setManualConsigneMontantCmd] = useState("");
-  const [manualConsigneQteCmd, setManualConsigneQteCmd] = useState("1");
-  const [manualConsigneUnitaireCmd, setManualConsigneUnitaireCmd] = useState("");
-  const [manualConsigneSensCmd, setManualConsigneSensCmd] = useState("plus");
   const [geocodingProgress, setGeocodingProgress] = useState(null); // {done, total} | null
   const [showClientForm, setShowClientForm] = useState(false);
   const [editClient, setEditClient] = useState(null);
@@ -1397,7 +1418,7 @@ function BossokApp({ session, onLogout }) {
   const [paiementFacture, setPaiementFacture] = useState(null);
   const [paiementForm, setPaiementForm] = useState({});
   const [caissePeriode, setCaissePeriode] = useState("semaine");
-  const [caisseRef, setCaisseRef] = useState(()=>localDateStr());
+  const [caisseRef, setCaisseRef] = useState(()=>new Date().toISOString().split("T")[0]);
   const [editEvent, setEditEvent] = useState(null);
   const [eventForm, setEventForm] = useState({});
   const [calMonth, setCalMonth] = useState(()=>{const d=new Date();return {year:d.getFullYear(),month:d.getMonth()};});
@@ -1414,7 +1435,7 @@ function BossokApp({ session, onLogout }) {
   const [editingFacture, setEditingFacture] = useState(null);
   const [factClientId, setFactClientId] = useState(null);
   const [factLignes, setFactLignes] = useState([]);
-  const [factDate, setFactDate] = useState(localDateStr());
+  const [factDate, setFactDate] = useState(new Date().toISOString().split("T")[0]);
   const [factNotes, setFactNotes] = useState("");
   const [factNoteClient, setFactNoteClient] = useState("");
   const [factNumero, setFactNumero] = useState("");
@@ -1438,15 +1459,15 @@ function BossokApp({ session, onLogout }) {
     const now = new Date();
     return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
   });
-  const [dashDateTo, setDashDateTo] = useState(() => localDateStr());
+  const [dashDateTo, setDashDateTo] = useState(() => new Date().toISOString().split("T")[0]);
   const [dashClient, setDashClient] = useState("");
   const [dashZone, setDashZone] = useState("");
   const [dashChauffeur, setDashChauffeur] = useState("");
   const [dashProduit, setDashProduit] = useState("");
   const [dashStatut, setDashStatut] = useState("");
 
-  const today = localDateStr();
-  const tomorrow = localDateStr(new Date(Date.now()+86400000));
+  const today = new Date().toISOString().split("T")[0];
+  const tomorrow = new Date(Date.now()+86400000).toISOString().split("T")[0];
 
   // ── LOAD DATA ──────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -1575,7 +1596,7 @@ function BossokApp({ session, onLogout }) {
         produit_nom: consigneForm.produit_nom || null,
         quantite: parseFloat(consigneForm.quantite),
         consigne_unitaire: parseFloat(consigneForm.consigne_unitaire),
-        date: consigneForm.date || localDateStr(),
+        date: consigneForm.date || new Date().toISOString().split("T")[0],
         notes: consigneForm.notes || null,
         utilise: false,
       });
@@ -1583,7 +1604,7 @@ function BossokApp({ session, onLogout }) {
       setShowConsigneForm(false);
       setConsigneForm({});
       setConsigneClientId(null);
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
@@ -1602,13 +1623,14 @@ function BossokApp({ session, onLogout }) {
   };
 
   const supprimerConsigneManuelle = async (id) => {
-    if (!window.confirm("Supprimer ce retour déclaré ?")) return;
-    setSaving(true);
-    try {
-      await db.delete("consignes_manuelles", id);
-      await loadAll();
-    } catch(e) { alert("Erreur : "+e.message); }
-    finally { setSaving(false); }
+    askConfirm("Supprimer ce retour déclaré ?", async () => {
+      setSaving(true);
+      try {
+        await db.delete("consignes_manuelles", id);
+        await loadAll();
+      } catch(e) { notifyError("Erreur : "+e.message); }
+      finally { setSaving(false); }
+    }, {danger:true, confirmLabel:"Supprimer"});
   };
 
   // ── ACTIONS ────────────────────────────────────────────────────
@@ -1632,31 +1654,32 @@ function BossokApp({ session, onLogout }) {
       }
       await loadAll();
       setShowClientForm(false);
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
   const geocoderClientsExistants = async () => {
     const aGeocoder = clients.filter(c => c.adresse && (!c.lat || !c.lng));
-    if (aGeocoder.length === 0) { alert("Tous les clients avec une adresse sont déjà géolocalisés."); return; }
-    if (!window.confirm(`Géolocaliser ${aGeocoder.length} client(s) ? Ça peut prendre quelques minutes (1 par seconde).`)) return;
-    setGeocodingProgress({ done: 0, total: aGeocoder.length });
-    let echecs = 0;
-    for (let i = 0; i < aGeocoder.length; i++) {
-      const c = aGeocoder[i];
-      const coords = await geocodeAddress(c.adresse);
-      if (coords) {
-        try { await db.update("clients", c.id, { lat: coords.lat, lng: coords.lng }); }
-        catch(e) { echecs++; }
-      } else {
-        echecs++;
+    if (aGeocoder.length === 0) { notifySuccess("Tous les clients avec une adresse sont déjà géolocalisés."); return; }
+    askConfirm(`Géolocaliser ${aGeocoder.length} client(s) ? Ça peut prendre quelques minutes (1 par seconde).`, async () => {
+      setGeocodingProgress({ done: 0, total: aGeocoder.length });
+      let echecs = 0;
+      for (let i = 0; i < aGeocoder.length; i++) {
+        const c = aGeocoder[i];
+        const coords = await geocodeAddress(c.adresse);
+        if (coords) {
+          try { await db.update("clients", c.id, { lat: coords.lat, lng: coords.lng }); }
+          catch(e) { echecs++; }
+        } else {
+          echecs++;
+        }
+        setGeocodingProgress({ done: i + 1, total: aGeocoder.length });
+        await new Promise(r => setTimeout(r, 1100)); // respecte la limite Nominatim (1 req/s)
       }
-      setGeocodingProgress({ done: i + 1, total: aGeocoder.length });
-      await new Promise(r => setTimeout(r, 1100)); // respecte la limite Nominatim (1 req/s)
-    }
-    await loadAll();
-    setGeocodingProgress(null);
-    alert(`Géolocalisation terminée : ${aGeocoder.length - echecs} réussi(s)${echecs > 0 ? ", " + echecs + " échec(s) (adresse introuvable)" : ""}.`);
+      await loadAll();
+      setGeocodingProgress(null);
+      notifySuccess(`Géolocalisation terminée : ${aGeocoder.length - echecs} réussi(s)${echecs > 0 ? ", " + echecs + " échec(s) (adresse introuvable)" : ""}.`);
+    }, {confirmLabel:"Géolocaliser"});
   };
 
   const genererIdProduit = (categorie) => {
@@ -1701,7 +1724,7 @@ function BossokApp({ session, onLogout }) {
       setShowProduitForm(false);
       setEditProduit(null);
       setProduitForm({});
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
@@ -1711,7 +1734,7 @@ function BossokApp({ session, onLogout }) {
     try {
       await db.update("produits", produit.id, {statut: nouveauStatut});
       await loadAll();
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
@@ -1726,7 +1749,7 @@ function BossokApp({ session, onLogout }) {
         quantite: qte,
         prix_achat_unitaire: prixUnit,
         fournisseur: receptionForm.fournisseur || null,
-        date: receptionForm.date || localDateStr(),
+        date: receptionForm.date || new Date().toISOString().split("T")[0],
         notes: receptionForm.notes || null,
       });
       const newQte = (stock[receptionProduit.id] || 0) + qte;
@@ -1735,7 +1758,7 @@ function BossokApp({ session, onLogout }) {
       setShowReceptionForm(false);
       setReceptionProduit(null);
       setReceptionForm({});
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
@@ -1748,7 +1771,7 @@ function BossokApp({ session, onLogout }) {
         produit_id: perteProduit.id,
         quantite: qte,
         motif: perteForm.motif || "Casse",
-        date: perteForm.date || localDateStr(),
+        date: perteForm.date || new Date().toISOString().split("T")[0],
         notes: perteForm.notes || null,
       });
       const newQte = Math.max(0, (stock[perteProduit.id] || 0) - qte);
@@ -1757,7 +1780,7 @@ function BossokApp({ session, onLogout }) {
       setShowPerteForm(false);
       setPerteProduit(null);
       setPerteForm({});
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
@@ -1784,20 +1807,21 @@ function BossokApp({ session, onLogout }) {
       setShowEventForm(false);
       setEditEvent(null);
       setEventForm({});
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
   const deleteEvenement = async (id) => {
-    if (!confirm("Supprimer cet événement ?")) return;
-    setSaving(true);
-    try {
-      await db.delete("evenements", id);
-      await loadAll();
-      setShowEventForm(false);
-      setEditEvent(null);
-    } catch(e) { alert("Erreur : "+e.message); }
-    finally { setSaving(false); }
+    askConfirm("Supprimer cet événement ?", async () => {
+      setSaving(true);
+      try {
+        await db.delete("evenements", id);
+        await loadAll();
+        setShowEventForm(false);
+        setEditEvent(null);
+      } catch(e) { notifyError("Erreur : "+e.message); }
+      finally { setSaving(false); }
+    }, {danger:true, confirmLabel:"Supprimer"});
   };
 
   const saveStickyNote = async (contenu) => {
@@ -1834,14 +1858,11 @@ function BossokApp({ session, onLogout }) {
     const mois = (d.getMonth() + 1).toString(); // mois sans zéro
     const prefix = annee + mois;
 
-    // Find highest number with same prefix this month.
-    // On exige une égalité EXACTE du préfixe (et pas juste startsWith), sinon
-    // janvier ("61" + 3 chiffres) matchait aussi les factures d'octobre/novembre/
-    // décembre ("610"/"611"/"612" + 3 chiffres), qui commencent aussi par "61".
+    // Find highest number with same prefix this month
     const sameMonth = factures
-      .map(f => (f.numero || "").toString())
-      .filter(n => /^\d+$/.test(n) && n.length > 3 && n.slice(0, -3) === prefix)
-      .map(n => parseInt(n.slice(-3), 10))
+      .map(f => f.numero)
+      .filter(n => n && n.toString().startsWith(prefix))
+      .map(n => parseInt(n.toString().slice(prefix.length)))
       .filter(n => !isNaN(n));
 
     const lastNum = sameMonth.length > 0 ? Math.max(...sameMonth) : 0;
@@ -1853,7 +1874,7 @@ function BossokApp({ session, onLogout }) {
     setEditingFacture(f);
     setFactClientId(f.client_id);
     setFactLignes(f.lignes || []);
-    setFactDate(f.date || localDateStr());
+    setFactDate(f.date || new Date().toISOString().split("T")[0]);
     setFactNotes(f.notes || "");
     setFactNoteClient(f.note_client || "");
     setFactNumero(f.numero || "");
@@ -1869,13 +1890,6 @@ function BossokApp({ session, onLogout }) {
     const echDate = factEcheance || (() => { const e = new Date(factDate); e.setDate(e.getDate()+7); return e.toISOString().split("T")[0]; })();
     const ech = new Date(factDate); ech.setDate(ech.getDate()+7);
     const contientCredit = factLignes.some(l => l.produitId === "CREDIT_CONSIGNES");
-    // Le champ notes sert aussi à retrouver la facture depuis sa commande d'origine
-    // (marqueur "Commande #X"). On ne le laisse jamais disparaître silencieusement
-    // si l'utilisateur édite/efface librement le texte des notes.
-    const commandeMarker = editingFacture?.notes?.match(/^Commande #\d+/)?.[0];
-    const notesFinales = (commandeMarker && !(factNotes||"").startsWith(commandeMarker))
-      ? commandeMarker + (factNotes ? " — " + factNotes : "")
-      : factNotes;
     setSaving(true);
     try {
       if (editingFacture) {
@@ -1885,7 +1899,7 @@ function BossokApp({ session, onLogout }) {
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
           date: factDate, echeance: echDate,
-          lignes: factLignes, notes: notesFinales, note_client: factNoteClient,
+          lignes: factLignes, notes: factNotes, note_client: factNoteClient,
         });
         if (contientCredit) await marquerConsignesUtilisees(factClientId);
         await loadAll();
@@ -1908,7 +1922,7 @@ function BossokApp({ session, onLogout }) {
       }
       setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactClientId(null);
       setFactNumero(""); setSearchFactClient(""); setShowFactForm(false);
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
@@ -1919,13 +1933,13 @@ function BossokApp({ session, onLogout }) {
       await db.update("factures", paiementFacture.id, {
         statut: "Payée",
         mode_paiement: paiementForm.mode,
-        date_paiement: paiementForm.date || localDateStr(),
+        date_paiement: paiementForm.date || new Date().toISOString().split("T")[0],
       });
       await loadAll();
       setShowPaiementForm(false);
       setPaiementFacture(null);
       setPaiementForm({});
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
@@ -1934,92 +1948,72 @@ function BossokApp({ session, onLogout }) {
     try {
       await db.update("factures", id, {statut:"Impayée"});
       setFactures(prev=>prev.map(f=>f.id===id?{...f,statut:"Impayée"}:f));
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
   const supprimerFacture = async (id, numero) => {
-    // Une facture créée automatiquement depuis une commande porte le marqueur
-    // "Commande #X" dans ses notes. Si on la supprime sans rien faire d'autre,
-    // le stock déduit lors de la commande n'est jamais restauré et la commande
-    // reste orpheline (plus aucune facture à retrouver/imprimer).
-    const facture = factures.find(f=>f.id===id);
-    const cmdMatch = facture?.notes?.match(/^Commande #(\d+)/);
-    const cmdId = cmdMatch ? parseInt(cmdMatch[1], 10) : null;
-    const cmdLiee = cmdId ? commandes.find(c=>c.id===cmdId) : null;
-
-    const confirmMsg = cmdLiee
-      ? `Supprimer la facture ${numero} ? Elle est liée à la commande #${cmdId} : la commande sera supprimée aussi et le stock restauré. Cette action est irréversible.`
-      : `Supprimer la facture ${numero} ? Cette action est irréversible.`;
-    if (!window.confirm(confirmMsg)) return;
-
-    setSaving(true);
-    try {
-      if (cmdLiee) {
-        for (const p of (cmdLiee.produits||[])) {
-          const prod = findProduitByNom(produits, p.nom);
-          if (!prod) continue;
-          const currentQte = stock[prod.id] || 0;
-          await updateStock(prod.id, currentQte + p.qte);
-        }
-        await db.delete("commandes", cmdLiee.id);
-      }
-      await db.delete("factures", id);
-      setFactures(prev=>prev.filter(f=>f.id!==id));
-      if (cmdLiee) setCommandes(prev=>prev.filter(c=>c.id!==cmdLiee.id));
-    } catch(e) { alert("Erreur : "+e.message); }
-    finally { setSaving(false); }
+    askConfirm(`Supprimer la facture ${numero} ? Cette action est irréversible.`, async () => {
+      setSaving(true);
+      try {
+        await db.delete("factures", id);
+        setFactures(prev=>prev.filter(f=>f.id!==id));
+      } catch(e) { notifyError("Erreur : "+e.message); }
+      finally { setSaving(false); }
+    }, {danger:true, confirmLabel:"Supprimer"});
   };
 
   const creerAvoir = async (facture) => {
-    if (!window.confirm(`Créer un avoir pour annuler la facture ${facture.numero} ?`)) return;
-    setSaving(true);
-    try {
-      const avoirNum = "AV-" + Date.now().toString().slice(-6);
-      const avoirLignes = (facture.lignes||[]).map(l => ({...l, pu: -l.pu}));
-      await db.insert("factures", {
-        numero: avoirNum,
-        client_id: facture.client_id,
-        client_nom: facture.client_nom,
-        client_adresse: facture.client_adresse,
-        client_tva: facture.client_tva,
-        date: localDateStr(),
-        echeance: localDateStr(),
-        lignes: avoirLignes,
-        statut: "Avoir",
-        notes: "Avoir pour annulation facture " + facture.numero,
-        retours: []
-      });
-      await db.update("factures", facture.id, {statut:"Annulée"});
-      await loadAll();
-      alert("Avoir " + avoirNum + " créé avec succès !");
-    } catch(e) { alert("Erreur : "+e.message); }
-    finally { setSaving(false); }
+    askConfirm(`Créer un avoir pour annuler la facture ${facture.numero} ?`, async () => {
+      setSaving(true);
+      try {
+        const avoirNum = "AV-" + Date.now().toString().slice(-6);
+        const avoirLignes = (facture.lignes||[]).map(l => ({...l, pu: -l.pu}));
+        await db.insert("factures", {
+          numero: avoirNum,
+          client_id: facture.client_id,
+          client_nom: facture.client_nom,
+          client_adresse: facture.client_adresse,
+          client_tva: facture.client_tva,
+          date: new Date().toISOString().split("T")[0],
+          echeance: new Date().toISOString().split("T")[0],
+          lignes: avoirLignes,
+          statut: "Avoir",
+          notes: "Avoir pour annulation facture " + facture.numero,
+          retours: []
+        });
+        await db.update("factures", facture.id, {statut:"Annulée"});
+        await loadAll();
+        notifySuccess("Avoir " + avoirNum + " créé avec succès !");
+      } catch(e) { notifyError("Erreur : "+e.message); }
+      finally { setSaving(false); }
+    }, {confirmLabel:"Créer l'avoir"});
   };
 
   const [editingCmd, setEditingCmd] = useState(null);
 
   const supprimerCommande = async (id) => {
-    if (!window.confirm("Supprimer cette commande ? Le stock sera restauré et la facture associée annulée.")) return;
-    setSaving(true);
-    try {
-      const cmd = commandes.find(c=>c.id===id);
-      if (cmd) {
-        for (const p of (cmd.produits||[])) {
-          const prod = findProduitByNom(produits, p.nom);
-          if (!prod) continue;
-          const currentQte = stock[prod.id] || 0;
-          await updateStock(prod.id, currentQte + p.qte);
+    askConfirm("Supprimer cette commande ? Le stock sera restauré et la facture associée annulée.", async () => {
+      setSaving(true);
+      try {
+        const cmd = commandes.find(c=>c.id===id);
+        if (cmd) {
+          for (const p of (cmd.produits||[])) {
+            const prod = findProduitByNom(produits, p.nom);
+            if (!prod) continue;
+            const currentQte = stock[prod.id] || 0;
+            await updateStock(prod.id, currentQte + p.qte);
+          }
+          const facture = factures.find(f => f.notes === `Commande #${id}`);
+          if (facture) {
+            await db.update("factures", facture.id, {statut: "Annulée"});
+          }
         }
-        const facture = factures.find(f => f.notes === `Commande #${id}`);
-        if (facture) {
-          await db.update("factures", facture.id, {statut: "Annulée"});
-        }
-      }
-      await db.delete("commandes", id);
-      await loadAll();
-    } catch(e) { alert("Erreur : "+e.message); }
-    finally { setSaving(false); }
+        await db.delete("commandes", id);
+        await loadAll();
+      } catch(e) { notifyError("Erreur : "+e.message); }
+      finally { setSaving(false); }
+    }, {danger:true, confirmLabel:"Supprimer"});
   };
 
   const dupliquerCommande = (cmd) => {
@@ -2129,8 +2123,7 @@ function BossokApp({ session, onLogout }) {
       await loadAll();
       setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
       setManualConsigneLabelCmd(""); setManualConsigneMontantCmd("");
-      setManualConsigneQteCmd("1"); setManualConsigneUnitaireCmd(""); setManualConsigneSensCmd("plus");
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
@@ -2150,14 +2143,14 @@ function BossokApp({ session, onLogout }) {
         const client = clients.find(c=>c.id===cmd.client_id);
         setLastFacture({ facture, client });
       }
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
   const imprimerFactureCommande = (cmd) => {
     const facture = factures.find(f => f.notes === `Commande #${cmd.id}`);
     if (!facture) {
-      alert("Aucune facture liée à cette commande n'a été trouvée.");
+      notifyError("Aucune facture liée à cette commande n'a été trouvée.");
       return;
     }
     const client = clients.find(c => c.id === cmd.client_id);
@@ -2182,7 +2175,7 @@ function BossokApp({ session, onLogout }) {
       } else {
         await sb("stock", "POST", {produit_id: produitId, quantite: newQte});
       }
-    } catch(e) { console.error(e); alert("Erreur lors de la sauvegarde du stock : "+e.message); }
+    } catch(e) { console.error(e); notifyError("Erreur lors de la sauvegarde du stock : "+e.message); }
   };
 
   const saveRetour = async () => {
@@ -2197,7 +2190,7 @@ function BossokApp({ session, onLogout }) {
       await db.update("factures", showRetour, {retours:[...(f.retours||[]),...retours]});
       await loadAll();
       setShowRetour(null); setRetourQtes({});
-    } catch(e) { alert("Erreur : "+e.message); }
+    } catch(e) { notifyError("Erreur : "+e.message); }
     finally { setSaving(false); }
   };
 
@@ -2212,7 +2205,7 @@ function BossokApp({ session, onLogout }) {
       await db.update("clients", clientId, {prix_individuels: newPrix});
       setClients(prev=>prev.map(c=>c.id===clientId?{...c,prix_individuels:newPrix}:c));
       if (selClient?.id===clientId) setSelClient(prev=>({...prev,prix_individuels:newPrix}));
-    } catch(e) { console.error(e); alert("Erreur lors de la sauvegarde du prix personnalisé : "+e.message); }
+    } catch(e) { console.error(e); }
   };
 
   const addCreditConsignes = (clientId) => {
@@ -2244,59 +2237,39 @@ function BossokApp({ session, onLogout }) {
   };
 
   // ── STYLES ─────────────────────────────────────────────────────
-  // Palette "outil professionnel" : marine foncée pour la navigation,
-  // fond gris froid pour le contenu, cartes blanches à bordures nettes.
-  const COLOR = {
-    ink:"#101828", inkSoft:"#5D6B82", inkFaint:"#94A3B8",
-    line:"#E3E7ED", bg:"#F4F6F8", surface:"#FFFFFF",
-    navy:"#0F1B2E", navySoft:"#18283F", navyLine:"rgba(255,255,255,0.08)",
-    navyText:"#C7D2E3", navyTextFaint:"#7C8CA8",
-    accent:"#1D4ED8", accentSoft:"#EFF4FF",
-  };
   const S = {
-    app:{fontFamily:"'Inter',system-ui,sans-serif",background:COLOR.bg,minHeight:"100vh",display:"flex"},
-    sidebar:{width:232,background:COLOR.navy,color:"#fff",display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:200,
+    app:{fontFamily:"'Inter',system-ui,sans-serif",background:"#F8FAFC",minHeight:"100vh",display:"flex"},
+    sidebar:{width:224,background:"#fff",color:"#0F172A",borderRight:"1px solid #E5E7EB",display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:200,
       transform: isMobile ? (sidebarOpen?"translateX(0)":"translateX(-100%)") : "none",
-      transition:"transform 0.22s ease", boxShadow: isMobile&&sidebarOpen ? "8px 0 24px rgba(15,23,42,0.25)" : "none"},
-    main:{marginLeft: isMobile?0:232, flex:1, minWidth:0},
-    topbar:{background:COLOR.surface,borderBottom:"1px solid "+COLOR.line,padding: isMobile?"0 14px":"0 28px",height:60,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50},
-    page:{padding: isMobile?"16px 14px":"26px 30px", maxWidth:1120, margin:"0 auto"},
-    card:{background:COLOR.surface,borderRadius:10,border:"1px solid "+COLOR.line,padding: isMobile?14:18,boxShadow:"0 1px 2px rgba(16,24,40,0.03)"},
-    btn:(bg,col)=>({padding:"9px 18px",background:bg||COLOR.accent,color:col||"#fff",border:"none",borderRadius:7,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:saving?0.7:1,letterSpacing:"0.1px"}),
-    input:{width:"100%",padding:"9px 12px",border:"1px solid "+COLOR.line,borderRadius:7,fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:"inherit",color:COLOR.ink},
-    badge:(bg,col)=>({fontSize:11,padding:"3px 9px",borderRadius:6,background:bg,color:col,fontWeight:600,display:"inline-block"}),
+      transition:"transform 0.2s ease", boxShadow: isMobile&&sidebarOpen ? "8px 0 24px rgba(15,23,42,0.15)" : "none"},
+    main:{marginLeft: isMobile?0:224, flex:1, minWidth:0},
+    topbar:{background:"linear-gradient(90deg,#1E3A8A,#172554)",padding: isMobile?"0 14px":"0 28px",height:64,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 8px rgba(15,23,42,0.2)"},
+    page:{padding: isMobile?"16px 14px":"24px 28px", maxWidth:1100, margin:"0 auto"},
+    card:{background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding: isMobile?14:18,boxShadow:"0 1px 2px rgba(15,23,42,0.04)"},
+    btn:(bg,col)=>({padding:"9px 18px",background:bg||"#1D4ED8",color:col||"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:saving?0.7:1,letterSpacing:"0.1px"}),
+    input:{width:"100%",padding:"9px 12px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:"inherit"},
+    badge:(bg,col)=>({fontSize:11,padding:"3px 9px",borderRadius:999,background:bg,color:col,fontWeight:600,display:"inline-block"}),
     modal:{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:300,display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",padding: isMobile?0:16},
-    modalBox:{background:"#fff",borderRadius: isMobile?"16px 16px 0 0":12,padding: isMobile?18:26,maxWidth:640,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(15,23,42,0.18)"},
-    tab:(a)=>({padding:"8px 16px",border:"none",borderBottom:a?"2px solid "+COLOR.accent:"2px solid transparent",background:"transparent",cursor:"pointer",fontSize:13,fontWeight:a?700:500,color:a?COLOR.accent:COLOR.inkSoft,transition:"color .12s ease, border-color .12s ease"}),
-    kpi:(c)=>({background:COLOR.surface,borderRadius:10,border:"1px solid "+COLOR.line,padding:"16px 18px",borderLeft:"3px solid "+c,boxShadow:"0 1px 2px rgba(16,24,40,0.03)"}),
-    navItem:(a)=>({display:"flex",alignItems:"center",gap:11,padding:"9px 12px",borderRadius:7,cursor:"pointer",marginBottom:1,background:a?"rgba(255,255,255,0.08)":"transparent",color:a?"#fff":COLOR.navyText,fontSize:13.5,fontWeight:a?600:500,borderLeft:a?"3px solid "+COLOR.accent:"3px solid transparent",transition:"background .12s ease, color .12s ease"}),
-    navGroupLabel:{fontSize:10.5,fontWeight:700,letterSpacing:"0.06em",color:COLOR.navyTextFaint,textTransform:"uppercase",padding:"14px 12px 6px"},
+    modalBox:{background:"#fff",borderRadius: isMobile?"16px 16px 0 0":16,padding: isMobile?18:26,maxWidth:640,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(15,23,42,0.18)"},
+    tab:(a)=>({padding:"8px 16px",border:"none",borderBottom:a?"2px solid #1D4ED8":"2px solid transparent",background:"transparent",cursor:"pointer",fontSize:13,fontWeight:a?700:500,color:a?"#1D4ED8":"#6B7280"}),
+    kpi:(c)=>({background:"#fff",borderRadius:12,border:"1px solid #E5E7EB",padding:"16px 18px",borderLeft:"4px solid "+c,boxShadow:"0 1px 2px rgba(15,23,42,0.04)"}),
+    navItem:(a)=>({display:"flex",alignItems:"center",gap:11,padding:"10px 14px",borderRadius:8,cursor:"pointer",marginBottom:2,background:a?"#EFF6FF":"transparent",color:a?"#1D4ED8":"#475569",fontSize:14,fontWeight:a?600:500,borderLeft:a?"3px solid #1D4ED8":"3px solid transparent"}),
   };
-  const tabularNums = {fontVariantNumeric:"tabular-nums"};
 
-  const NAV_GROUPS = [
-    {label:"Vue d'ensemble", items:[
-      {k:"calendrier",icon:"📅",label:"Calendrier"},
-      {k:"dashboard",icon:"📊",label:"Dashboard"},
-      {k:"caisse",icon:"💰",label:"Caisse"},
-    ]},
-    {label:"Clients & ventes", items:[
-      {k:"clients",icon:"👥",label:"Clients"},
-      {k:"carte",icon:"📍",label:"Carte"},
-      {k:"factures",icon:"🧾",label:"Factures"},
-      {k:"commandes",icon:"📋",label:"Commandes"},
-    ]},
-    {label:"Logistique", items:[
-      {k:"planning",icon:"🚚",label:"Planning"},
-      {k:"zones",icon:"🗺️",label:"Zones"},
-    ]},
-    {label:"Catalogue", items:[
-      {k:"stock",icon:"📦",label:"Stock"},
-      {k:"consignes",icon:"♻️",label:"Consignes"},
-      {k:"produits",icon:"🍺",label:"Produits"},
-    ]},
+  const NAV = [
+    {k:"calendrier",icon:"calendrier",label:"Calendrier"},
+    {k:"dashboard",icon:"dashboard",label:"Dashboard"},
+    {k:"caisse",icon:"caisse",label:"Caisse"},
+    {k:"clients",icon:"clients",label:"Clients"},
+    {k:"carte",icon:"carte",label:"Carte"},
+    {k:"factures",icon:"factures",label:"Factures"},
+    {k:"commandes",icon:"commandes",label:"Commandes"},
+    {k:"planning",icon:"planning",label:"Planning"},
+    {k:"stock",icon:"stock",label:"Stock"},
+    {k:"consignes",icon:"consignes",label:"Consignes"},
+    {k:"produits",icon:"produits",label:"Produits"},
+    {k:"zones",icon:"zones",label:"Zones"},
   ];
-  const NAV = NAV_GROUPS.flatMap(g=>g.items);
 
   const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
@@ -2330,55 +2303,88 @@ function BossokApp({ session, onLogout }) {
         button:active { transform: scale(0.97); }
         tbody tr { transition: background 0.1s ease; }
         tbody tr:hover { background:#F8FAFC !important; }
-        .nav-hover:hover { background:rgba(255,255,255,0.06) !important; }
+        .nav-hover:hover { background:#F8FAFC !important; }
         .menu-item:hover { background:#F9FAFB !important; }
         ::selection { background: #BFDBFE; }
-        html, body { overflow-x: hidden; max-width: 100%; font-variant-numeric: tabular-nums; }
-        @keyframes pageFadeIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
-        .page-transition { animation: pageFadeIn 0.2s ease; }
+        html, body { overflow-x: hidden; max-width: 100%; }
+        @keyframes toastIn { from { opacity:0; transform:translateY(10px) scale(0.97); } to { opacity:1; transform:translateY(0) scale(1); } }
+        @keyframes confirmIn { from { opacity:0; transform:scale(0.94); } to { opacity:1; transform:scale(1); } }
       `}</style>
+
+      {/* NOTIFICATIONS (toasts) */}
+      <div style={{position:"fixed",bottom:16,right:16,zIndex:500,display:"flex",flexDirection:"column",gap:8,maxWidth:340,width:isMobile?"calc(100% - 32px)":340}}>
+        {toasts.map(t=>{
+          const cfg = t.type==="success" ? {bg:"#0F172A",bar:"#22C55E",icon:"check"}
+            : t.type==="error" ? {bg:"#0F172A",bar:"#EF4444",icon:"danger"}
+            : {bg:"#0F172A",bar:"#3B82F6",icon:"info"};
+          return(
+            <div key={t.id} style={{background:cfg.bg,color:"#fff",borderRadius:10,padding:"11px 14px",display:"flex",alignItems:"flex-start",gap:10,boxShadow:"0 10px 30px rgba(0,0,0,0.28)",borderLeft:"3px solid "+cfg.bar,animation:"toastIn .18s ease"}}>
+              <span style={{color:cfg.bar,marginTop:1}}><Icon name={cfg.icon} size={16}/></span>
+              <div style={{flex:1,fontSize:12.5,lineHeight:1.45}}>{t.message}</div>
+              <button onClick={()=>dismissToast(t.id)} style={{background:"none",border:"none",color:"#94A3B8",cursor:"pointer",padding:0,marginTop:1}}><Icon name="close" size={13}/></button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* MODALE DE CONFIRMATION */}
+      {confirmDialog&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:600,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={()=>setConfirmDialog(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:14,padding:24,maxWidth:380,width:"100%",boxShadow:"0 24px 64px rgba(15,23,42,0.25)",animation:"confirmIn .16s ease"}}>
+            <div style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:18}}>
+              <div style={{width:34,height:34,borderRadius:9,background:confirmDialog.danger?"#FEE2E2":"#EFF6FF",color:confirmDialog.danger?"#DC2626":"#1D4ED8",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <Icon name={confirmDialog.danger?"warning":"info"} size={17}/>
+              </div>
+              <div style={{fontSize:13.5,color:"#1F2937",lineHeight:1.5,paddingTop:6}}>{confirmDialog.message}</div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>setConfirmDialog(null)} style={{padding:"8px 16px",background:"#F1F5F9",color:"#374151",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer"}}>Annuler</button>
+              <button onClick={()=>{const fn=confirmDialog.onConfirm;setConfirmDialog(null);fn&&fn();}}
+                style={{padding:"8px 16px",background:confirmDialog.danger?"#DC2626":"#1D4ED8",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer"}}>
+                {confirmDialog.confirmLabel||"Confirmer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isMobile&&sidebarOpen&&(
         <div onClick={()=>setSidebarOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",zIndex:150}}/>
       )}
       {/* SIDEBAR */}
       <div style={S.sidebar}>
-        <div style={{padding:"18px 16px",borderBottom:"1px solid "+COLOR.navyLine}}>
+        <div style={{padding:"18px 16px",borderBottom:"1px solid #F1F5F9"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <img src={LOGO} alt="BOSSOK" style={{width:36,height:36,objectFit:"contain",borderRadius:7}}/>
+            <img src={LOGO} alt="BOSSOK" style={{width:38,height:38,objectFit:"contain",borderRadius:8}}/>
             <div>
-              <div style={{fontWeight:800,fontSize:15,color:"#fff",letterSpacing:"-0.2px"}}>BOSSOK</div>
-              <div style={{fontSize:10.5,color:COLOR.navyTextFaint}}>Luxembourg</div>
+              <div style={{fontWeight:800,fontSize:16,color:"#0F172A",letterSpacing:"-0.2px"}}>BOSSOK</div>
+              <div style={{fontSize:11,color:"#94A3B8"}}>Luxembourg</div>
             </div>
           </div>
         </div>
-        <div style={{flex:1,padding:"4px 10px 12px",overflowY:"auto"}}>
-          {NAV_GROUPS.map(group=>(
-            <div key={group.label}>
-              <div style={S.navGroupLabel}>{group.label}</div>
-              {group.items.map(n=>{
-                const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=STOCK_BAS_SEUIL).length : 0;
-                const active = page===n.k || (n.k==="clients" && page==="client-detail");
-                return(
-                  <div key={n.k} className={active?"":"nav-hover"} style={S.navItem(active)} onClick={()=>{setPage(n.k);if(isMobile)setSidebarOpen(false);}}>
-                    <span style={{fontSize:14,opacity:active?1:0.85}}>{n.icon}</span><span style={{flex:1}}>{n.label}</span>
-                    {stockAlerteCount>0&&(
-                      <span style={{background:"#DC2626",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>
-                        {stockAlerteCount}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+        <div style={{flex:1,padding:"12px 10px",overflowY:"auto"}}>
+          {NAV.map(n=>{
+            const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=STOCK_BAS_SEUIL).length : 0;
+            return(
+              <div key={n.k} className={page===n.k?"":"nav-hover"} style={S.navItem(page===n.k)} onClick={()=>{setPage(n.k);if(isMobile)setSidebarOpen(false);}}>
+                <span style={{display:"flex",color:page===n.k?"#1D4ED8":"#64748B"}}><Icon name={n.icon} size={16}/></span><span style={{flex:1}}>{n.label}</span>
+                {stockAlerteCount>0&&(
+                  <span style={{background:"#DC2626",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>
+                    {stockAlerteCount}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <div style={{padding:"12px 16px",borderTop:"1px solid "+COLOR.navyLine,fontSize:11,color:COLOR.navyTextFaint}}>
-          {saving && <span style={{color:"#93C5FD",fontWeight:600}}>💾 Sauvegarde...</span>}
+        <div style={{padding:"14px 16px",borderTop:"1px solid #F1F5F9",fontSize:11,color:"#94A3B8"}}>
+          {saving && <span style={{color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}><Icon name="refresh" size={11}/> Sauvegarde...</span>}
           {!saving && <span>✅ {clientsActifs.length} clients actifs</span>}
         </div>
-        <div style={{padding:"10px 16px 16px",borderTop:"1px solid "+COLOR.navyLine,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{fontSize:11,color:COLOR.navyTextFaint,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session?.user?.email}</span>
-          <button onClick={onLogout} style={{background:"none",border:"none",color:"#F87171",cursor:"pointer",fontSize:11,fontWeight:600,flexShrink:0,marginLeft:6}}>Déconnexion</button>
+        <div style={{padding:"10px 16px 16px",borderTop:"1px solid #F1F5F9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontSize:11,color:"#94A3B8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session?.user?.email}</span>
+          <button onClick={onLogout} style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",fontSize:11,fontWeight:600,flexShrink:0,marginLeft:6}}>Déconnexion</button>
         </div>
       </div>
 
@@ -2387,16 +2393,14 @@ function BossokApp({ session, onLogout }) {
         <div style={S.topbar}>
           <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
             {isMobile&&(
-              <button onClick={()=>setSidebarOpen(true)} style={{background:COLOR.bg,border:"1px solid "+COLOR.line,color:COLOR.ink,width:36,height:36,borderRadius:8,fontSize:16,cursor:"pointer",flexShrink:0}}>☰</button>
+              <button onClick={()=>setSidebarOpen(true)} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",width:36,height:36,borderRadius:8,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="menu" size={17}/></button>
             )}
-            <div style={{fontWeight:700,fontSize:isMobile?15:18,color:COLOR.ink,letterSpacing:"-0.2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-              {page==="client-detail" ? (selClient?.nom||"Client") : PAGE_TITLES[page]}
-            </div>
+            <div style={{fontWeight:700,fontSize:isMobile?15:18,color:"#fff",letterSpacing:"-0.2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{PAGE_TITLES[page]}</div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {page==="clients" && <button style={S.btn()} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
-            {page==="factures" && <button style={S.btn()} onClick={()=>{
-  const today = localDateStr();
+            {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
+            {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{
+  const today = new Date().toISOString().split("T")[0];
   setShowFactForm(true);setFactClientId(null);setFactLignes([]);
   setSearchFactClient("");setEditingFacture(null);
   setFactDate(today);
@@ -2404,14 +2408,14 @@ function BossokApp({ session, onLogout }) {
   const echInit = new Date(today); echInit.setDate(echInit.getDate()+7);
   setFactEcheance(echInit.toISOString().split("T")[0]);
 }}>{isMobile?"+":"+ Nouvelle facture"}</button>}
-            {page==="commandes" && <button style={{...S.btn(),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>}
-            {page==="produits" && <button style={S.btn()} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>{isMobile?"+":"+ Nouveau produit"}</button>}
-            {page==="calendrier" && <button style={S.btn()} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:localDateStr(),date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>{isMobile?"+":"+ Nouvel événement"}</button>}
-            <button style={S.btn(COLOR.bg,COLOR.ink)} onClick={loadAll}>🔄</button>
+            {page==="commandes" && <button style={{...S.btn("#fff","#1D4ED8"),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>}
+            {page==="produits" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>{isMobile?"+":"+ Nouveau produit"}</button>}
+            {page==="calendrier" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:new Date().toISOString().split("T")[0],date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>{isMobile?"+":"+ Nouvel événement"}</button>}
+            <button style={{...S.btn("rgba(255,255,255,0.15)","#fff"),display:"flex",alignItems:"center",justifyContent:"center",padding:"9px 11px"}} onClick={loadAll}><Icon name="refresh" size={15}/></button>
           </div>
         </div>
 
-        <div key={page} className="page-transition" style={S.page}>
+        <div style={S.page}>
 
 {/* ══ CAISSE ═════════════════════════════════════════════════════ */}
 {page==="caisse" && (()=>{
@@ -2462,7 +2466,7 @@ function BossokApp({ session, onLogout }) {
       <button onClick={()=>changePeriod(-1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>‹</button>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         <div style={{fontWeight:700,fontSize:15}}>{periodLabel}</div>
-        <button onClick={()=>setCaisseRef(localDateStr())}
+        <button onClick={()=>setCaisseRef(new Date().toISOString().split("T")[0])}
           style={{...S.btn("#EFF6FF","#1D4ED8"),padding:"4px 10px",fontSize:11}}>Aujourd'hui</button>
       </div>
       <button onClick={()=>changePeriod(1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>›</button>
@@ -2582,7 +2586,7 @@ function BossokApp({ session, onLogout }) {
   const lastOfMonth = new Date(year, month+1, 0);
   const daysInMonth = lastOfMonth.getDate();
   const firstDow = (firstOfMonth.getDay()+6)%7;
-  const todayStr = localDateStr();
+  const todayStr = new Date().toISOString().split("T")[0];
 
   const getEventsForDate = (dateStr) => {
     return evenements.filter(e=>{
@@ -3029,7 +3033,7 @@ function BossokApp({ session, onLogout }) {
     const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href=url; a.download="factures_bossok_"+localDateStr()+".csv";
+    a.href=url; a.download="factures_bossok_"+new Date().toISOString().split("T")[0]+".csv";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
@@ -3045,7 +3049,7 @@ function BossokApp({ session, onLogout }) {
     const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href=url; a.download="stock_bossok_"+localDateStr()+".csv";
+    a.href=url; a.download="stock_bossok_"+new Date().toISOString().split("T")[0]+".csv";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
@@ -3060,7 +3064,7 @@ function BossokApp({ session, onLogout }) {
     const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href=url; a.download="commandes_bossok_"+localDateStr()+".csv";
+    a.href=url; a.download="commandes_bossok_"+new Date().toISOString().split("T")[0]+".csv";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
@@ -3445,7 +3449,7 @@ function BossokApp({ session, onLogout }) {
       {filteredClients.map(c=>{
         const imp=clientImpayees(c.id);
         return(
-          <div key={c.id} onClick={()=>openClient(c,"info")} style={{...S.card,cursor:"pointer",borderLeft:"3px solid "+tc(c.type).text}}
+          <div key={c.id} onClick={()=>{setSelClient(c);setClientTab("info");}} style={{...S.card,cursor:"pointer",borderLeft:"3px solid "+tc(c.type).text}}
             onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,.08)"}
             onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
             <div style={{display:"flex",gap:10}}>
@@ -3494,7 +3498,7 @@ function BossokApp({ session, onLogout }) {
 
 {/* ══ FACTURES ══════════════════════════════════════════════════ */}
 {page==="factures" && (()=>{
-  const today = localDateStr();
+  const today = new Date().toISOString().split("T")[0];
   const moisDispos = ["Tous",...Array.from(new Set(factures.map(f=>f.date?f.date.slice(0,7):"").filter(Boolean))).sort().reverse()];
   const clientsDispos = ["Tous",...[...clients].sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=>c.nom)];
 
@@ -3555,9 +3559,9 @@ function BossokApp({ session, onLogout }) {
     setEditingFacture(null);
     setFactClientId(f.client_id);
     setFactLignes(f.lignes||[]);
-    setFactDate(localDateStr());
+    setFactDate(new Date().toISOString().split("T")[0]);
     setFactNotes(f.notes||"");
-    setFactNumero(genererNumeroFacture(localDateStr()));
+    setFactNumero(genererNumeroFacture(new Date().toISOString().split("T")[0]));
     setSearchFactClient("");
     setShowFactForm(true);
   };
@@ -3684,7 +3688,7 @@ function BossokApp({ session, onLogout }) {
                         <div onClick={()=>setOpenFactureMenu(null)} style={{position:"fixed",inset:0,zIndex:250}}/>
                         <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:"#fff",border:"1px solid #E5E7EB",borderRadius:10,boxShadow:"0 12px 32px rgba(15,23,42,0.18)",zIndex:260,minWidth:200,overflow:"hidden"}}>
                           {f.statut==="Impayée"&&(
-                            <button onClick={()=>{setOpenFactureMenu(null);setPaiementFacture(f);setPaiementForm({mode:"",date:localDateStr()});setShowPaiementForm(true);}}
+                            <button onClick={()=>{setOpenFactureMenu(null);setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}}
                               className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#059669"}}>✓ Marquer Payée</button>
                           )}
                           {f.statut==="Payée"&&(
@@ -3861,56 +3865,11 @@ function BossokApp({ session, onLogout }) {
         )}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1.6fr 0.8fr 1.3fr 1fr",gap:6,marginBottom:12,alignItems:"end"}}>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>♻️ Consigne manuelle <span style={{color:"#D1D5DB"}}>(optionnel)</span></label>
-          <input value={manualConsigneLabelCmd} onChange={e=>setManualConsigneLabelCmd(e.target.value)}
-            placeholder="Libellé (ex: Coca VC)" style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Quantité</label>
-          <input type="number" min="1" value={manualConsigneQteCmd}
-            onChange={e=>{
-              const qte=e.target.value; setManualConsigneQteCmd(qte);
-              const prix=parseFloat(manualConsigneUnitaireCmd)||0;
-              const m=(parseFloat(qte)||0)*prix*(manualConsigneSensCmd==="retour"?-1:1);
-              setManualConsigneMontantCmd(m?String(m):"");
-            }} style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Consigne unitaire</label>
-          <select value={manualConsigneUnitaireCmd}
-            onChange={e=>{
-              const prix=e.target.value; setManualConsigneUnitaireCmd(prix);
-              const qte=parseFloat(manualConsigneQteCmd)||0;
-              const m=qte*(parseFloat(prix)||0)*(manualConsigneSensCmd==="retour"?-1:1);
-              setManualConsigneMontantCmd(m?String(m):"");
-            }} style={S.input}>
-            <option value="">— Choisir —</option>
-            {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
-              <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Sens</label>
-          <select value={manualConsigneSensCmd}
-            onChange={e=>{
-              const sens=e.target.value; setManualConsigneSensCmd(sens);
-              const qte=parseFloat(manualConsigneQteCmd)||0;
-              const prix=parseFloat(manualConsigneUnitaireCmd)||0;
-              const m=qte*prix*(sens==="retour"?-1:1);
-              setManualConsigneMontantCmd(m?String(m):"");
-            }} style={S.input}>
-            <option value="plus">+ Consigne</option>
-            <option value="retour">− Retour</option>
-          </select>
-        </div>
-        {manualConsigneMontantCmd && (
-          <div style={{gridColumn:isMobile?"1/-1":"1/-1",fontSize:12,fontWeight:600,color:parseFloat(manualConsigneMontantCmd)<0?"#DC2626":"#7C3AED"}}>
-            {parseFloat(manualConsigneMontantCmd)<0?"Retour":"Ajout"} : {fmtFull(Math.abs(parseFloat(manualConsigneMontantCmd)))}
-          </div>
-        )}
+      <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
+        <input value={manualConsigneLabelCmd} onChange={e=>setManualConsigneLabelCmd(e.target.value)}
+          placeholder="♻️ Consigne manuelle — libellé" style={{...S.input,flex:2}}/>
+        <input type="number" step="0.01" value={manualConsigneMontantCmd} onChange={e=>setManualConsigneMontantCmd(e.target.value)}
+          placeholder="Montant (+/-)" style={{...S.input,flex:1}}/>
       </div>
 
       <div style={{marginBottom:12}}>
@@ -4370,7 +4329,7 @@ function BossokApp({ session, onLogout }) {
               <tbody>
                 {zClients.sort((a,b)=>a.nom.localeCompare(b.nom)).map((c,i)=>(
                   <tr key={c.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFAFA",cursor:"pointer"}}
-                    onClick={()=>openClient(c,"info")}>
+                    onClick={()=>{setSelClient(c);setClientTab("info");setPage("clients");}}>
                     <td style={{padding:"5px 8px",fontWeight:600,color:"#1D4ED8"}}>{c.nom}</td>
                     <td style={{padding:"5px 8px",color:"#6B7280",fontSize:10}}>{c.adresse}</td>
                     <td style={{padding:"5px 8px",whiteSpace:"nowrap"}}>{c.telephone}</td>
@@ -4397,7 +4356,7 @@ function BossokApp({ session, onLogout }) {
         {l:"Stock bas (≤"+STOCK_BAS_SEUIL+")",v:produits.filter(p=>stock[p.id]>0&&stock[p.id]<=STOCK_BAS_SEUIL).length,c:"#D97706"},
         {l:"En stock",v:produits.filter(p=>stock[p.id]>5).length,c:"#059669"},
         {l:"Pertes ce mois",v:(()=>{
-          const moisActuel=localYearMonth();
+          const moisActuel=new Date().toISOString().slice(0,7);
           const pertesMois=pertesStock.filter(p=>(p.date||"").startsWith(moisActuel));
           const coutPertes=pertesMois.reduce((s,p)=>{
             const cm=getCoutMoyenPondere(p.produit_id,receptionsStock);
@@ -4466,14 +4425,14 @@ function BossokApp({ session, onLogout }) {
                 <td style={{padding:"7px 12px"}}>
                   <button onClick={()=>{
                     setReceptionProduit(p);
-                    setReceptionForm({quantite:"",prix_achat_unitaire:p.prix_achat||"",fournisseur:"",date:localDateStr(),notes:""});
+                    setReceptionForm({quantite:"",prix_achat_unitaire:p.prix_achat||"",fournisseur:"",date:new Date().toISOString().split("T")[0],notes:""});
                     setShowReceptionForm(true);
                   }} style={{...S.btn("#7C3AED"),padding:"5px 10px",fontSize:11}}>📥 Réception</button>
                 </td>
                 <td style={{padding:"7px 12px"}}>
                   <button onClick={()=>{
                     setPerteProduit(p);
-                    setPerteForm({quantite:"",motif:"Casse",date:localDateStr(),notes:""});
+                    setPerteForm({quantite:"",motif:"Casse",date:new Date().toISOString().split("T")[0],notes:""});
                     setShowPerteForm(true);
                   }} style={{...S.btn("#F59E0B"),padding:"5px 10px",fontSize:11}}>🗑️ Perte</button>
                 </td>
@@ -4504,7 +4463,7 @@ function BossokApp({ session, onLogout }) {
       return (
         <div>
           <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
-            <button onClick={()=>{setConsigneClientId(null);setConsigneForm({date:localDateStr()});setShowConsigneForm(true);}}
+            <button onClick={()=>{setConsigneClientId(null);setConsigneForm({date:new Date().toISOString().split("T")[0]});setShowConsigneForm(true);}}
               style={S.btn()}>+ Enregistrer un retour</button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
@@ -4555,7 +4514,7 @@ function BossokApp({ session, onLogout }) {
                         {c.credit>0?`- ${fmtFull(c.credit)}`:"—"}
                       </td>
                       <td style={{padding:"8px 12px"}}>
-                        <button onClick={()=>openClient(c,"consignes")} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
+                        <button onClick={()=>{setSelClient(c);setClientTab("consignes");}} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
                           Voir détail
                         </button>
                       </td>
@@ -4713,33 +4672,25 @@ function BossokApp({ session, onLogout }) {
 })()}
 
 
-  {/* ══ PAGE FICHE CLIENT ══════════════════════════════════════ */}
-  {page==="client-detail" && selClient&&(
-  <div key="client-detail" className="page-transition">
-    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
-      <span onClick={()=>{setPage(clientReturnPage);setSelClient(null);}} style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"flex",alignItems:"center",gap:4}}>← {PAGE_TITLES[clientReturnPage]||"Clients"}</span>
-      <span style={{color:"#CBD5E1"}}>/</span>
-      <span style={{color:"#64748B",fontWeight:500}}>{selClient.nom}</span>
-    </div>
-    <div style={{...S.card,marginBottom:16}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
-        <div style={{display:"flex",gap:14,alignItems:"center"}}>
-          <div style={{width:48,height:48,borderRadius:12,background:tc(selClient.type).bg,color:tc(selClient.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:15,flexShrink:0}}>{initials(selClient.nom)}</div>
+  {/* ══ MODAL CLIENT DETAIL ══════════════════════════════════════ */}
+  {selClient&&(
+  <div style={S.modal} onClick={()=>setSelClient(null)}>
+    <div style={{...S.modalBox,maxWidth:680}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+        <div style={{display:"flex",gap:12,alignItems:"center"}}>
+          <div style={{width:44,height:44,borderRadius:12,background:tc(selClient.type).bg,color:tc(selClient.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:14}}>{initials(selClient.nom)}</div>
           <div>
-            <div style={{fontWeight:700,fontSize:18,color:"#0F172A"}}>{selClient.nom}</div>
-            <div style={{fontSize:12,color:"#64748B",display:"flex",gap:8,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
-              <span style={S.badge(tc(selClient.type).bg,tc(selClient.type).text)}>{selClient.type}</span>
-              <span>📍 {selClient.region}</span>
-              <span style={S.badge(selClient.statut==="Actif"?"#DCFCE7":"#FEF3C7",selClient.statut==="Actif"?"#166534":"#92400E")}>{selClient.statut}</span>
-            </div>
+            <div style={{fontWeight:700,fontSize:16}}>{selClient.nom}</div>
+            <div style={{fontSize:12,color:"#6B7280"}}>{selClient.type} · {selClient.region}</div>
           </div>
         </div>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>{setShowFactForm(true);setFactClientId(selClient.id);setFactLignes([]);}} style={S.btn()}>+ Facture</button>
-          <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);}} style={S.btn("#F1F5F9","#334155")}>✏️ Modifier</button>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>{setShowFactForm(true);setFactClientId(selClient.id);setFactLignes([]);setSelClient(null);}} style={S.btn()}>+ Facture</button>
+          <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);setSelClient(null);}} style={S.btn("#6B7280")}>✏️</button>
+          <button onClick={()=>setSelClient(null)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
         </div>
       </div>
-      <div style={{display:"flex",gap:0,borderBottom:"1px solid #E5E7EB",marginTop:18,marginBottom:18}}>
+      <div style={{display:"flex",gap:0,borderBottom:"1px solid #E5E7EB",marginBottom:14}}>
         {[["info","Infos"],["factures","Factures"],["visites","Visites"],["consignes","Consignes"],["prix","Prix perso"]].map(([k,l])=>(
           <button key={k} style={S.tab(clientTab===k)} onClick={()=>setClientTab(k)}>{l}</button>
         ))}
@@ -4783,7 +4734,7 @@ function BossokApp({ session, onLogout }) {
                   <span style={{color:"#6B7280",flex:1}}>{f.date}</span>
                   <span style={{fontWeight:600}}>{fmtFull(total)}</span>
                   <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2",f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
-                  {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:"",date:localDateStr()});setShowPaiementForm(true);}} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
+                  {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
                   {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"2px 8px",fontSize:11}}>↺</button>}
                   <button title="Imprimer" onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,selClient,imp,solde,soldeConsignes(f.client_id));}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
                   <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"2px 8px",fontSize:11}}>🗑️</button>
@@ -4794,7 +4745,7 @@ function BossokApp({ session, onLogout }) {
         </div>
       )}
       {clientTab==="visites"&&(()=>{
-        const visites = [...(selClient.visites||[])].sort((a,b)=>b.date.localeCompare(a.date));
+        const visites = (selClient.visites||[]).sort((a,b)=>b.date.localeCompare(a.date));
         const saveVisite = async () => {
           if (!visiteDate) return;
           const newVisites = [...(selClient.visites||[]), {date:visiteDate, note:visiteNote, id:Date.now()}];
@@ -4813,7 +4764,7 @@ function BossokApp({ session, onLogout }) {
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div style={{fontWeight:600,fontSize:13}}>Historique des visites commerciales</div>
-              <button onClick={()=>{setShowVisiteForm(true);setVisiteDate(localDateStr());setVisiteNote("");}}
+              <button onClick={()=>{setShowVisiteForm(true);setVisiteDate(new Date().toISOString().split("T")[0]);setVisiteNote("");}}
                 style={{...S.btn("#1D4ED8"),padding:"5px 12px",fontSize:12}}>+ Ajouter une visite</button>
             </div>
             {showVisiteForm&&(
@@ -4895,18 +4846,14 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:12,color:"#6B7280",marginBottom:8}}>Tarif standard : {selClient.type}. Entrez un prix pour personnaliser.</div>
           <div style={{maxHeight:360,overflowY:"auto",display:"grid",gap:3}}>
             {produits.filter(p=>p.statut!=="Passif").map(p=>{
-              const prix = p.prix || {};
-              const standard = prix[selClient.type] || prix.Snack || 0;
+              const standard=p.prix[selClient.type]||p.prix.Snack;
               const perso=(selClient.prix_individuels||{})[p.id];
               return(
                 <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",background:"#F9FAFB",borderRadius:6}}>
                   <span style={{fontSize:11,flex:1}}>{p.nom}</span>
                   <span style={{fontSize:11,color:"#9CA3AF",width:60}}>{fmtFull(standard)}</span>
-                  <input type="number" step="0.01" placeholder={standard.toFixed(2)}
-                    key={p.id+":"+(perso??"vide")}
-                    defaultValue={perso!==undefined?perso:""}
-                    onBlur={e=>updatePrixIndividuel(selClient.id,p.id,e.target.value)}
-                    onKeyDown={e=>{if(e.key==="Enter") e.target.blur();}}
+                  <input type="number" step="0.01" placeholder={standard.toFixed(2)} value={perso!==undefined?perso:""}
+                    onChange={e=>updatePrixIndividuel(selClient.id,p.id,e.target.value)}
                     style={{width:72,padding:"3px 6px",border:(perso!==undefined?"1px solid #7C3AED":"1px solid #E5E7EB"),borderRadius:6,fontSize:11,outline:"none",background:perso!==undefined?"#F5F3FF":"#fff"}}/>
                   {perso!==undefined&&<button onClick={()=>updatePrixIndividuel(selClient.id,p.id,"")} style={{background:"none",border:"none",color:"#9CA3AF",cursor:"pointer"}}>✕</button>}
                 </div>
@@ -5041,44 +4988,21 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
       )}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1.4fr 0.7fr 1.2fr 0.9fr auto",gap:6,marginBottom:12,alignItems:"end"}}>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>♻️ Consigne manuelle <span style={{color:"#D1D5DB"}}>(optionnel)</span></label>
-          <input value={manualConsigneLabel} onChange={e=>setManualConsigneLabel(e.target.value)}
-            placeholder="Libellé (ex: Coca VC)" style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Quantité</label>
-          <input type="number" min="1" value={manualConsigneQte} onChange={e=>setManualConsigneQte(e.target.value)} style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Consigne unitaire</label>
-          <select value={manualConsigneUnitaire} onChange={e=>setManualConsigneUnitaire(e.target.value)} style={S.input}>
-            <option value="">— Choisir —</option>
-            {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
-              <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Sens</label>
-          <select value={manualConsigneSens} onChange={e=>setManualConsigneSens(e.target.value)} style={S.input}>
-            <option value="plus">+ Consigne</option>
-            <option value="retour">− Retour</option>
-          </select>
-        </div>
+      <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
+        <input value={manualConsigneLabel} onChange={e=>setManualConsigneLabel(e.target.value)}
+          placeholder="♻️ Consigne manuelle — libellé" style={{...S.input,flex:2}}/>
+        <input type="number" step="0.01" value={manualConsigneMontant} onChange={e=>setManualConsigneMontant(e.target.value)}
+          placeholder="Montant (+/-)" style={{...S.input,flex:1}}/>
         <button onClick={()=>{
-          const qte = parseFloat(manualConsigneQte)||0;
-          const prix = parseFloat(manualConsigneUnitaire)||0;
-          if (!qte || !prix) return;
-          const montant = qte*prix*(manualConsigneSens==="retour"?-1:1);
+          const montant = parseFloat(manualConsigneMontant);
+          if (!montant) return;
           setFactLignes(prev=>[...prev, {
             produitId:"CONSIGNE_MANUELLE",
             nom: manualConsigneLabel || (montant<0 ? "Retour consignes (manuel)" : "Consigne supplémentaire"),
             qte:1, pu:montant, consigne:0, isCredit: montant<0,
           }]);
-          setManualConsigneLabel(""); setManualConsigneQte("1"); setManualConsigneUnitaire(""); setManualConsigneSens("plus");
-        }} disabled={!manualConsigneQte||!manualConsigneUnitaire} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"9px 14px",opacity:(manualConsigneQte&&manualConsigneUnitaire)?1:0.5}}>+ Ajouter</button>
+          setManualConsigneLabel(""); setManualConsigneMontant("");
+        }} disabled={!manualConsigneMontant} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"9px 14px",opacity:manualConsigneMontant?1:0.5}}>+ Ajouter</button>
       </div>
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes internes</label>
