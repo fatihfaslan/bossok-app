@@ -33,6 +33,109 @@ const Icon = ({name, size=15, style}) => (
 );
 
 // ═══════════════════════════════════════════════════════════════════
+// DATATABLE — composant de liste réutilisable (chantier 4)
+// Desktop : vrai tableau dense, en-têtes cliquables pour trier.
+// Mobile  : liste compacte triable (pas de vraies colonnes, l'app est
+//           utilisée exclusivement sur téléphone donc c'est le format
+//           qui compte le plus au quotidien).
+// columns: [{ key, label, align, sortable, sortValue(row), render(row),
+//             mobilePrimary, mobileShow, wrap }]
+// ═══════════════════════════════════════════════════════════════════
+function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", emptyMessage="Aucune donnée", initialSort }) {
+  const [sortKey, setSortKey] = useState(initialSort?.key || null);
+  const [sortDir, setSortDir] = useState(initialSort?.dir || "asc");
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return rows;
+    const col = columns.find(c => c.key === sortKey);
+    const getVal = col?.sortValue || (r => r[sortKey]);
+    return [...rows].sort((a, b) => {
+      const va = getVal(a), vb = getVal(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (typeof va === "number" && typeof vb === "number") return sortDir === "asc" ? va - vb : vb - va;
+      return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    });
+  }, [rows, sortKey, sortDir, columns]);
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+
+  if (rows.length === 0) {
+    return (
+      <div style={{textAlign:"center",padding:"48px 20px",color:"#9CA3AF",background:"#fff",borderRadius:10,border:"1px solid #E3E7ED"}}>
+        <div style={{fontSize:34,marginBottom:10}}>{emptyIcon}</div>
+        <div style={{fontSize:13}}>{emptyMessage}</div>
+      </div>
+    );
+  }
+
+  if (isMobile) {
+    const primaryCol = columns.find(c => c.mobilePrimary) || columns[0];
+    const secondaryCols = columns.filter(c => c.mobileShow && c !== primaryCol);
+    const sortableCols = columns.filter(c => c.sortable !== false);
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,fontSize:11,color:"#6B7280"}}>
+          <span>Trier :</span>
+          <select value={sortKey||""} onChange={e=>toggleSort(e.target.value)} style={{padding:"5px 8px",border:"1px solid #E3E7ED",borderRadius:6,fontSize:11,flex:1}}>
+            <option value="">—</option>
+            {sortableCols.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}
+          </select>
+          {sortKey && <button onClick={()=>setSortDir(d=>d==="asc"?"desc":"asc")} style={{background:"#F1F5F9",border:"none",borderRadius:6,padding:"5px 9px",cursor:"pointer",color:"#374151",fontSize:12}}>{sortDir==="asc"?"↑":"↓"}</button>}
+          <span style={{marginLeft:"auto"}}>{rows.length}</span>
+        </div>
+        <div style={{background:"#fff",borderRadius:10,border:"1px solid #E3E7ED",overflow:"hidden"}}>
+          {sorted.map((row,i)=>(
+            <div key={row.id??i} onClick={()=>onRowClick&&onRowClick(row)}
+              style={{padding:"10px 12px",borderBottom:i<sorted.length-1?"1px solid #F1F5F9":"none",cursor:onRowClick?"pointer":"default"}}>
+              <div>{primaryCol.render ? primaryCol.render(row) : row[primaryCol.key]}</div>
+              {secondaryCols.length>0&&(
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",marginTop:4}}>
+                  {secondaryCols.map(c=>(<span key={c.key}>{c.render ? c.render(row) : row[c.key]}</span>))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{background:"#fff",borderRadius:10,border:"1px solid #E3E7ED",overflow:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+        <thead>
+          <tr style={{background:"#F8FAFC",borderBottom:"1px solid #E3E7ED"}}>
+            {columns.map(c=>(
+              <th key={c.key} onClick={()=>c.sortable!==false && toggleSort(c.key)}
+                style={{padding:"9px 12px",textAlign:c.align||"left",fontWeight:700,color:"#5D6B82",fontSize:10.5,textTransform:"uppercase",letterSpacing:"0.04em",cursor:c.sortable!==false?"pointer":"default",whiteSpace:"nowrap",userSelect:"none"}}>
+                {c.label}{sortKey===c.key && (sortDir==="asc"?" ↑":" ↓")}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((row,i)=>(
+            <tr key={row.id??i} onClick={()=>onRowClick&&onRowClick(row)}
+              style={{borderBottom:"1px solid #F1F5F9",cursor:onRowClick?"pointer":"default"}}>
+              {columns.map(c=>(
+                <td key={c.key} style={{padding:"8px 12px",textAlign:c.align||"left",whiteSpace:c.wrap?"normal":"nowrap"}}>
+                  {c.render ? c.render(row) : row[c.key]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // ROUTING (URL basée sur le hash, ex: #/clients/482)
 // ═══════════════════════════════════════════════════════════════════
 const PAGE_KEYS = ["calendrier","dashboard","caisse","clients","carte","factures","commandes","planning","stock","consignes","produits","zones"];
@@ -3552,37 +3655,8 @@ function BossokApp({ session, onLogout }) {
         {geocodingProgress ? `📍 ${geocodingProgress.done}/${geocodingProgress.total}...` : "📍 Géolocaliser les clients"}
       </button>
     </div>
-    <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{filteredClients.length} client(s)</div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
-      {filteredClients.map(c=>{
-        const imp=clientImpayees(c.id);
-        return(
-          <div key={c.id} onClick={()=>{setSelClient(c);setClientTab("info");}} style={{...S.card,cursor:"pointer",borderLeft:"3px solid "+tc(c.type).text}}
-            onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,.08)"}
-            onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
-            <div style={{display:"flex",gap:10}}>
-              <div style={{width:36,height:36,borderRadius:9,background:tc(c.type).bg,color:tc(c.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:11,flexShrink:0}}>{initials(c.nom)}</div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:600,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nom}</div>
-                <div style={{fontSize:11,color:"#6B7280",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>📍 {c.adresse}</div>
-                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:4}}>
-                  <span style={S.badge(tc(c.type).bg,tc(c.type).text)}>{c.type}</span>
-                  <span style={S.badge(c.statut==="Actif"?"#DCFCE7":"#FEF3C7",c.statut==="Actif"?"#166534":"#92400E")}>{c.statut}</span>
-                  {c.categorie_fidelite==="Gold"&&<span style={S.badge("#FEF3C7","#92400E")}>🥇 Gold</span>}
-                  {c.categorie_fidelite==="Silver"&&<span style={S.badge("#F1F5F9","#475569")}>🥈 Silver</span>}
-                  {imp.length>0&&<span style={S.badge("#FEE2E2","#DC2626")}>⚠ {imp.length}</span>}
-                  {EXPORT_REGIONS.includes(c.region)&&!tvaIntracomValide(c)&&(
-                    <span title="Pas de n° TVA intracommunautaire valide — l'exonération 0% n'est pas justifiée" style={S.badge("#FEE2E2","#DC2626")}>🧾 TVA manquante</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
     {/* Alphabet quick-filter */}
-    <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:10}}>
+    <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:10,alignItems:"center"}}>
       {["Tous","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"].map(l=>(
         <button key={l} onClick={()=>setSearchC(l==="Tous"?"":l)}
           style={{...S.btn(searchC.toUpperCase()===l||(!searchC&&l==="Tous")?"#1D4ED8":"#F1F5F9",
@@ -3591,16 +3665,44 @@ function BossokApp({ session, onLogout }) {
           {l}
         </button>
       ))}
-      <span style={{fontSize:11,color:"#6B7280",marginLeft:6,alignSelf:"center"}}>{filteredClients.length} client(s)</span>
+      <span style={{fontSize:11,color:"#6B7280",marginLeft:6}}>{filteredClients.length} client(s)</span>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
-      {filteredClients.length===0&&(
-        <div style={{gridColumn:"1/-1",...S.card,textAlign:"center",padding:"48px 0",color:"#9CA3AF"}}>
-          <div style={{fontSize:40,marginBottom:12}}>👥</div>
-          <div>{clients.length===0?"Aucun client — cliquez sur '+ Nouveau client'":"Aucun résultat"}</div>
-        </div>
-      )}
-    </div>
+    <DataTable
+      isMobile={isMobile}
+      rows={filteredClients}
+      onRowClick={c=>{setSelClient(c);setClientTab("info");}}
+      emptyIcon="👥"
+      emptyMessage={clients.length===0?"Aucun client — clique sur '+ Nouveau client'":"Aucun résultat pour ces filtres"}
+      initialSort={{key:"nom",dir:"asc"}}
+      columns={[
+        {key:"nom", label:"Client", mobilePrimary:true, sortValue:c=>c.nom||"", render:c=>(
+          <div style={{display:"flex",alignItems:"center",gap:9}}>
+            <div style={{width:28,height:28,borderRadius:8,background:tc(c.type).bg,color:tc(c.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:10.5,flexShrink:0}}>{initials(c.nom)}</div>
+            <div style={{minWidth:0}}>
+              <div style={{fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nom}</div>
+              <div style={{fontSize:11,color:"#94A3B8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:220}}>{c.adresse}</div>
+            </div>
+          </div>
+        )},
+        {key:"type", label:"Type", mobileShow:true, sortValue:c=>c.type||"", render:c=><span style={S.badge(tc(c.type).bg,tc(c.type).text)}>{c.type}</span>},
+        {key:"region", label:"Zone", mobileShow:true, sortValue:c=>c.region||"", render:c=>c.region||<span style={{color:"#CBD5E1"}}>—</span>},
+        {key:"statut", label:"Statut", mobileShow:true, sortValue:c=>c.statut||"", render:c=><span style={S.badge(c.statut==="Actif"?"#DCFCE7":"#FEF3C7",c.statut==="Actif"?"#166534":"#92400E")}>{c.statut}</span>},
+        {key:"fidelite", label:"Fidélité", sortValue:c=>c.categorie_fidelite||"", render:c=>
+          c.categorie_fidelite==="Gold" ? <span style={S.badge("#FEF3C7","#92400E")}>🥇 Gold</span>
+          : c.categorie_fidelite==="Silver" ? <span style={S.badge("#F1F5F9","#475569")}>🥈 Silver</span>
+          : <span style={{color:"#CBD5E1"}}>—</span>
+        },
+        {key:"impayees", label:"Impayées", align:"right", sortValue:c=>clientImpayees(c.id).length, render:c=>{
+          const n = clientImpayees(c.id).length;
+          return n>0 ? <span style={S.badge("#FEE2E2","#DC2626")}>⚠ {n}</span> : <span style={{color:"#CBD5E1"}}>—</span>;
+        }},
+        {key:"tva", label:"TVA", mobileShow:true, sortable:false, render:c=>
+          EXPORT_REGIONS.includes(c.region)&&!tvaIntracomValide(c)
+            ? <span title="Pas de n° TVA intracommunautaire valide — l'exonération 0% n'est pas justifiée" style={S.badge("#FEE2E2","#DC2626")}>🧾 Manquante</span>
+            : <span style={{color:"#CBD5E1"}}>—</span>
+        },
+      ]}
+    />
   </div>
 )}
 
