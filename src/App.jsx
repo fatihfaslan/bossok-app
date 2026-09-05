@@ -3613,14 +3613,14 @@ function BossokApp({ session, onLogout }) {
   <div>
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:10,marginBottom:14}}>
       {[
-        {l:"Total",v:clients.length,c:"#1D4ED8"},
-        {l:"Actifs",v:clientsActifs.length,c:"#059669"},
-        {l:"Passifs",v:clients.filter(c=>c.statut==="Passif").length,c:"#D97706"},
+        {l:"Total",v:clients.length,c:"#334155"},
+        {l:"Actifs",v:clientsActifs.length,c:"#334155"},
+        {l:"Passifs",v:clients.filter(c=>c.statut==="Passif").length,c:"#334155"},
         {l:"Impayées",v:factures.filter(f=>f.statut==="Impayée").length,c:"#DC2626"},
         {l:"TVA manquante",v:clients.filter(c=>EXPORT_REGIONS.includes(c.region)&&!tvaIntracomValide(c)).length,c:"#DC2626"},
-        {l:"Gold / Silver",v:clients.filter(c=>c.categorie_fidelite==="Gold").length+" / "+clients.filter(c=>c.categorie_fidelite==="Silver").length,c:"#92400E"},
+        {l:"Gold / Silver",v:clients.filter(c=>c.categorie_fidelite==="Gold").length+" / "+clients.filter(c=>c.categorie_fidelite==="Silver").length,c:"#334155"},
       ].map((s,i)=>(
-        <div key={i} style={S.kpi(s.c)}>
+        <div key={i} style={{...S.kpi(s.c),borderLeft:s.c==="#DC2626"?"3px solid #DC2626":"1px solid #E3E7ED"}}>
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
           <div style={{fontSize:11,color:"#6B7280"}}>{s.l}</div>
         </div>
@@ -3677,28 +3677,33 @@ function BossokApp({ session, onLogout }) {
       columns={[
         {key:"nom", label:"Client", mobilePrimary:true, sortValue:c=>c.nom||"", render:c=>(
           <div style={{display:"flex",alignItems:"center",gap:9}}>
-            <div style={{width:28,height:28,borderRadius:8,background:tc(c.type).bg,color:tc(c.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:10.5,flexShrink:0}}>{initials(c.nom)}</div>
+            <div style={{width:28,height:28,borderRadius:8,background:"#F1F5F9",color:"#5D6B82",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:10.5,flexShrink:0}}>{initials(c.nom)}</div>
             <div style={{minWidth:0}}>
               <div style={{fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nom}</div>
               <div style={{fontSize:11,color:"#94A3B8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:220}}>{c.adresse}</div>
             </div>
           </div>
         )},
-        {key:"type", label:"Type", mobileShow:true, sortValue:c=>c.type||"", render:c=><span style={S.badge(tc(c.type).bg,tc(c.type).text)}>{c.type}</span>},
+        {key:"type", label:"Type", mobileShow:true, sortValue:c=>c.type||"", render:c=><span style={{color:"#475569"}}>{c.type}</span>},
         {key:"region", label:"Zone", mobileShow:true, sortValue:c=>c.region||"", render:c=>c.region||<span style={{color:"#CBD5E1"}}>—</span>},
-        {key:"statut", label:"Statut", mobileShow:true, sortValue:c=>c.statut||"", render:c=><span style={S.badge(c.statut==="Actif"?"#DCFCE7":"#FEF3C7",c.statut==="Actif"?"#166534":"#92400E")}>{c.statut}</span>},
+        {key:"statut", label:"Statut", mobileShow:true, sortValue:c=>c.statut||"", render:c=>(
+          <span style={{display:"inline-flex",alignItems:"center",gap:5,color:"#475569"}}>
+            <span style={{width:6,height:6,borderRadius:99,background:c.statut==="Actif"?"#22C55E":"#CBD5E1",flexShrink:0}}/>
+            {c.statut}
+          </span>
+        )},
         {key:"fidelite", label:"Fidélité", sortValue:c=>c.categorie_fidelite||"", render:c=>
-          c.categorie_fidelite==="Gold" ? <span style={S.badge("#FEF3C7","#92400E")}>🥇 Gold</span>
-          : c.categorie_fidelite==="Silver" ? <span style={S.badge("#F1F5F9","#475569")}>🥈 Silver</span>
+          c.categorie_fidelite==="Gold" ? <span style={{color:"#92400E"}}>🥇 Gold</span>
+          : c.categorie_fidelite==="Silver" ? <span style={{color:"#64748B"}}>🥈 Silver</span>
           : <span style={{color:"#CBD5E1"}}>—</span>
         },
         {key:"impayees", label:"Impayées", align:"right", sortValue:c=>clientImpayees(c.id).length, render:c=>{
           const n = clientImpayees(c.id).length;
-          return n>0 ? <span style={S.badge("#FEE2E2","#DC2626")}>⚠ {n}</span> : <span style={{color:"#CBD5E1"}}>—</span>;
+          return n>0 ? <span style={{color:"#DC2626",fontWeight:600}}>⚠ {n}</span> : <span style={{color:"#CBD5E1"}}>—</span>;
         }},
         {key:"tva", label:"TVA", mobileShow:true, sortable:false, render:c=>
           EXPORT_REGIONS.includes(c.region)&&!tvaIntracomValide(c)
-            ? <span title="Pas de n° TVA intracommunautaire valide — l'exonération 0% n'est pas justifiée" style={S.badge("#FEE2E2","#DC2626")}>🧾 Manquante</span>
+            ? <span title="Pas de n° TVA intracommunautaire valide — l'exonération 0% n'est pas justifiée" style={{color:"#DC2626",fontWeight:600}}>🧾 Manquante</span>
             : <span style={{color:"#CBD5E1"}}>—</span>
         },
       ]}
@@ -4885,26 +4890,37 @@ function BossokApp({ session, onLogout }) {
   {/* ══ MODAL CLIENT DETAIL ══════════════════════════════════════ */}
   {selClient&&(
   <div style={S.modal} onClick={()=>setSelClient(null)}>
-    <div style={{...S.modalBox,maxWidth:680}} onClick={e=>e.stopPropagation()}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-        <div style={{display:"flex",gap:12,alignItems:"center"}}>
-          <div style={{width:44,height:44,borderRadius:12,background:tc(selClient.type).bg,color:tc(selClient.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:14}}>{initials(selClient.nom)}</div>
-          <div>
-            <div style={{fontWeight:700,fontSize:16}}>{selClient.nom}</div>
-            <div style={{fontSize:12,color:"#6B7280"}}>{selClient.type} · {selClient.region}</div>
+    <div style={{...S.modalBox,maxWidth:760,padding:0,overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+      <div style={{padding:isMobile?"18px 18px 0":"22px 26px 0"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,gap:12}}>
+          <div style={{display:"flex",gap:13,alignItems:"center",minWidth:0}}>
+            <div style={{width:46,height:46,borderRadius:12,background:"#F1F5F9",color:"#334155",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:15,flexShrink:0}}>{initials(selClient.nom)}</div>
+            <div style={{minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:17,color:"#0F172A",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selClient.nom}</div>
+              <div style={{fontSize:12,color:"#64748B",display:"flex",gap:7,alignItems:"center",marginTop:3,flexWrap:"wrap"}}>
+                <span>{selClient.type}</span>
+                <span style={{color:"#CBD5E1"}}>·</span>
+                <span>{selClient.region}</span>
+                <span style={{display:"inline-flex",alignItems:"center",gap:4,marginLeft:2}}>
+                  <span style={{width:6,height:6,borderRadius:99,background:selClient.statut==="Actif"?"#22C55E":"#CBD5E1"}}/>
+                  {selClient.statut}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <button onClick={()=>{setShowFactForm(true);setFactClientId(selClient.id);setFactLignes([]);setSelClient(null);}} style={S.btn()}>+ Facture</button>
+            <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);setSelClient(null);}} style={S.btn("#F1F5F9","#334155")}>✏️</button>
+            <button onClick={()=>setSelClient(null)} style={{background:"#F1F5F9",border:"none",width:34,height:34,borderRadius:8,cursor:"pointer",color:"#64748B",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="close" size={15}/></button>
           </div>
         </div>
-        <div style={{display:"flex",gap:6}}>
-          <button onClick={()=>{setShowFactForm(true);setFactClientId(selClient.id);setFactLignes([]);setSelClient(null);}} style={S.btn()}>+ Facture</button>
-          <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);setSelClient(null);}} style={S.btn("#6B7280")}>✏️</button>
-          <button onClick={()=>setSelClient(null)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+        <div style={{display:"flex",gap:2}}>
+          {[["info","Infos"],["factures","Factures"],["visites","Visites"],["consignes","Consignes"],["prix","Prix perso"]].map(([k,l])=>(
+            <button key={k} style={S.tab(clientTab===k)} onClick={()=>setClientTab(k)}>{l}</button>
+          ))}
         </div>
       </div>
-      <div style={{display:"flex",gap:0,borderBottom:"1px solid #E5E7EB",marginBottom:14}}>
-        {[["info","Infos"],["factures","Factures"],["visites","Visites"],["consignes","Consignes"],["prix","Prix perso"]].map(([k,l])=>(
-          <button key={k} style={S.tab(clientTab===k)} onClick={()=>setClientTab(k)}>{l}</button>
-        ))}
-      </div>
+      <div style={{borderTop:"1px solid #E3E7ED",padding:isMobile?18:26,maxHeight:"calc(90vh - 140px)",overflowY:"auto"}}>
       {clientTab==="info"&&(
         <div style={{display:"grid",gap:8}}>
           {EXPORT_REGIONS.includes(selClient.region)&&!tvaIntracomValide(selClient)&&(
@@ -5072,6 +5088,7 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   </div>
 )}
