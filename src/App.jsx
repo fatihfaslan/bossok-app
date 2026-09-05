@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, Component } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1306,6 +1306,38 @@ function LoginPage({ onLogin, recoveryToken, onRecoveryDone }) {
 
 
 // ═══════════════════════════════════════════════════════════════════
+// FILET DE SÉCURITÉ : capture les erreurs de rendu (écran blanc) au lieu
+// de laisser React planter silencieusement, et les signale à Sentry.
+// ═══════════════════════════════════════════════════════════════════
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error, info) {
+    console.error("Erreur de rendu :", error, info);
+    if (window.Sentry) {
+      window.Sentry.captureException(error, { extra: { componentStack: info?.componentStack } });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F4F6F8",fontFamily:"system-ui,sans-serif",padding:24}}>
+          <div style={{textAlign:"center",maxWidth:380,background:"#fff",padding:"32px 28px",borderRadius:14,border:"1px solid #E3E7ED",boxShadow:"0 4px 16px rgba(15,23,42,0.06)"}}>
+            <div style={{width:44,height:44,borderRadius:12,background:"#FEE2E2",color:"#DC2626",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+              <Icon name="warning" size={22}/>
+            </div>
+            <div style={{fontSize:16,fontWeight:700,color:"#0F172A",marginBottom:8}}>Une erreur inattendue est survenue</div>
+            <div style={{fontSize:13,color:"#64748B",marginBottom:22,lineHeight:1.5}}>L'erreur a été signalée automatiquement. Recharge la page pour continuer — tes données ne sont pas perdues.</div>
+            <button onClick={()=>window.location.reload()} style={{padding:"10px 22px",background:"#1D4ED8",color:"#fff",border:"none",borderRadius:8,fontWeight:600,fontSize:13,cursor:"pointer"}}>Recharger la page</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // MAIN APP WRAPPER
 // ═══════════════════════════════════════════════════════════════════
 export default function AppWrapper() {
@@ -1329,7 +1361,9 @@ export default function AppWrapper() {
 
   return (
     <div>
-      <BossokApp session={session} onLogout={() => { localStorage.removeItem("bossok_session"); setSession(null); }} />
+      <ErrorBoundary>
+        <BossokApp session={session} onLogout={() => { localStorage.removeItem("bossok_session"); setSession(null); }} />
+      </ErrorBoundary>
     </div>
   );
 }
@@ -1367,6 +1401,30 @@ function BossokApp({ session, onLogout }) {
   const dismissToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
   const notifyError = (msg) => pushToast(msg, "error");
   const notifySuccess = (msg) => pushToast(msg, "success");
+
+  // ── Monitoring d'erreurs (Sentry, chargé via <script> dans index.html) ──
+  // window.Sentry n'existe que si le script de chargement est bien présent
+  // dans index.html — sinon logError se comporte comme avant (toast + console).
+  const logError = (e, context) => {
+    console.error(context || "Erreur", e);
+    if (window.Sentry) {
+      window.Sentry.captureException(e, context ? { tags: { context } } : undefined);
+    }
+    notifyError("Erreur : " + (e?.message || String(e)));
+  };
+  useEffect(() => {
+    if (window.Sentry && session?.user?.email) {
+      window.Sentry.setUser({ email: session.user.email });
+    }
+  }, [session]);
+  useEffect(() => {
+    const onRejection = (event) => {
+      if (window.Sentry) window.Sentry.captureException(event.reason);
+      console.error("Promise non gérée :", event.reason);
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => window.removeEventListener("unhandledrejection", onRejection);
+  }, []);
 
   // ── Confirmation maison (remplace window.confirm()) ──────────────
   const [confirmDialog, setConfirmDialog] = useState(null); // {message, onConfirm, danger, confirmLabel}
@@ -1654,7 +1712,7 @@ function BossokApp({ session, onLogout }) {
       setShowConsigneForm(false);
       setConsigneForm({});
       setConsigneClientId(null);
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -1678,7 +1736,7 @@ function BossokApp({ session, onLogout }) {
       try {
         await db.delete("consignes_manuelles", id);
         await loadAll();
-      } catch(e) { notifyError("Erreur : "+e.message); }
+      } catch(e) { logError(e); }
       finally { setSaving(false); }
     }, {danger:true, confirmLabel:"Supprimer"});
   };
@@ -1704,7 +1762,7 @@ function BossokApp({ session, onLogout }) {
       }
       await loadAll();
       setShowClientForm(false);
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -1774,7 +1832,7 @@ function BossokApp({ session, onLogout }) {
       setShowProduitForm(false);
       setEditProduit(null);
       setProduitForm({});
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -1784,7 +1842,7 @@ function BossokApp({ session, onLogout }) {
     try {
       await db.update("produits", produit.id, {statut: nouveauStatut});
       await loadAll();
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -1808,7 +1866,7 @@ function BossokApp({ session, onLogout }) {
       setShowReceptionForm(false);
       setReceptionProduit(null);
       setReceptionForm({});
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -1830,7 +1888,7 @@ function BossokApp({ session, onLogout }) {
       setShowPerteForm(false);
       setPerteProduit(null);
       setPerteForm({});
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -1857,7 +1915,7 @@ function BossokApp({ session, onLogout }) {
       setShowEventForm(false);
       setEditEvent(null);
       setEventForm({});
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -1869,7 +1927,7 @@ function BossokApp({ session, onLogout }) {
         await loadAll();
         setShowEventForm(false);
         setEditEvent(null);
-      } catch(e) { notifyError("Erreur : "+e.message); }
+      } catch(e) { logError(e); }
       finally { setSaving(false); }
     }, {danger:true, confirmLabel:"Supprimer"});
   };
@@ -1972,7 +2030,7 @@ function BossokApp({ session, onLogout }) {
       }
       setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactClientId(null);
       setFactNumero(""); setSearchFactClient(""); setShowFactForm(false);
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -1989,7 +2047,7 @@ function BossokApp({ session, onLogout }) {
       setShowPaiementForm(false);
       setPaiementFacture(null);
       setPaiementForm({});
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -1998,7 +2056,7 @@ function BossokApp({ session, onLogout }) {
     try {
       await db.update("factures", id, {statut:"Impayée"});
       setFactures(prev=>prev.map(f=>f.id===id?{...f,statut:"Impayée"}:f));
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -2008,7 +2066,7 @@ function BossokApp({ session, onLogout }) {
       try {
         await db.delete("factures", id);
         setFactures(prev=>prev.filter(f=>f.id!==id));
-      } catch(e) { notifyError("Erreur : "+e.message); }
+      } catch(e) { logError(e); }
       finally { setSaving(false); }
     }, {danger:true, confirmLabel:"Supprimer"});
   };
@@ -2035,7 +2093,7 @@ function BossokApp({ session, onLogout }) {
         await db.update("factures", facture.id, {statut:"Annulée"});
         await loadAll();
         notifySuccess("Avoir " + avoirNum + " créé avec succès !");
-      } catch(e) { notifyError("Erreur : "+e.message); }
+      } catch(e) { logError(e); }
       finally { setSaving(false); }
     }, {confirmLabel:"Créer l'avoir"});
   };
@@ -2061,7 +2119,7 @@ function BossokApp({ session, onLogout }) {
         }
         await db.delete("commandes", id);
         await loadAll();
-      } catch(e) { notifyError("Erreur : "+e.message); }
+      } catch(e) { logError(e); }
       finally { setSaving(false); }
     }, {danger:true, confirmLabel:"Supprimer"});
   };
@@ -2173,7 +2231,7 @@ function BossokApp({ session, onLogout }) {
       await loadAll();
       setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
       setManualConsigneLabelCmd(""); setManualConsigneMontantCmd("");
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -2193,7 +2251,7 @@ function BossokApp({ session, onLogout }) {
         const client = clients.find(c=>c.id===cmd.client_id);
         setLastFacture({ facture, client });
       }
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
@@ -2225,7 +2283,7 @@ function BossokApp({ session, onLogout }) {
       } else {
         await sb("stock", "POST", {produit_id: produitId, quantite: newQte});
       }
-    } catch(e) { console.error(e); notifyError("Erreur lors de la sauvegarde du stock : "+e.message); }
+    } catch(e) { logError(e, "updateStock"); }
   };
 
   const saveRetour = async () => {
@@ -2240,7 +2298,7 @@ function BossokApp({ session, onLogout }) {
       await db.update("factures", showRetour, {retours:[...(f.retours||[]),...retours]});
       await loadAll();
       setShowRetour(null); setRetourQtes({});
-    } catch(e) { notifyError("Erreur : "+e.message); }
+    } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
 
