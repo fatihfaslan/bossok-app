@@ -633,7 +633,8 @@ const getChauffeur = (r) => CHAUFFEUR_REGIONS.B.includes(r) ? "B" : "A";
 const getClientPrix = (produit, client) => {
   const pi = client?.prix_individuels || {};
   if (pi[produit.id] !== undefined) return pi[produit.id];
-  return produit.prix[client?.type] || produit.prix["Snack"] || 0;
+  const prix = produit?.prix || {};
+  return prix[client?.type] || prix["Snack"] || 0;
 };
 
 // Régions hors Luxembourg traitées en exonération de TVA intracommunautaire
@@ -3609,7 +3610,7 @@ function BossokApp({ session, onLogout }) {
 )()}
 
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
-{page==="clients" && (
+{page==="clients" && !selClient && (
   <div>
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:10,marginBottom:14}}>
       {[
@@ -4729,7 +4730,7 @@ function BossokApp({ session, onLogout }) {
                         {c.credit>0?`- ${fmtFull(c.credit)}`:"—"}
                       </td>
                       <td style={{padding:"8px 12px"}}>
-                        <button onClick={()=>{setSelClient(c);setClientTab("consignes");}} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
+                        <button onClick={()=>{setSelClient(c);setClientTab("consignes");setPage("clients");}} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
                           Voir détail
                         </button>
                       </td>
@@ -4887,12 +4888,17 @@ function BossokApp({ session, onLogout }) {
 })()}
 
 
-  {/* ══ MODAL CLIENT DETAIL ══════════════════════════════════════ */}
-  {selClient&&(
-  <div style={S.modal} onClick={()=>setSelClient(null)}>
-    <div style={{...S.modalBox,maxWidth:760,padding:0,overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+  {/* ══ PAGE FICHE CLIENT ══════════════════════════════════════ */}
+  {page==="clients" && selClient&&(
+  <div key={"client-"+selClient.id} className="page-transition">
+    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
+      <span onClick={()=>setSelClient(null)} style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Clients</span>
+      <span style={{color:"#CBD5E1"}}>/</span>
+      <span style={{color:"#64748B",fontWeight:500}}>{selClient.nom}</span>
+    </div>
+    <div style={{...S.card,padding:0,overflow:"hidden"}}>
       <div style={{padding:isMobile?"18px 18px 0":"22px 26px 0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,gap:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,gap:12,flexWrap:"wrap"}}>
           <div style={{display:"flex",gap:13,alignItems:"center",minWidth:0}}>
             <div style={{width:46,height:46,borderRadius:12,background:"#F1F5F9",color:"#334155",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:15,flexShrink:0}}>{initials(selClient.nom)}</div>
             <div style={{minWidth:0}}>
@@ -4909,9 +4915,8 @@ function BossokApp({ session, onLogout }) {
             </div>
           </div>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
-            <button onClick={()=>{setShowFactForm(true);setFactClientId(selClient.id);setFactLignes([]);setSelClient(null);}} style={S.btn()}>+ Facture</button>
-            <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);setSelClient(null);}} style={S.btn("#F1F5F9","#334155")}>✏️</button>
-            <button onClick={()=>setSelClient(null)} style={{background:"#F1F5F9",border:"none",width:34,height:34,borderRadius:8,cursor:"pointer",color:"#64748B",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="close" size={15}/></button>
+            <button onClick={()=>{setShowFactForm(true);setFactClientId(selClient.id);setFactLignes([]);}} style={S.btn()}>+ Facture</button>
+            <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);}} style={S.btn("#F1F5F9","#334155")}>✏️</button>
           </div>
         </div>
         <div style={{display:"flex",gap:2}}>
@@ -4920,7 +4925,7 @@ function BossokApp({ session, onLogout }) {
           ))}
         </div>
       </div>
-      <div style={{borderTop:"1px solid #E3E7ED",padding:isMobile?18:26,maxHeight:"calc(90vh - 140px)",overflowY:"auto"}}>
+      <div style={{borderTop:"1px solid #E3E7ED",padding:isMobile?18:26}}>
       {clientTab==="info"&&(
         <div style={{display:"grid",gap:8}}>
           {EXPORT_REGIONS.includes(selClient.region)&&!tvaIntracomValide(selClient)&&(
@@ -5072,7 +5077,8 @@ function BossokApp({ session, onLogout }) {
           <div style={{fontSize:12,color:"#6B7280",marginBottom:8}}>Tarif standard : {selClient.type}. Entrez un prix pour personnaliser.</div>
           <div style={{maxHeight:360,overflowY:"auto",display:"grid",gap:3}}>
             {produits.filter(p=>p.statut!=="Passif").map(p=>{
-              const standard=p.prix[selClient.type]||p.prix.Snack;
+              const prix = p.prix || {};
+              const standard = prix[selClient.type] || prix.Snack || 0;
               const perso=(selClient.prix_individuels||{})[p.id];
               return(
                 <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",background:"#F9FAFB",borderRadius:6}}>
