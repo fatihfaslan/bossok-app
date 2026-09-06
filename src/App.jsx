@@ -41,9 +41,10 @@ const Icon = ({name, size=15, style}) => (
 // columns: [{ key, label, align, sortable, sortValue(row), render(row),
 //             mobilePrimary, mobileShow, wrap }]
 // ═══════════════════════════════════════════════════════════════════
-function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", emptyMessage="Aucune donnée", initialSort }) {
+function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", emptyMessage="Aucune donnée", initialSort, pageSize, footer }) {
   const [sortKey, setSortKey] = useState(initialSort?.key || null);
   const [sortDir, setSortDir] = useState(initialSort?.dir || "asc");
+  const [page, setPage] = useState(1);
 
   const sorted = useMemo(() => {
     if (!sortKey) return rows;
@@ -59,7 +60,12 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
     });
   }, [rows, sortKey, sortDir, columns]);
 
+  const totalPages = pageSize ? Math.max(1, Math.ceil(sorted.length / pageSize)) : 1;
+  const safePage = Math.min(page, totalPages);
+  const visible = pageSize ? sorted.slice((safePage-1)*pageSize, safePage*pageSize) : sorted;
+
   const toggleSort = (key) => {
+    setPage(1);
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
   };
@@ -73,6 +79,16 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
     );
   }
 
+  const Pagination = () => totalPages > 1 && (
+    <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:8,padding:"10px",borderTop:"1px solid #F1F5F9",flexWrap:"wrap"}}>
+      <button onClick={()=>setPage(1)} disabled={safePage===1} style={{background:"#F1F5F9",border:"none",borderRadius:6,padding:"5px 9px",fontSize:11,cursor:"pointer",opacity:safePage===1?0.4:1}}>«</button>
+      <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={safePage===1} style={{background:"#F1F5F9",border:"none",borderRadius:6,padding:"5px 9px",fontSize:11,cursor:"pointer",opacity:safePage===1?0.4:1}}>‹</button>
+      <span style={{fontSize:12,color:"#374151",fontWeight:600}}>Page {safePage} / {totalPages}</span>
+      <button onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={safePage===totalPages} style={{background:"#F1F5F9",border:"none",borderRadius:6,padding:"5px 9px",fontSize:11,cursor:"pointer",opacity:safePage===totalPages?0.4:1}}>›</button>
+      <button onClick={()=>setPage(totalPages)} disabled={safePage===totalPages} style={{background:"#F1F5F9",border:"none",borderRadius:6,padding:"5px 9px",fontSize:11,cursor:"pointer",opacity:safePage===totalPages?0.4:1}}>»</button>
+    </div>
+  );
+
   if (isMobile) {
     const primaryCol = columns.find(c => c.mobilePrimary) || columns[0];
     const secondaryCols = columns.filter(c => c.mobileShow && c !== primaryCol);
@@ -85,13 +101,13 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
             <option value="">—</option>
             {sortableCols.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}
           </select>
-          {sortKey && <button onClick={()=>setSortDir(d=>d==="asc"?"desc":"asc")} style={{background:"#F1F5F9",border:"none",borderRadius:6,padding:"5px 9px",cursor:"pointer",color:"#374151",fontSize:12}}>{sortDir==="asc"?"↑":"↓"}</button>}
+          {sortKey && <button onClick={()=>{setSortDir(d=>d==="asc"?"desc":"asc");setPage(1);}} style={{background:"#F1F5F9",border:"none",borderRadius:6,padding:"5px 9px",cursor:"pointer",color:"#374151",fontSize:12}}>{sortDir==="asc"?"↑":"↓"}</button>}
           <span style={{marginLeft:"auto"}}>{rows.length}</span>
         </div>
         <div style={{background:"#fff",borderRadius:10,border:"1px solid #E3E7ED",overflow:"hidden"}}>
-          {sorted.map((row,i)=>(
+          {visible.map((row,i)=>(
             <div key={row.id??i} onClick={()=>onRowClick&&onRowClick(row)}
-              style={{padding:"10px 12px",borderBottom:i<sorted.length-1?"1px solid #F1F5F9":"none",cursor:onRowClick?"pointer":"default"}}>
+              style={{padding:"10px 12px",borderBottom:i<visible.length-1?"1px solid #F1F5F9":"none",cursor:onRowClick?"pointer":"default"}}>
               <div>{primaryCol.render ? primaryCol.render(row) : row[primaryCol.key]}</div>
               {secondaryCols.length>0&&(
                 <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",marginTop:4}}>
@@ -100,6 +116,8 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
               )}
             </div>
           ))}
+          {footer && <div style={{padding:"9px 12px",borderTop:"1px solid #E3E7ED",background:"#F8FAFC",fontSize:12,fontWeight:700}}>{footer}</div>}
+          <Pagination/>
         </div>
       </div>
     );
@@ -119,7 +137,7 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
           </tr>
         </thead>
         <tbody>
-          {sorted.map((row,i)=>(
+          {visible.map((row,i)=>(
             <tr key={row.id??i} onClick={()=>onRowClick&&onRowClick(row)}
               style={{borderBottom:"1px solid #F1F5F9",cursor:onRowClick?"pointer":"default"}}>
               {columns.map(c=>(
@@ -130,7 +148,9 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
             </tr>
           ))}
         </tbody>
+        {footer && <tfoot>{footer}</tfoot>}
       </table>
+      <Pagination/>
     </div>
   );
 }
@@ -1694,8 +1714,6 @@ function BossokApp({ session, onLogout }) {
   const [factFilterClient, setFactFilterClient] = useState("");
   const [factFilterDateFrom, setFactFilterDateFrom] = useState("");
   const [factFilterDateTo, setFactFilterDateTo] = useState("");
-  const [factSort, setFactSort] = useState({col:"date",dir:"desc"});
-  const [factPage, setFactPage] = useState(1);
   const FACT_PER_PAGE = 50;
   const [editingFacture, setEditingFacture] = useState(null);
   const [factClientId, setFactClientId] = useState(null);
@@ -3767,7 +3785,7 @@ function BossokApp({ session, onLogout }) {
 )}
 
 {/* ══ FACTURES ══════════════════════════════════════════════════ */}
-{page==="factures" && (()=>{
+{page==="factures" && !showFactForm && (()=>{
   const today = new Date().toISOString().split("T")[0];
   const moisDispos = ["Tous",...Array.from(new Set(factures.map(f=>f.date?f.date.slice(0,7):"").filter(Boolean))).sort().reverse()];
   const clientsDispos = ["Tous",...[...clients].sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=>c.nom)];
@@ -3785,30 +3803,8 @@ function BossokApp({ session, onLogout }) {
     return matchStatut && matchSearch && matchMois && matchClient && matchFrom && matchTo;
   });
 
-  // Sort
-  ff = [...ff].sort((a,b)=>{
-    let va, vb;
-    if(factSort.col==="date") { va=a.date||""; vb=b.date||""; }
-    else if(factSort.col==="montant") { va=totalFact(a.lignes).total; vb=totalFact(b.lignes).total; }
-    else if(factSort.col==="client") { va=a.client_nom||""; vb=b.client_nom||""; }
-    else if(factSort.col==="numero") { va=String(a.numero||""); vb=String(b.numero||""); }
-    else { va=""; vb=""; }
-    if(va < vb) return factSort.dir==="asc" ? -1 : 1;
-    if(va > vb) return factSort.dir==="asc" ? 1 : -1;
-    return 0;
-  });
-
-  const totalPages = Math.ceil(ff.length / FACT_PER_PAGE);
-  const ffPage = ff.slice((factPage-1)*FACT_PER_PAGE, factPage*FACT_PER_PAGE);
-
   const totalImpaye = factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
   const totalFiltre = ff.reduce((s,f)=>s+totalFact(f.lignes).total,0);
-
-  const toggleSort = (col) => {
-    setFactSort(prev => prev.col===col ? {col,dir:prev.dir==="asc"?"desc":"asc"} : {col,dir:"desc"});
-    setFactPage(1);
-  };
-  const SortIcon = ({col}) => factSort.col===col ? (factSort.dir==="desc"?"▼":"▲") : "↕";
 
   const exportExcel = () => {
     const rows = [["N°","Date","Client","Montant HT","Consignes","Total TTC","Statut","Notes"]];
@@ -3846,7 +3842,7 @@ function BossokApp({ session, onLogout }) {
         {l:"Impayées",v:factures.filter(f=>f.statut==="Impayée").length,c:"#DC2626",s:"Impayée",sub:fmtFull(totalImpaye)},
         {l:"Avoirs",v:factures.filter(f=>f.statut==="Avoir").length,c:"#F59E0B",s:"Avoir"},
       ].map((k,i)=>(
-        <div key={i} style={{...S.kpi(k.c),cursor:"pointer",outline:factFilterStatut===k.s?"2px solid "+k.c:"none"}} onClick={()=>{setFactFilterStatut(k.s);setFactFilterDateFrom("");setFactFilterDateTo("");setFactFilterMois("Tous");setFactFilterSearch("");setFactFilterClient("");setFactPage(1);}}>
+        <div key={i} style={{...S.kpi(k.c),cursor:"pointer",outline:factFilterStatut===k.s?"2px solid "+k.c:"none"}} onClick={()=>{setFactFilterStatut(k.s);setFactFilterDateFrom("");setFactFilterDateTo("");setFactFilterMois("Tous");setFactFilterSearch("");setFactFilterClient("");}}>
           <div style={{fontSize:22,fontWeight:800,color:k.c}}>{k.v}</div>
           <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{k.l}</div>
           {k.sub&&<div style={{fontSize:11,color:k.c,fontWeight:700}}>{k.sub}</div>}
@@ -3857,10 +3853,10 @@ function BossokApp({ session, onLogout }) {
     {/* Filtres */}
     <div style={{...S.card,marginBottom:12}}>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
-        <input value={factFilterSearch} onChange={e=>{setFactFilterSearch(e.target.value);setFactPage(1);}}
+        <input value={factFilterSearch} onChange={e=>{setFactFilterSearch(e.target.value);}}
           placeholder="🔍 Rechercher client ou N°..."
           style={{...S.input,flex:1,minWidth:180}}/>
-        <select value={factFilterStatut} onChange={e=>{setFactFilterStatut(e.target.value);setFactPage(1);}}
+        <select value={factFilterStatut} onChange={e=>{setFactFilterStatut(e.target.value);}}
           style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,background:"#F9FAFB"}}>
           <option value="Tous">Tous les statuts</option>
           <option value="Impayée">⚠ Impayées</option>
@@ -3868,11 +3864,11 @@ function BossokApp({ session, onLogout }) {
           <option value="Avoir">↩ Avoirs</option>
           <option value="Annulée">✕ Annulées</option>
         </select>
-        <select value={factFilterClient} onChange={e=>{setFactFilterClient(e.target.value);setFactPage(1);}}
+        <select value={factFilterClient} onChange={e=>{setFactFilterClient(e.target.value);}}
           style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:180,background:"#F9FAFB"}}>
           {clientsDispos.map(c=><option key={c} value={c}>{c==="Tous"?"Tous les clients":c}</option>)}
         </select>
-        <select value={factFilterMois} onChange={e=>{setFactFilterMois(e.target.value);setFactPage(1);}}
+        <select value={factFilterMois} onChange={e=>{setFactFilterMois(e.target.value);}}
           style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,background:"#F9FAFB"}}>
           {moisDispos.map(m=><option key={m} value={m}>{m==="Tous"?"Tous les mois":m}</option>)}
         </select>
@@ -3880,16 +3876,16 @@ function BossokApp({ session, onLogout }) {
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <label style={{fontSize:12,color:"#6B7280",whiteSpace:"nowrap"}}>Du :</label>
-          <input type="date" value={factFilterDateFrom} onChange={e=>{setFactFilterDateFrom(e.target.value);setFactPage(1);}}
+          <input type="date" value={factFilterDateFrom} onChange={e=>{setFactFilterDateFrom(e.target.value);}}
             style={{padding:"6px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,background:"#F9FAFB"}}/>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <label style={{fontSize:12,color:"#6B7280",whiteSpace:"nowrap"}}>Au :</label>
-          <input type="date" value={factFilterDateTo} onChange={e=>{setFactFilterDateTo(e.target.value);setFactPage(1);}}
+          <input type="date" value={factFilterDateTo} onChange={e=>{setFactFilterDateTo(e.target.value);}}
             style={{padding:"6px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,background:"#F9FAFB"}}/>
         </div>
         {(factFilterStatut!=="Tous"||factFilterSearch||factFilterMois!=="Tous"||factFilterClient||factFilterDateFrom||factFilterDateTo)&&(
-          <button onClick={()=>{setFactFilterStatut("Tous");setFactFilterSearch("");setFactFilterMois("Tous");setFactFilterClient("");setFactFilterDateFrom("");setFactFilterDateTo("");setFactPage(1);}}
+          <button onClick={()=>{setFactFilterStatut("Tous");setFactFilterSearch("");setFactFilterMois("Tous");setFactFilterClient("");setFactFilterDateFrom("");setFactFilterDateTo("");}}
             style={{...S.btn("#F3F4F6","#374151"),padding:"6px 12px",fontSize:12}}>✕ Réinitialiser</button>
         )}
         <button onClick={exportExcel} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>📥 Export CSV</button>
@@ -3900,120 +3896,98 @@ function BossokApp({ session, onLogout }) {
     </div>
 
     {/* Tableau */}
-    {ff.length===0?(
-      <div style={{...S.card,textAlign:"center",padding:"48px 0",color:"#9CA3AF"}}>
-        <div style={{fontSize:40,marginBottom:12}}>🧾</div>
-        <div>Aucune facture trouvée</div>
-      </div>
-    ):(
-      <div style={{...S.card,overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
-          <thead>
-            <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
-              {[
-                {label:"N°",col:"numero"},
-                {label:"Date",col:"date"},
-                {label:"Client",col:"client"},
-                {label:"Montant HT",col:"montant",right:true},
-                {label:"Consignes",col:null,right:true},
-                {label:"Total TTC",col:"montant",right:true},
-                {label:"Statut",col:null},
-                {label:"Actions",col:null},
-              ].map((h,i)=>(
-                <th key={i} onClick={h.col?()=>toggleSort(h.col):undefined}
-                  style={{textAlign:h.right?"right":"left",padding:"8px 10px",color:"#6B7280",fontWeight:600,fontSize:11,whiteSpace:"nowrap",cursor:h.col?"pointer":"default",userSelect:"none"}}>
-                  {h.label} {h.col&&<span style={{opacity:0.5,fontSize:9}}><SortIcon col={h.col}/></span>}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ffPage.map((f,i)=>{
-              const {prod,cons,total}=totalFact(f.lignes);
-              const isImp = f.statut==="Impayée";
-              const echeanceDepassee = isImp && f.echeance && f.echeance < today;
-              const sc = f.statut==="Payée"?"#DCFCE7":f.statut==="Avoir"?"#EDE9FE":f.statut==="Annulée"?"#F3F4F6":"#FEE2E2";
-              const st = f.statut==="Payée"?"#166534":f.statut==="Avoir"?"#6D28D9":f.statut==="Annulée"?"#6B7280":"#DC2626";
-              const sl = f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":"⚠ Impayée";
-              return(
-                <tr key={f.id} style={{borderBottom:"1px solid #F1F5F9",background:echeanceDepassee?"#FFF0F0":isImp?"#FFF5F5":i%2===0?"#fff":"#FAFAFA"}}>
-                  <td style={{padding:"6px 10px",fontWeight:700,color:"#1D4ED8",whiteSpace:"nowrap"}}>
-                    {f.numero}
-                    {f.notes&&f.notes!=="Import historique"&&<span title={f.notes} style={{marginLeft:4,cursor:"help"}}>💬</span>}
-                  </td>
-                  <td style={{padding:"6px 10px",color:"#6B7280",whiteSpace:"nowrap"}}>{f.date}</td>
-                  <td style={{padding:"6px 10px",fontWeight:500}}>{f.client_nom}</td>
-                  <td style={{padding:"6px 10px",textAlign:"right",whiteSpace:"nowrap"}}>{fmtFull(prod)}</td>
-                  <td style={{padding:"6px 10px",textAlign:"right",whiteSpace:"nowrap",color:cons>0?"#7C3AED":"#9CA3AF"}}>{cons>0?fmtFull(cons):"—"}</td>
-                  <td style={{padding:"6px 10px",textAlign:"right",fontWeight:700,whiteSpace:"nowrap",color:echeanceDepassee?"#DC2626":isImp?"#EF4444":"inherit"}}>
-                    {fmtFull(total)}
-                    {echeanceDepassee&&<span title="Échéance dépassée" style={{marginLeft:4,fontSize:10}}>🔴</span>}
-                  </td>
-                  <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}><span style={S.badge(sc,st)}>{sl}</span></td>
-                  <td style={{padding:"6px 6px",position:"relative"}}>
-                    <button onClick={()=>setOpenFactureMenu(openFactureMenu===f.id?null:f.id)}
-                      style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:14,fontWeight:700}}>⋯</button>
-                    {openFactureMenu===f.id&&(
-                      <>
-                        <div onClick={()=>setOpenFactureMenu(null)} style={{position:"fixed",inset:0,zIndex:250}}/>
-                        <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:"#fff",border:"1px solid #E5E7EB",borderRadius:10,boxShadow:"0 12px 32px rgba(15,23,42,0.18)",zIndex:260,minWidth:200,overflow:"hidden"}}>
-                          {f.statut==="Impayée"&&(
-                            <button onClick={()=>{setOpenFactureMenu(null);setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}}
-                              className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#059669"}}>✓ Marquer Payée</button>
-                          )}
-                          {f.statut==="Payée"&&(
-                            <button onClick={()=>{setOpenFactureMenu(null);marquerImpayee(f.id);}}
-                              className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#D97706"}}>↺ Remettre Impayée</button>
-                          )}
-                          {f.statut==="Payée"&&(
-                            <button onClick={()=>{setOpenFactureMenu(null);setPaiementFacture(f);setPaiementForm({mode:f.mode_paiement||"",date:f.date_paiement||f.date});setShowPaiementForm(true);}}
-                              className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>💰 {f.mode_paiement?"Mode : "+f.mode_paiement:"Assigner un mode"}</button>
-                          )}
-                          <button onClick={()=>{setOpenFactureMenu(null);openEditFacture(f);}}
-                            className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
-                          <button onClick={()=>{setOpenFactureMenu(null);dupliquerFacture(f);}}
-                            className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
-                          <button onClick={()=>{setOpenFactureMenu(null);const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde,soldeConsignes(f.client_id));}}
-                            className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer PDF</button>
-                          {(f.statut==="Impayée"||f.statut==="Payée")&&(
-                            <button onClick={()=>{setOpenFactureMenu(null);creerAvoir(f);}}
-                              className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#8B5CF6"}}>↩️ Créer un avoir</button>
-                          )}
-                          <div style={{borderTop:"1px solid #F1F5F9"}}/>
-                          <button onClick={()=>{setOpenFactureMenu(null);supprimerFacture(f.id,f.numero);}}
-                            className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#EF4444"}}>🗑️ Supprimer</button>
-                        </div>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr style={{borderTop:"2px solid #E5E7EB",background:"#F9FAFB",fontWeight:700,fontSize:12}}>
-              <td colSpan={3} style={{padding:"8px 10px"}}>Total ({ff.length} factures)</td>
-              <td style={{padding:"8px 10px",textAlign:"right"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes).prod,0))}</td>
-              <td style={{padding:"8px 10px",textAlign:"right",color:"#7C3AED"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes).cons,0))}</td>
-              <td style={{padding:"8px 10px",textAlign:"right"}}>{fmtFull(totalFiltre)}</td>
-              <td colSpan={2}></td>
-            </tr>
-          </tfoot>
-        </table>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:8,padding:"12px",borderTop:"1px solid #E5E7EB"}}>
-            <button onClick={()=>setFactPage(1)} disabled={factPage===1} style={{...S.btn("#F3F4F6","#374151"),padding:"5px 10px",fontSize:12,opacity:factPage===1?0.4:1}}>«</button>
-            <button onClick={()=>setFactPage(p=>Math.max(1,p-1))} disabled={factPage===1} style={{...S.btn("#F3F4F6","#374151"),padding:"5px 10px",fontSize:12,opacity:factPage===1?0.4:1}}>‹</button>
-            <span style={{fontSize:13,color:"#374151",fontWeight:600}}>Page {factPage} / {totalPages}</span>
-            <button onClick={()=>setFactPage(p=>Math.min(totalPages,p+1))} disabled={factPage===totalPages} style={{...S.btn("#F3F4F6","#374151"),padding:"5px 10px",fontSize:12,opacity:factPage===totalPages?0.4:1}}>›</button>
-            <button onClick={()=>setFactPage(totalPages)} disabled={factPage===totalPages} style={{...S.btn("#F3F4F6","#374151"),padding:"5px 10px",fontSize:12,opacity:factPage===totalPages?0.4:1}}>»</button>
-            <span style={{fontSize:11,color:"#9CA3AF"}}>{(factPage-1)*FACT_PER_PAGE+1}-{Math.min(factPage*FACT_PER_PAGE,ff.length)} sur {ff.length}</span>
+    <DataTable
+      isMobile={isMobile}
+      rows={ff}
+      pageSize={FACT_PER_PAGE}
+      onRowClick={f=>openEditFacture(f)}
+      emptyIcon="🧾"
+      emptyMessage="Aucune facture trouvée"
+      initialSort={{key:"date",dir:"desc"}}
+      footer={isMobile ? (
+        <div style={{display:"flex",justifyContent:"space-between"}}>
+          <span>Total ({ff.length})</span>
+          <span>{fmtFull(totalFiltre)}</span>
+        </div>
+      ) : (
+        <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+          <td colSpan={3} style={{padding:"8px 12px"}}>Total ({ff.length} factures)</td>
+          <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes).prod,0))}</td>
+          <td style={{padding:"8px 12px",textAlign:"right",color:"#7C3AED"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes).cons,0))}</td>
+          <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(totalFiltre)}</td>
+          <td colSpan={2}></td>
+        </tr>
+      )}
+      columns={[
+        {key:"numero", label:"N°", mobilePrimary:true, sortValue:f=>String(f.numero||""), render:f=>(
+          <span style={{fontWeight:700,color:"#1D4ED8"}}>
+            {f.numero}
+            {f.notes&&f.notes!=="Import historique"&&<span title={f.notes} style={{marginLeft:4,cursor:"help"}}>💬</span>}
+          </span>
+        )},
+        {key:"date", label:"Date", mobileShow:true, sortValue:f=>f.date||""},
+        {key:"client", label:"Client", mobileShow:true, sortValue:f=>f.client_nom||"", render:f=>f.client_nom},
+        {key:"montant", label:"Montant HT", align:"right", sortValue:f=>totalFact(f.lignes).total, render:f=>fmtFull(totalFact(f.lignes).prod)},
+        {key:"consignes", label:"Consignes", align:"right", sortable:false, render:f=>{
+          const {cons} = totalFact(f.lignes);
+          return cons>0 ? <span style={{color:"#7C3AED"}}>{fmtFull(cons)}</span> : <span style={{color:"#CBD5E1"}}>—</span>;
+        }},
+        {key:"total", label:"Total TTC", align:"right", mobileShow:true, sortValue:f=>totalFact(f.lignes).total, render:f=>{
+          const {total} = totalFact(f.lignes);
+          const isImp = f.statut==="Impayée";
+          const echeanceDepassee = isImp && f.echeance && f.echeance < today;
+          return (
+            <span style={{fontWeight:700,color:echeanceDepassee?"#DC2626":isImp?"#EF4444":"#0F172A"}}>
+              {fmtFull(total)}{echeanceDepassee&&<span title="Échéance dépassée" style={{marginLeft:4,fontSize:10}}>🔴</span>}
+            </span>
+          );
+        }},
+        {key:"statut", label:"Statut", mobileShow:true, sortValue:f=>f.statut||"", render:f=>{
+          const sc = f.statut==="Payée"?"#DCFCE7":f.statut==="Avoir"?"#EDE9FE":f.statut==="Annulée"?"#F3F4F6":"#FEE2E2";
+          const st = f.statut==="Payée"?"#166534":f.statut==="Avoir"?"#6D28D9":f.statut==="Annulée"?"#6B7280":"#DC2626";
+          const sl = f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":"⚠ Impayée";
+          return <span style={S.badge(sc,st)}>{sl}</span>;
+        }},
+        {key:"actions", label:"", sortable:false, render:f=>(
+          <div style={{position:"relative",display:"inline-block"}} onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setOpenFactureMenu(openFactureMenu===f.id?null:f.id)}
+              style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:14,fontWeight:700}}>⋯</button>
+            {openFactureMenu===f.id&&(
+              <>
+                <div onClick={()=>setOpenFactureMenu(null)} style={{position:"fixed",inset:0,zIndex:250}}/>
+                <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:"#fff",border:"1px solid #E5E7EB",borderRadius:10,boxShadow:"0 12px 32px rgba(15,23,42,0.18)",zIndex:260,minWidth:200,overflow:"hidden"}}>
+                  {f.statut==="Impayée"&&(
+                    <button onClick={()=>{setOpenFactureMenu(null);setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}}
+                      className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#059669"}}>✓ Marquer Payée</button>
+                  )}
+                  {f.statut==="Payée"&&(
+                    <button onClick={()=>{setOpenFactureMenu(null);marquerImpayee(f.id);}}
+                      className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#D97706"}}>↺ Remettre Impayée</button>
+                  )}
+                  {f.statut==="Payée"&&(
+                    <button onClick={()=>{setOpenFactureMenu(null);setPaiementFacture(f);setPaiementForm({mode:f.mode_paiement||"",date:f.date_paiement||f.date});setShowPaiementForm(true);}}
+                      className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>💰 {f.mode_paiement?"Mode : "+f.mode_paiement:"Assigner un mode"}</button>
+                  )}
+                  <button onClick={()=>{setOpenFactureMenu(null);openEditFacture(f);}}
+                    className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
+                  <button onClick={()=>{setOpenFactureMenu(null);dupliquerFacture(f);}}
+                    className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
+                  <button onClick={()=>{setOpenFactureMenu(null);const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde,soldeConsignes(f.client_id));}}
+                    className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer PDF</button>
+                  {(f.statut==="Impayée"||f.statut==="Payée")&&(
+                    <button onClick={()=>{setOpenFactureMenu(null);creerAvoir(f);}}
+                      className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#8B5CF6"}}>↩️ Créer un avoir</button>
+                  )}
+                  <div style={{borderTop:"1px solid #F1F5F9"}}/>
+                  <button onClick={()=>{setOpenFactureMenu(null);supprimerFacture(f.id,f.numero);}}
+                    className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#EF4444"}}>🗑️ Supprimer</button>
+                </div>
+              </>
+            )}
           </div>
-        )}
-      </div>
-  )}
+        )},
+      ]}
+    />
   </div>
   );
 }
@@ -5149,13 +5123,18 @@ function BossokApp({ session, onLogout }) {
   </div>
 )}
 
-{/* ══ MODAL NOUVELLE FACTURE ══════════════════════════════════════ */}
-{showFactForm&&(
-  <div style={S.modal} onClick={()=>setShowFactForm(false)}>
-    <div style={{...S.modalBox,maxWidth:680}} onClick={e=>e.stopPropagation()}>
+{/* ══ PAGE FACTURE (nouvelle / édition) ══════════════════════════ */}
+{page==="factures" && showFactForm&&(
+  <div className="page-transition">
+    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
+      <span onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");setFactEcheance("");}}
+        style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Factures</span>
+      <span style={{color:"#CBD5E1"}}>/</span>
+      <span style={{color:"#64748B",fontWeight:500}}>{editingFacture ? "Facture "+editingFacture.numero : "Nouvelle facture"}</span>
+    </div>
+    <div style={{...S.card,maxWidth:680}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editingFacture ? "Modifier la facture" : "Nouvelle facture"}</h2>
-        <button onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");setFactEcheance("");}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
         <div>
