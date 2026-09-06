@@ -24,6 +24,10 @@ const ICON_PATHS = {
   info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8v.1"/></>,
   warning: <><path d="M12 3.5 21.5 20h-19L12 3.5Z"/><path d="M12 10v4M12 17v.1"/></>,
   danger: <><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></>,
+  eye: <><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3"/></>,
+  eyeOff: <><path d="M3 3l18 18"/><path d="M10.6 5.2A10.8 10.8 0 0 1 12 5c7 0 10.5 7 10.5 7a17.7 17.7 0 0 1-3.2 4.2M6.7 6.7C3.7 8.6 1.5 12 1.5 12s3.5 7 10.5 7c1.4 0 2.7-.28 3.85-.75"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></>,
+  lock: <><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5"/></>,
+  arrowRight: <><path d="M4 12h16M13 5l7 7-7 7"/></>,
 };
 const Icon = ({name, size=15, style}) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
@@ -1248,6 +1252,14 @@ function LoginPage({ onLogin, recoveryToken, onRecoveryDone }) {
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [recoverySuccess, setRecoverySuccess] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const [showPw2, setShowPw2] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(()=>typeof window!=="undefined"&&window.innerWidth<=880);
+  useEffect(()=>{
+    const onResize=()=>setIsNarrow(window.innerWidth<=880);
+    window.addEventListener("resize",onResize);
+    return ()=>window.removeEventListener("resize",onResize);
+  },[]);
 
   const handleLogin = async () => {
     if (!email || !password) return;
@@ -1317,111 +1329,153 @@ function LoginPage({ onLogin, recoveryToken, onRecoveryDone }) {
     setLoading(false);
   };
 
-  const inputStyle = { width: "100%", padding: "10px 12px", background: "#0F172A", border: "1px solid #334155", borderRadius: 8, color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" };
+  const inputStyle = { width: "100%", padding: "11px 13px", background: "#fff", border: "1px solid #E3E7ED", borderRadius: 8, color: "#0F172A", fontSize: 14, outline: "none", boxSizing: "border-box" };
+  const labelStyle = { fontSize: 11, fontWeight: 700, color: "#5D6B82", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" };
+  const primaryBtn = (busy) => ({ width: "100%", padding: "12px 0", background: busy ? "#93B4EE" : "#1D4ED8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 });
+  const errorBox = (msg) => (
+    <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, padding: "10px 12px", color: "#991B1B", fontSize: 13, marginBottom: 16, display:"flex", alignItems:"center", gap:8 }}>
+      <Icon name="danger" size={15}/> {msg}
+    </div>
+  );
+  const successBox = (msg) => (
+    <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "14px", color: "#166534", fontSize: 13, margin: "16px 0", display:"flex", alignItems:"center", gap:8 }}>
+      <Icon name="check" size={16}/> {msg}
+    </div>
+  );
+  const PwField = ({label, value, onChange, onEnter, show, setShow, placeholder}) => (
+    <div style={{ marginBottom: 14 }}>
+      <label style={labelStyle}>{label}</label>
+      <div style={{position:"relative"}}>
+        <input type={show?"text":"password"} value={value} onChange={onChange}
+          onKeyDown={e => e.key === "Enter" && onEnter && onEnter()}
+          placeholder={placeholder||"••••••••"} style={{...inputStyle,paddingRight:38}}/>
+        <button type="button" onClick={()=>setShow(s=>!s)}
+          style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#94A3B8",display:"flex"}}>
+          <Icon name={show?"eyeOff":"eye"} size={17}/>
+        </button>
+      </div>
+    </div>
+  );
 
   return (
-    <div style={{ fontFamily: "'Inter',system-ui,sans-serif", background: "#0F172A", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#1E293B", borderRadius: 16, padding: 40, width: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <img src={LOGO} alt="BOSSOK" style={{ width: 160, height: 160, objectFit: "contain", margin: "0 auto 8px", display: "block" }} />
-          <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>le distributeur Premium de vos boissons</div>
+    <div style={{ fontFamily: "'Inter',system-ui,sans-serif", minHeight: "100vh", display: "flex", background:"#fff" }}>
+      {!isNarrow && (
+        <div style={{ flex:"0 0 44%", background:"linear-gradient(160deg,#0F1B2E 0%,#16283F 55%,#1D4ED8 140%)", color:"#fff", padding:"48px 44px", display:"flex", flexDirection:"column", justifyContent:"space-between", position:"relative", overflow:"hidden" }}>
+          <div style={{position:"absolute",inset:0,opacity:0.06,backgroundImage:"radial-gradient(circle at 20% 20%, #fff 0, transparent 45%), radial-gradient(circle at 80% 70%, #fff 0, transparent 40%)"}}/>
+          <div style={{position:"relative"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:56}}>
+              <img src={LOGO} alt="BOSSOK" style={{width:34,height:34,objectFit:"contain",borderRadius:7}}/>
+              <span style={{fontWeight:800,fontSize:15,letterSpacing:"-0.2px"}}>BOSSOK</span>
+            </div>
+            <div style={{display:"inline-block",background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.18)",borderRadius:99,padding:"5px 14px",fontSize:10.5,fontWeight:700,letterSpacing:"0.08em",marginBottom:22}}>
+              DISTRIBUTION DE BOISSONS
+            </div>
+            <div style={{fontSize:34,fontWeight:800,lineHeight:1.2,marginBottom:18,letterSpacing:"-0.5px"}}>
+              Toute votre<br/>distribution,<br/>un seul outil.
+            </div>
+            <div style={{fontSize:14,color:"#C7D2E3",lineHeight:1.6,maxWidth:340}}>
+              Clients, commandes, stock, factures et consignes réunis dans une seule plateforme.
+            </div>
+            <div style={{display:"grid",gap:12,marginTop:34}}>
+              {["Facturation & consignes","Stock en temps réel","Clients, zones & tournées"].map(t=>(
+                <div key={t} style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:22,height:22,borderRadius:6,background:"rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon name="check" size={12}/>
+                  </div>
+                  <span style={{fontSize:13,color:"#E2E8F0"}}>{t}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{position:"relative",fontSize:11.5,color:"#7C8CA8"}}>© {new Date().getFullYear()} BOSSOK Distribution Sàrl</div>
         </div>
+      )}
 
-        {mode === "newpassword" ? (
-          <>
-            {!recoverySuccess ? (
-              <>
-                <div style={{ marginBottom: 8, fontSize: 13, color: "#94A3B8", lineHeight: 1.5 }}>
-                  Choisis ton nouveau mot de passe.
-                </div>
-                <div style={{ margin: "16px 0" }}>
-                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Nouveau mot de passe</label>
-                  <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-                    placeholder="••••••••" style={inputStyle}/>
-                </div>
-                <div style={{ marginBottom: 8 }}>
-                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Confirmer le mot de passe</label>
-                  <input type="password" value={newPasswordConfirm} onChange={e => setNewPasswordConfirm(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && handleSetNewPassword()}
-                    placeholder="••••••••" style={inputStyle}/>
-                </div>
-                {error && <div style={{ background: "#450A0A", border: "1px solid #DC2626", borderRadius: 8, padding: "10px 12px", color: "#FCA5A5", fontSize: 13, marginBottom: 16, marginTop: 8 }}>{error}</div>}
-                <button onClick={handleSetNewPassword} disabled={loading}
-                  style={{ width: "100%", padding: "12px 0", background: loading ? "#1E3A8A" : "#1D4ED8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                  {loading ? "Enregistrement..." : "Définir le mot de passe"}
-                </button>
-              </>
-            ) : (
-              <>
-                <div style={{ background: "#052E16", border: "1px solid #16A34A", borderRadius: 8, padding: "14px", color: "#86EFAC", fontSize: 13, margin: "16px 0", textAlign: "center" }}>
-                  ✅ Mot de passe mis à jour ! Tu peux maintenant te connecter.
-                </div>
-                <button onClick={onRecoveryDone}
-                  style={{ width: "100%", padding: "12px 0", background: "#1D4ED8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                  Aller à la connexion
-                </button>
-              </>
-            )}
-          </>
-        ) : mode === "login" ? (
-          <>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleLogin()}
-                placeholder="votre@email.com" style={inputStyle}/>
-            </div>
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Mot de passe</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleLogin()}
-                placeholder="••••••••" style={inputStyle}/>
-            </div>
-            <div style={{ textAlign: "right", marginBottom: 20 }}>
-              <button onClick={() => { setMode("reset"); setError(""); setResetSent(false); }}
-                style={{ background: "none", border: "none", color: "#60A5FA", fontSize: 12, cursor: "pointer" }}>
-                Mot de passe oublié ?
-              </button>
-            </div>
-            {error && <div style={{ background: "#450A0A", border: "1px solid #DC2626", borderRadius: 8, padding: "10px 12px", color: "#FCA5A5", fontSize: 13, marginBottom: 16 }}>{error}</div>}
-            <button onClick={handleLogin} disabled={loading}
-              style={{ width: "100%", padding: "12px 0", background: loading ? "#1E3A8A" : "#1D4ED8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer" }}>
-              {loading ? "Connexion..." : "Se connecter"}
-            </button>
-          </>
-        ) : (
-          <>
-            <div style={{ marginBottom: 8, fontSize: 13, color: "#94A3B8", lineHeight: 1.5 }}>
-              Entrez votre email et nous vous enverrons un lien pour réinitialiser votre mot de passe.
-            </div>
-            {!resetSent ? (
-              <>
-                <div style={{ margin: "16px 0" }}>
-                  <label style={{ fontSize: 12, color: "#94A3B8", display: "block", marginBottom: 6 }}>Email</label>
-                  <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && handleReset()}
-                    placeholder="votre@email.com" style={inputStyle}/>
-                </div>
-                {error && <div style={{ background: "#450A0A", border: "1px solid #DC2626", borderRadius: 8, padding: "10px 12px", color: "#FCA5A5", fontSize: 13, marginBottom: 16 }}>{error}</div>}
-                <button onClick={handleReset} disabled={loading}
-                  style={{ width: "100%", padding: "12px 0", background: loading ? "#1E3A8A" : "#1D4ED8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer", marginBottom: 12 }}>
-                  {loading ? "Envoi..." : "Envoyer le lien"}
-                </button>
-              </>
-            ) : (
-              <div style={{ background: "#052E16", border: "1px solid #16A34A", borderRadius: 8, padding: "14px", color: "#86EFAC", fontSize: 13, margin: "16px 0", textAlign: "center" }}>
-                ✅ Email envoyé ! Vérifiez votre boîte mail et cliquez sur le lien pour choisir un nouveau mot de passe.
+      <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:isNarrow?"32px 20px":"40px" }}>
+        <div style={{ width:"100%", maxWidth:380 }}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+            <img src={LOGO} alt="BOSSOK" style={{width:36,height:36,objectFit:"contain",borderRadius:8}}/>
+            <span style={{fontWeight:800,fontSize:17,color:"#0F172A",letterSpacing:"-0.2px"}}>BOSSOK</span>
+          </div>
+          <div style={{fontSize:10.5,fontWeight:700,color:"#1D4ED8",letterSpacing:"0.06em",marginBottom:26}}>ESPACE DE GESTION</div>
+
+          {mode === "newpassword" ? (
+            <>
+              {!recoverySuccess ? (
+                <>
+                  <div style={{fontSize:20,fontWeight:800,color:"#0F172A",marginBottom:6}}>Nouveau mot de passe</div>
+                  <div style={{ marginBottom: 22, fontSize: 13, color: "#64748B", lineHeight: 1.5 }}>
+                    Choisis ton nouveau mot de passe.
+                  </div>
+                  <PwField label="Nouveau mot de passe" value={newPassword} onChange={e=>setNewPassword(e.target.value)}
+                    show={showPw} setShow={setShowPw}/>
+                  <PwField label="Confirmer le mot de passe" value={newPasswordConfirm} onChange={e=>setNewPasswordConfirm(e.target.value)}
+                    onEnter={handleSetNewPassword} show={showPw2} setShow={setShowPw2}/>
+                  {error && errorBox(error)}
+                  <button onClick={handleSetNewPassword} disabled={loading} style={primaryBtn(loading)}>
+                    {loading ? "Enregistrement..." : "Définir le mot de passe"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  {successBox("Mot de passe mis à jour ! Tu peux maintenant te connecter.")}
+                  <button onClick={onRecoveryDone} style={primaryBtn(false)}>Aller à la connexion</button>
+                </>
+              )}
+            </>
+          ) : mode === "login" ? (
+            <>
+              <div style={{fontSize:20,fontWeight:800,color:"#0F172A",marginBottom:6}}>Bienvenue</div>
+              <div style={{fontSize:13,color:"#64748B",marginBottom:22}}>Connecte-toi à ton espace BOSSOK.</div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleLogin()}
+                  placeholder="votre@email.com" style={inputStyle}/>
               </div>
-            )}
-            <button onClick={() => { setMode("login"); setError(""); setResetSent(false); }}
-              style={{ width: "100%", padding: "10px 0", background: "transparent", color: "#60A5FA", border: "1px solid #1E3A8A", borderRadius: 8, fontSize: 13, cursor: "pointer" }}>
-              ← Retour à la connexion
-            </button>
-          </>
-        )}
+              <PwField label="Mot de passe" value={password} onChange={e=>setPassword(e.target.value)}
+                onEnter={handleLogin} show={showPw} setShow={setShowPw}/>
+              <div style={{ textAlign: "right", marginBottom: 18, marginTop:-4 }}>
+                <button onClick={() => { setMode("reset"); setError(""); setResetSent(false); }}
+                  style={{ background: "none", border: "none", color: "#1D4ED8", fontSize: 12.5, fontWeight:600, cursor: "pointer" }}>
+                  Mot de passe oublié ?
+                </button>
+              </div>
+              {error && errorBox(error)}
+              <button onClick={handleLogin} disabled={loading} style={primaryBtn(loading)}>
+                {loading ? "Connexion..." : <>Se connecter <Icon name="arrowRight" size={15}/></>}
+              </button>
+            </>
+          ) : (
+            <>
+              <div style={{fontSize:20,fontWeight:800,color:"#0F172A",marginBottom:6}}>Mot de passe oublié</div>
+              <div style={{ marginBottom: 22, fontSize: 13, color: "#64748B", lineHeight: 1.5 }}>
+                Entre ton email et on t'enverra un lien pour réinitialiser ton mot de passe.
+              </div>
+              {!resetSent ? (
+                <>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={labelStyle}>Email</label>
+                    <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleReset()}
+                      placeholder="votre@email.com" style={inputStyle}/>
+                  </div>
+                  {error && errorBox(error)}
+                  <button onClick={handleReset} disabled={loading} style={{...primaryBtn(loading),marginBottom:12}}>
+                    {loading ? "Envoi..." : "Envoyer le lien"}
+                  </button>
+                </>
+              ) : successBox("Email envoyé ! Vérifie ta boîte mail et clique sur le lien pour choisir un nouveau mot de passe.")}
+              <button onClick={() => { setMode("login"); setError(""); setResetSent(false); }}
+                style={{ width: "100%", padding: "11px 0", background: "#F8FAFC", color: "#374151", border: "1px solid #E3E7ED", borderRadius: 8, fontSize: 13, fontWeight:600, cursor: "pointer" }}>
+                ← Retour à la connexion
+              </button>
+            </>
+          )}
 
-        <div style={{ textAlign: "center", marginTop: 20, fontSize: 11, color: "#475569" }}>
-          🔒 Accès sécurisé — BOSSOK Distribution Sàrl
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginTop: 28, fontSize: 11.5, color: "#94A3B8" }}>
+            <Icon name="lock" size={12}/> Accès sécurisé — BOSSOK Distribution Sàrl
+          </div>
         </div>
       </div>
     </div>
