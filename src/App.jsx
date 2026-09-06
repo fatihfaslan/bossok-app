@@ -1641,61 +1641,61 @@ function BossokApp({ session, onLogout }) {
   const [calWeekRef, setCalWeekRef] = useState(()=>new Date().toISOString().split("T")[0]);
 
   // UI
-  const [selClient, setSelClient] = useState(null);
   const [clientTab, setClientTab] = useState("info");
 
-  // ── Onglets clients multiples (comme des onglets de navigateur) ──
-  const [openClientTabs, setOpenClientTabs] = useState([]); // liste d'ids, dans l'ordre d'ouverture
-  const openClientTab = (c, tab="info") => {
-    if (!c) return;
-    setOpenClientTabs(prev => prev.includes(c.id) ? prev : [...prev, c.id]);
-    setSelClient(c);
-    setClientTab(tab);
-    setPage("clients");
+  // ── Onglets de travail génériques (comme des onglets de navigateur) ──
+  // Chaque onglet : {id, type, label, page, ...données spécifiques au type}
+  const [workTabs, setWorkTabs] = useState([]);
+  const [activeWorkTabId, setActiveWorkTabId] = useState(null);
+  const activeWorkTab = workTabs.find(t=>t.id===activeWorkTabId) || null;
+  const openWorkTab = (tab) => {
+    setWorkTabs(prev => prev.some(t=>t.id===tab.id) ? prev.map(t=>t.id===tab.id?{...t,...tab}:t) : [...prev, tab]);
+    setActiveWorkTabId(tab.id);
+    if (tab.page) setPage(tab.page);
   };
-  const closeClientTab = (id, e) => {
+  const closeWorkTab = (id, e) => {
     if (e) e.stopPropagation();
-    setOpenClientTabs(prev => {
-      const idx = prev.indexOf(id);
-      const next = prev.filter(x => x !== id);
-      if (selClient?.id === id) {
-        const fallbackId = next[idx] ?? next[idx-1];
-        if (fallbackId != null) {
-          const c = clients.find(cl => cl.id === fallbackId);
-          setSelClient(c || null);
-        } else {
-          setSelClient(null);
-        }
+    setWorkTabs(prev => {
+      const idx = prev.findIndex(t=>t.id===id);
+      const next = prev.filter(t=>t.id!==id);
+      if (activeWorkTabId===id) {
+        const fallback = next[idx] ?? next[idx-1];
+        setActiveWorkTabId(fallback ? fallback.id : null);
       }
       return next;
     });
   };
-  const clientTabStrip = () => (
-    openClientTabs.length > 0 && (
+  const workTabStrip = () => (
+    workTabs.length > 0 && (
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,overflowX:"auto",paddingBottom:2}}>
-        <span onClick={()=>setSelClient(null)}
-          style={{cursor:"pointer",fontWeight:!selClient?700:500,fontSize:12,flexShrink:0,padding:"6px 10px",borderRadius:8,
-            color:!selClient?"#0F172A":"#64748B",background:!selClient?"#fff":"transparent",
-            border:!selClient?"1px solid #E3E7ED":"1px solid transparent",boxShadow:!selClient?"0 1px 2px rgba(16,24,40,0.04)":"none"}}>
+        <span onClick={()=>setActiveWorkTabId(null)}
+          style={{cursor:"pointer",fontWeight:!activeWorkTabId?700:500,fontSize:12,flexShrink:0,padding:"6px 10px",borderRadius:8,
+            color:!activeWorkTabId?"#0F172A":"#64748B",background:!activeWorkTabId?"#fff":"transparent",
+            border:!activeWorkTabId?"1px solid #E3E7ED":"1px solid transparent",boxShadow:!activeWorkTabId?"0 1px 2px rgba(16,24,40,0.04)":"none"}}>
           Liste
         </span>
-        {openClientTabs.map(id=>{
-          const c = clients.find(cl=>cl.id===id);
-          if (!c) return null;
-          const active = selClient?.id===id;
+        {workTabs.map(t=>{
+          const active = activeWorkTabId===t.id;
           return (
-            <div key={id} onClick={()=>setSelClient(c)}
+            <div key={t.id} onClick={()=>{setActiveWorkTabId(t.id); if(t.page) setPage(t.page);}}
               style={{display:"flex",alignItems:"center",gap:6,padding:"6px 6px 6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:active?700:500,
                 background:active?"#fff":"transparent",border:active?"1px solid #E3E7ED":"1px solid transparent",
                 color:active?"#0F172A":"#64748B",flexShrink:0,boxShadow:active?"0 1px 2px rgba(16,24,40,0.04)":"none"}}>
-              <span style={{whiteSpace:"nowrap",maxWidth:130,overflow:"hidden",textOverflow:"ellipsis"}}>{c.nom}</span>
-              <button onClick={e=>closeClientTab(id,e)} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",padding:2,display:"flex",borderRadius:5}}><Icon name="close" size={11}/></button>
+              <span style={{whiteSpace:"nowrap",maxWidth:130,overflow:"hidden",textOverflow:"ellipsis"}}>{t.label}</span>
+              <button onClick={e=>closeWorkTab(t.id,e)} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",padding:2,display:"flex",borderRadius:5}}><Icon name="close" size={11}/></button>
             </div>
           );
         })}
       </div>
     )
   );
+  // Fiche client dérivée de l'onglet actif (compatibilité avec le code existant)
+  const selClient = activeWorkTab?.type==="client" ? clients.find(c=>c.id===activeWorkTab.clientId) : null;
+  const setSelClient = (c) => {
+    if (!c) { setActiveWorkTabId(null); return; }
+    openWorkTab({id:"client-"+c.id, type:"client", label:c.nom, clientId:c.id, page:"clients"});
+  };
+  const openClientTab = (c, tab="info") => { setClientTab(tab); setSelClient(c); };
 
   // ── Routing : URL (hash) <-> état ─────────────────────────────────
   useEffect(() => {
@@ -1762,13 +1762,23 @@ function BossokApp({ session, onLogout }) {
   const [editProduit, setEditProduit] = useState(null);
   const [produitForm, setProduitForm] = useState({});
   const [produitFilterStatut, setProduitFilterStatut] = useState("Actif");
-  const [showReceptionForm, setShowReceptionForm] = useState(false);
+  const showReceptionForm = activeWorkTab?.type==="reception";
   const [receptionProduit, setReceptionProduit] = useState(null);
   const [receptionForm, setReceptionForm] = useState({});
-  const [showPerteForm, setShowPerteForm] = useState(false);
+  const showPerteForm = activeWorkTab?.type==="perte";
   const [stockDraft, setStockDraft] = useState({});
   const [perteProduit, setPerteProduit] = useState(null);
   const [perteForm, setPerteForm] = useState({});
+  const openReceptionTab = () => {
+    setReceptionProduit(null);
+    setReceptionForm({date:localDateStr()});
+    openWorkTab({id:"reception", type:"reception", label:"Réception stock", page:"stock"});
+  };
+  const openPerteTab = () => {
+    setPerteProduit(null);
+    setPerteForm({motif:"Casse", date:localDateStr()});
+    openWorkTab({id:"perte", type:"perte", label:"Déclarer une perte", page:"stock"});
+  };
   const [showEventForm, setShowEventForm] = useState(false);
   const [showPaiementForm, setShowPaiementForm] = useState(false);
   const [openFactureMenu, setOpenFactureMenu] = useState(null);
@@ -2111,7 +2121,7 @@ function BossokApp({ session, onLogout }) {
       const newQte = (stock[receptionProduit.id] || 0) + qte;
       await updateStock(receptionProduit.id, newQte);
       await loadAll();
-      setShowReceptionForm(false);
+      closeWorkTab("reception");
       setReceptionProduit(null);
       setReceptionForm({});
     } catch(e) { logError(e); }
@@ -2133,7 +2143,7 @@ function BossokApp({ session, onLogout }) {
       const newQte = Math.max(0, (stock[perteProduit.id] || 0) - qte);
       await updateStock(perteProduit.id, newQte);
       await loadAll();
-      setShowPerteForm(false);
+      closeWorkTab("perte");
       setPerteProduit(null);
       setPerteForm({});
     } catch(e) { logError(e); }
@@ -2574,7 +2584,6 @@ function BossokApp({ session, onLogout }) {
     try {
       await db.update("clients", clientId, {prix_individuels: newPrix});
       setClients(prev=>prev.map(c=>c.id===clientId?{...c,prix_individuels:newPrix}:c));
-      if (selClient?.id===clientId) setSelClient(prev=>({...prev,prix_individuels:newPrix}));
     } catch(e) { console.error(e); }
   };
 
@@ -3774,7 +3783,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && !selClient && (
   <div>
-    {clientTabStrip()}
+    {workTabStrip()}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:clients.length,c:"#334155"},
@@ -4761,6 +4770,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ STOCK ══════════════════════════════════════════════════════ */}
 {page==="stock" && !showReceptionForm && !showPerteForm && (
   <div>
+    {workTabStrip()}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Ruptures",v:produits.filter(p=>!(stock[p.id]>0)).length,c:"#DC2626"},
@@ -4789,9 +4799,9 @@ function BossokApp({ session, onLogout }) {
         {["Tous",...new Set(produits.map(p=>p.categorie))].sort((a,b)=>a==="Tous"?-1:b==="Tous"?1:a.localeCompare(b)).map(c=><option key={c}>{c}</option>)}
       </select>
       <div style={{display:"flex",gap:8}}>
-        <button onClick={()=>{setReceptionProduit(null);setReceptionForm({date:localDateStr()});setShowReceptionForm(true);}}
+        <button onClick={()=>{openReceptionTab();}}
           style={{...S.btn("#F5F3FF","#7C3AED"),padding:"7px 14px",fontSize:12,fontWeight:600}}>📥 Réception</button>
-        <button onClick={()=>{setPerteProduit(null);setPerteForm({motif:"Casse",date:localDateStr()});setShowPerteForm(true);}}
+        <button onClick={()=>{openPerteTab();}}
           style={{...S.btn("#FFFBEB","#D97706"),padding:"7px 14px",fontSize:12,fontWeight:600}}>🗑️ Déclarer une perte</button>
       </div>
     </div>
@@ -5056,7 +5066,7 @@ function BossokApp({ session, onLogout }) {
   {/* ══ PAGE FICHE CLIENT ══════════════════════════════════════ */}
   {page==="clients" && selClient&&(
   <div key={"client-"+selClient.id} className="page-transition">
-    {clientTabStrip()}
+    {workTabStrip()}
     <div style={{...S.card,padding:0,overflow:"hidden"}}>
       <div style={{padding:isMobile?"18px 18px 0":"22px 26px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,gap:12,flexWrap:"wrap"}}>
@@ -5142,14 +5152,12 @@ function BossokApp({ session, onLogout }) {
           if (!visiteDate) return;
           const newVisites = [...(selClient.visites||[]), {date:visiteDate, note:visiteNote, id:Date.now()}];
           await db.update("clients", selClient.id, {visites:newVisites});
-          setSelClient({...selClient, visites:newVisites});
           setClients(prev=>prev.map(c=>c.id===selClient.id?{...c,visites:newVisites}:c));
           setVisiteDate(""); setVisiteNote(""); setShowVisiteForm(false);
         };
         const deleteVisite = async (vid) => {
           const newVisites = (selClient.visites||[]).filter(v=>v.id!==vid);
           await db.update("clients", selClient.id, {visites:newVisites});
-          setSelClient({...selClient, visites:newVisites});
           setClients(prev=>prev.map(c=>c.id===selClient.id?{...c,visites:newVisites}:c));
         };
         return(
@@ -5626,12 +5634,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ PAGE RÉCEPTION STOCK ══════════════════════════════════════ */}
 {showReceptionForm&&(
   <div className="page-transition">
-    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
-      <span onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}}
-        style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Stock</span>
-      <span style={{color:"#CBD5E1"}}>/</span>
-      <span style={{color:"#64748B",fontWeight:500}}>Réception</span>
-    </div>
+    {workTabStrip()}
     <div style={{...S.card,maxWidth:560}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>📥 Réception de stock</h2>
@@ -5705,7 +5708,7 @@ function BossokApp({ session, onLogout }) {
       })()}
 
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={()=>{closeWorkTab("reception");setReceptionProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveReception} disabled={saving||!receptionProduit||!receptionForm.quantite||!receptionForm.prix_achat_unitaire}
           style={{...S.btn("#7C3AED"),flex:2,opacity:(saving||!receptionProduit||!receptionForm.quantite||!receptionForm.prix_achat_unitaire)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Enregistrer la réception"}
@@ -5718,12 +5721,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ PAGE PERTE STOCK ══════════════════════════════════════════ */}
 {showPerteForm&&(
   <div className="page-transition">
-    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
-      <span onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}}
-        style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Stock</span>
-      <span style={{color:"#CBD5E1"}}>/</span>
-      <span style={{color:"#64748B",fontWeight:500}}>Déclarer une perte</span>
-    </div>
+    {workTabStrip()}
     <div style={{...S.card,maxWidth:560}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🗑️ Déclarer une perte</h2>
@@ -5797,7 +5795,7 @@ function BossokApp({ session, onLogout }) {
       })()}
 
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={()=>{closeWorkTab("perte");setPerteProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={savePerte} disabled={saving||!perteProduit||!perteForm.quantite}
           style={{...S.btn("#F59E0B"),flex:2,opacity:(saving||!perteProduit||!perteForm.quantite)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Confirmer la perte"}
