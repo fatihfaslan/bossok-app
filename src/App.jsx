@@ -1555,6 +1555,59 @@ function BossokApp({ session, onLogout }) {
   const [selClient, setSelClient] = useState(null);
   const [clientTab, setClientTab] = useState("info");
 
+  // ── Onglets clients multiples (comme des onglets de navigateur) ──
+  const [openClientTabs, setOpenClientTabs] = useState([]); // liste d'ids, dans l'ordre d'ouverture
+  const openClientTab = (c, tab="info") => {
+    if (!c) return;
+    setOpenClientTabs(prev => prev.includes(c.id) ? prev : [...prev, c.id]);
+    setSelClient(c);
+    setClientTab(tab);
+    setPage("clients");
+  };
+  const closeClientTab = (id, e) => {
+    if (e) e.stopPropagation();
+    setOpenClientTabs(prev => {
+      const idx = prev.indexOf(id);
+      const next = prev.filter(x => x !== id);
+      if (selClient?.id === id) {
+        const fallbackId = next[idx] ?? next[idx-1];
+        if (fallbackId != null) {
+          const c = clients.find(cl => cl.id === fallbackId);
+          setSelClient(c || null);
+        } else {
+          setSelClient(null);
+        }
+      }
+      return next;
+    });
+  };
+  const clientTabStrip = () => (
+    openClientTabs.length > 0 && (
+      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,overflowX:"auto",paddingBottom:2}}>
+        <span onClick={()=>setSelClient(null)}
+          style={{cursor:"pointer",fontWeight:!selClient?700:500,fontSize:12,flexShrink:0,padding:"6px 10px",borderRadius:8,
+            color:!selClient?"#0F172A":"#64748B",background:!selClient?"#fff":"transparent",
+            border:!selClient?"1px solid #E3E7ED":"1px solid transparent",boxShadow:!selClient?"0 1px 2px rgba(16,24,40,0.04)":"none"}}>
+          Liste
+        </span>
+        {openClientTabs.map(id=>{
+          const c = clients.find(cl=>cl.id===id);
+          if (!c) return null;
+          const active = selClient?.id===id;
+          return (
+            <div key={id} onClick={()=>setSelClient(c)}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"6px 6px 6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:active?700:500,
+                background:active?"#fff":"transparent",border:active?"1px solid #E3E7ED":"1px solid transparent",
+                color:active?"#0F172A":"#64748B",flexShrink:0,boxShadow:active?"0 1px 2px rgba(16,24,40,0.04)":"none"}}>
+              <span style={{whiteSpace:"nowrap",maxWidth:130,overflow:"hidden",textOverflow:"ellipsis"}}>{c.nom}</span>
+              <button onClick={e=>closeClientTab(id,e)} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",padding:2,display:"flex",borderRadius:5}}><Icon name="close" size={11}/></button>
+            </div>
+          );
+        })}
+      </div>
+    )
+  );
+
   // ── Routing : URL (hash) <-> état ─────────────────────────────────
   useEffect(() => {
     const applyHash = () => {
@@ -1575,7 +1628,7 @@ function BossokApp({ session, onLogout }) {
   useEffect(() => {
     if (pendingClientId!=null && clients.length>0) {
       const c = clients.find(cl=>cl.id===pendingClientId);
-      if (c) { setSelClient(c); setClientTab("info"); }
+      if (c) openClientTab(c, "info");
       setPendingClientId(null);
     }
   }, [clients, pendingClientId]);
@@ -3612,6 +3665,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && !selClient && (
   <div>
+    {clientTabStrip()}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:clients.length,c:"#334155"},
@@ -3671,7 +3725,7 @@ function BossokApp({ session, onLogout }) {
     <DataTable
       isMobile={isMobile}
       rows={filteredClients}
-      onRowClick={c=>{setSelClient(c);setClientTab("info");}}
+      onRowClick={c=>openClientTab(c,"info")}
       emptyIcon="👥"
       emptyMessage={clients.length===0?"Aucun client — clique sur '+ Nouveau client'":"Aucun résultat pour ces filtres"}
       initialSort={{key:"nom",dir:"asc"}}
@@ -4545,7 +4599,7 @@ function BossokApp({ session, onLogout }) {
               <tbody>
                 {zClients.sort((a,b)=>a.nom.localeCompare(b.nom)).map((c,i)=>(
                   <tr key={c.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFAFA",cursor:"pointer"}}
-                    onClick={()=>{setSelClient(c);setClientTab("info");setPage("clients");}}>
+                    onClick={()=>openClientTab(c,"info")}>
                     <td style={{padding:"5px 8px",fontWeight:600,color:"#1D4ED8"}}>{c.nom}</td>
                     <td style={{padding:"5px 8px",color:"#6B7280",fontSize:10}}>{c.adresse}</td>
                     <td style={{padding:"5px 8px",whiteSpace:"nowrap"}}>{c.telephone}</td>
@@ -4730,7 +4784,7 @@ function BossokApp({ session, onLogout }) {
                         {c.credit>0?`- ${fmtFull(c.credit)}`:"—"}
                       </td>
                       <td style={{padding:"8px 12px"}}>
-                        <button onClick={()=>{setSelClient(c);setClientTab("consignes");setPage("clients");}} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
+                        <button onClick={()=>openClientTab(c,"consignes")} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
                           Voir détail
                         </button>
                       </td>
@@ -4891,11 +4945,7 @@ function BossokApp({ session, onLogout }) {
   {/* ══ PAGE FICHE CLIENT ══════════════════════════════════════ */}
   {page==="clients" && selClient&&(
   <div key={"client-"+selClient.id} className="page-transition">
-    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
-      <span onClick={()=>setSelClient(null)} style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Clients</span>
-      <span style={{color:"#CBD5E1"}}>/</span>
-      <span style={{color:"#64748B",fontWeight:500}}>{selClient.nom}</span>
-    </div>
+    {clientTabStrip()}
     <div style={{...S.card,padding:0,overflow:"hidden"}}>
       <div style={{padding:isMobile?"18px 18px 0":"22px 26px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,gap:12,flexWrap:"wrap"}}>
