@@ -2,6 +2,21 @@ import { useState, useMemo, useEffect, useCallback, useRef, Component } from "re
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════
+// DATE HELPERS (fuseau horaire local, Luxembourg)
+// ═══════════════════════════════════════════════════════════════════
+// new Date().toISOString() convertit en UTC : entre minuit et 1h du matin
+// (heure d'hiver) ou 2h (heure d'été), ça renvoie encore la date de LA VEILLE.
+function localDateStr(d = new Date()) {
+  const yr = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${yr}-${mo}-${da}`;
+}
+function localYearMonth(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // ICÔNES SVG (dessinées à la main, aucune dépendance externe)
 // ═══════════════════════════════════════════════════════════════════
 const ICON_PATHS = {
@@ -4749,10 +4764,10 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Ruptures",v:produits.filter(p=>!(stock[p.id]>0)).length,c:"#DC2626"},
-        {l:"Stock bas (≤"+STOCK_BAS_SEUIL+")",v:produits.filter(p=>stock[p.id]>0&&stock[p.id]<=STOCK_BAS_SEUIL).length,c:"#D97706"},
-        {l:"En stock",v:produits.filter(p=>stock[p.id]>5).length,c:"#059669"},
+        {l:"Stock bas (≤"+STOCK_BAS_SEUIL+")",v:produits.filter(p=>stock[p.id]>0&&stock[p.id]<=STOCK_BAS_SEUIL).length,c:"#334155"},
+        {l:"En stock",v:produits.filter(p=>stock[p.id]>5).length,c:"#334155"},
         {l:"Pertes ce mois",v:(()=>{
-          const moisActuel=new Date().toISOString().slice(0,7);
+          const moisActuel=localYearMonth();
           const pertesMois=pertesStock.filter(p=>(p.date||"").startsWith(moisActuel));
           const coutPertes=pertesMois.reduce((s,p)=>{
             const cm=getCoutMoyenPondere(p.produit_id,receptionsStock);
@@ -4761,9 +4776,9 @@ function BossokApp({ session, onLogout }) {
             return s+p.quantite*cout;
           },0);
           return fmtFull(coutPertes);
-        })(),c:"#DC2626"},
+        })(),c:"#334155"},
       ].map((s,i)=>(
-        <div key={i} style={S.kpi(s.c)}>
+        <div key={i} style={{...S.kpi(s.c),borderLeft:s.c==="#DC2626"?"3px solid #DC2626":"1px solid #E3E7ED"}}>
           <div style={{fontSize:22,fontWeight:800,color:s.c}}>{s.v}</div>
           <div style={{fontSize:11,color:"#6B7280"}}>{s.l}</div>
         </div>
@@ -4774,70 +4789,68 @@ function BossokApp({ session, onLogout }) {
         {["Tous",...new Set(produits.map(p=>p.categorie))].sort((a,b)=>a==="Tous"?-1:b==="Tous"?1:a.localeCompare(b)).map(c=><option key={c}>{c}</option>)}
       </select>
     </div>
-    <div style={S.card}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-        <thead>
-          <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
-            {["Produit","Cat.","Stock","Coût moyen","Modifier","Réception","Perte"].map(h=>(
-              <th key={h} style={{textAlign:"left",padding:"8px 12px",color:"#6B7280",fontWeight:600,fontSize:12}}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {produits.filter(p=>stockCat==="Tous"||p.categorie===stockCat).map(p=>{
-            const q=stock[p.id]||0;
-            const col=q===0?"#DC2626":q<=STOCK_BAS_SEUIL?"#D97706":"#059669";
-            const coutMoyen=getCoutMoyenPondere(p.id,receptionsStock);
-            const nbReceptions=receptionsStock.filter(r=>r.produit_id===p.id).length;
-            return(
-              <tr key={p.id} style={{borderBottom:"1px solid #F1F5F9",background:q===0?"#FFF5F5":q<=STOCK_BAS_SEUIL?"#FFFDF0":"transparent"}}>
-                <td style={{padding:"7px 12px",fontWeight:500}}>{p.nom}{p.type_emballage==="VC"&&<span style={{...S.badge("#EDE9FE","#7C3AED"),marginLeft:6,fontSize:10}}>VC</span>}</td>
-                <td style={{padding:"7px 12px"}}><span style={S.badge("#F3F4F6","#374151")}>{p.categorie}</span></td>
-                <td style={{padding:"7px 12px"}}><span style={{fontWeight:700,color:col,fontSize:16}}>{q}</span><span style={{fontSize:11,color:"#9CA3AF",marginLeft:4}}>cs</span></td>
-                <td style={{padding:"7px 12px"}}>
-                  {coutMoyen!=null ? (
-                    <div>
-                      <span style={{fontWeight:600,color:"#7C3AED"}}>{fmtFull(coutMoyen)}</span>
-                      <div style={{fontSize:10,color:"#9CA3AF"}}>{nbReceptions} réception{nbReceptions>1?"s":""}</div>
-                    </div>
-                  ) : <span style={{color:"#D1D5DB",fontSize:12}}>—</span>}
-                </td>
-                <td style={{padding:"7px 12px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:4}}>
-                    <button onClick={()=>updateStock(p.id,(stock[p.id]||0)-1)} style={{width:26,height:26,border:"1px solid #E5E7EB",borderRadius:6,background:"#F9FAFB",cursor:"pointer",fontWeight:700}}>−</button>
-                    <input type="number" min="0"
-                      value={stockDraft[p.id]!==undefined ? stockDraft[p.id] : q}
-                      onChange={e=>setStockDraft(prev=>({...prev,[p.id]:e.target.value}))}
-                      onBlur={()=>{
-                        if (stockDraft[p.id]===undefined) return;
-                        updateStock(p.id, parseInt(stockDraft[p.id])||0);
-                        setStockDraft(prev=>{const n={...prev}; delete n[p.id]; return n;});
-                      }}
-                      onKeyDown={e=>{if(e.key==="Enter") e.target.blur();}}
-                      style={{width:54,textAlign:"center",padding:"3px 4px",border:"1px solid #D1D5DB",borderRadius:6,fontSize:13,outline:"none"}}/>
-                    <button onClick={()=>updateStock(p.id,(stock[p.id]||0)+1)} style={{width:26,height:26,border:"1px solid #E5E7EB",borderRadius:6,background:"#F9FAFB",cursor:"pointer",fontWeight:700}}>+</button>
-                  </div>
-                </td>
-                <td style={{padding:"7px 12px"}}>
-                  <button onClick={()=>{
-                    setReceptionProduit(p);
-                    setReceptionForm({quantite:"",prix_achat_unitaire:p.prix_achat||"",fournisseur:"",date:new Date().toISOString().split("T")[0],notes:""});
-                    setShowReceptionForm(true);
-                  }} style={{...S.btn("#7C3AED"),padding:"5px 10px",fontSize:11}}>📥 Réception</button>
-                </td>
-                <td style={{padding:"7px 12px"}}>
-                  <button onClick={()=>{
-                    setPerteProduit(p);
-                    setPerteForm({quantite:"",motif:"Casse",date:new Date().toISOString().split("T")[0],notes:""});
-                    setShowPerteForm(true);
-                  }} style={{...S.btn("#F59E0B"),padding:"5px 10px",fontSize:11}}>🗑️ Perte</button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      isMobile={isMobile}
+      rows={produits.filter(p=>stockCat==="Tous"||p.categorie===stockCat)}
+      pageSize={50}
+      emptyIcon="📦"
+      emptyMessage="Aucun produit dans cette catégorie"
+      initialSort={{key:"stock",dir:"asc"}}
+      columns={[
+        {key:"nom", label:"Produit", mobilePrimary:true, sortValue:p=>p.nom||"", render:p=>(
+          <span style={{fontWeight:600}}>{p.nom}{p.type_emballage==="VC"&&<span style={{marginLeft:6,fontSize:10,color:"#7C3AED"}}>VC</span>}</span>
+        )},
+        {key:"categorie", label:"Cat.", mobileShow:true, sortValue:p=>p.categorie||"", render:p=><span style={{color:"#475569"}}>{p.categorie}</span>},
+        {key:"stock", label:"Stock", align:"right", mobileShow:true, sortValue:p=>stock[p.id]||0, render:p=>{
+          const q=stock[p.id]||0;
+          const col=q===0?"#DC2626":q<=STOCK_BAS_SEUIL?"#D97706":"#0F172A";
+          return <span><span style={{fontWeight:700,color:col,fontSize:15}}>{q}</span><span style={{fontSize:11,color:"#9CA3AF",marginLeft:4}}>cs</span></span>;
+        }},
+        {key:"cout", label:"Coût moyen", align:"right", sortable:false, render:p=>{
+          const coutMoyen=getCoutMoyenPondere(p.id,receptionsStock);
+          const nbReceptions=receptionsStock.filter(r=>r.produit_id===p.id).length;
+          return coutMoyen!=null ? (
+            <div>
+              <span style={{fontWeight:600,color:"#7C3AED"}}>{fmtFull(coutMoyen)}</span>
+              <div style={{fontSize:10,color:"#9CA3AF"}}>{nbReceptions} réception{nbReceptions>1?"s":""}</div>
+            </div>
+          ) : <span style={{color:"#CBD5E1"}}>—</span>;
+        }},
+        {key:"modifier", label:"Modifier", sortable:false, render:p=>{
+          const q=stock[p.id]||0;
+          return (
+            <div style={{display:"flex",alignItems:"center",gap:4}} onClick={e=>e.stopPropagation()}>
+              <button onClick={()=>updateStock(p.id,(stock[p.id]||0)-1)} style={{width:26,height:26,border:"1px solid #E3E7ED",borderRadius:6,background:"#F8FAFC",cursor:"pointer",fontWeight:700}}>−</button>
+              <input type="number" min="0"
+                value={stockDraft[p.id]!==undefined ? stockDraft[p.id] : q}
+                onChange={e=>setStockDraft(prev=>({...prev,[p.id]:e.target.value}))}
+                onBlur={()=>{
+                  if (stockDraft[p.id]===undefined) return;
+                  updateStock(p.id, parseInt(stockDraft[p.id])||0);
+                  setStockDraft(prev=>{const n={...prev}; delete n[p.id]; return n;});
+                }}
+                onKeyDown={e=>{if(e.key==="Enter") e.target.blur();}}
+                style={{width:54,textAlign:"center",padding:"3px 4px",border:"1px solid #D1D5DB",borderRadius:6,fontSize:13,outline:"none"}}/>
+              <button onClick={()=>updateStock(p.id,(stock[p.id]||0)+1)} style={{width:26,height:26,border:"1px solid #E3E7ED",borderRadius:6,background:"#F8FAFC",cursor:"pointer",fontWeight:700}}>+</button>
+            </div>
+          );
+        }},
+        {key:"reception", label:"", sortable:false, render:p=>(
+          <button onClick={e=>{e.stopPropagation();
+            setReceptionProduit(p);
+            setReceptionForm({quantite:"",prix_achat_unitaire:p.prix_achat||"",fournisseur:"",date:localDateStr(),notes:""});
+            setShowReceptionForm(true);
+          }} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"5px 10px",fontSize:11}}>📥 Réception</button>
+        )},
+        {key:"perte", label:"", sortable:false, render:p=>(
+          <button onClick={e=>{e.stopPropagation();
+            setPerteProduit(p);
+            setPerteForm({quantite:"",motif:"Casse",date:localDateStr(),notes:""});
+            setShowPerteForm(true);
+          }} style={{...S.btn("#FFFBEB","#D97706"),padding:"5px 10px",fontSize:11}}>🗑️ Perte</button>
+        )},
+      ]}
+    />
   </div>
 )}
 
