@@ -1736,6 +1736,9 @@ function BossokApp({ session, onLogout }) {
   const [manualConsigneMontant, setManualConsigneMontant] = useState("");
   const [manualConsigneLabelCmd, setManualConsigneLabelCmd] = useState("");
   const [manualConsigneMontantCmd, setManualConsigneMontantCmd] = useState("");
+  const [manualConsigneQteCmd, setManualConsigneQteCmd] = useState("1");
+  const [manualConsigneUnitaireCmd, setManualConsigneUnitaireCmd] = useState("");
+  const [manualConsigneSensCmd, setManualConsigneSensCmd] = useState("plus");
   const [geocodingProgress, setGeocodingProgress] = useState(null); // {done, total} | null
   const [showClientForm, setShowClientForm] = useState(false);
   const [editClient, setEditClient] = useState(null);
@@ -4187,11 +4190,56 @@ function BossokApp({ session, onLogout }) {
         )}
       </div>
 
-      <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
-        <input value={manualConsigneLabelCmd} onChange={e=>setManualConsigneLabelCmd(e.target.value)}
-          placeholder="♻️ Consigne manuelle — libellé" style={{...S.input,flex:2}}/>
-        <input type="number" step="0.01" value={manualConsigneMontantCmd} onChange={e=>setManualConsigneMontantCmd(e.target.value)}
-          placeholder="Montant (+/-)" style={{...S.input,flex:1}}/>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1.6fr 0.8fr 1.3fr 1fr",gap:6,marginBottom:12,alignItems:"end"}}>
+        <div>
+          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>♻️ Consigne manuelle <span style={{color:"#D1D5DB"}}>(optionnel)</span></label>
+          <input value={manualConsigneLabelCmd} onChange={e=>setManualConsigneLabelCmd(e.target.value)}
+            placeholder="Libellé (ex: Coca VC)" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Quantité</label>
+          <input type="number" min="1" value={manualConsigneQteCmd}
+            onChange={e=>{
+              const qte=e.target.value; setManualConsigneQteCmd(qte);
+              const prix=parseFloat(manualConsigneUnitaireCmd)||0;
+              const m=(parseFloat(qte)||0)*prix*(manualConsigneSensCmd==="retour"?-1:1);
+              setManualConsigneMontantCmd(m?String(m):"");
+            }} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Consigne unitaire</label>
+          <select value={manualConsigneUnitaireCmd}
+            onChange={e=>{
+              const prix=e.target.value; setManualConsigneUnitaireCmd(prix);
+              const qte=parseFloat(manualConsigneQteCmd)||0;
+              const m=qte*(parseFloat(prix)||0)*(manualConsigneSensCmd==="retour"?-1:1);
+              setManualConsigneMontantCmd(m?String(m):"");
+            }} style={S.input}>
+            <option value="">— Choisir —</option>
+            {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
+              <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Sens</label>
+          <select value={manualConsigneSensCmd}
+            onChange={e=>{
+              const sens=e.target.value; setManualConsigneSensCmd(sens);
+              const qte=parseFloat(manualConsigneQteCmd)||0;
+              const prix=parseFloat(manualConsigneUnitaireCmd)||0;
+              const m=qte*prix*(sens==="retour"?-1:1);
+              setManualConsigneMontantCmd(m?String(m):"");
+            }} style={S.input}>
+            <option value="plus">+ Consigne</option>
+            <option value="retour">− Retour</option>
+          </select>
+        </div>
+        {manualConsigneMontantCmd && (
+          <div style={{gridColumn:isMobile?"1/-1":"1/-1",fontSize:12,fontWeight:600,color:parseFloat(manualConsigneMontantCmd)<0?"#DC2626":"#7C3AED"}}>
+            {parseFloat(manualConsigneMontantCmd)<0?"Retour":"Ajout"} : {fmtFull(Math.abs(parseFloat(manualConsigneMontantCmd)))}
+          </div>
+        )}
       </div>
 
       <div style={{marginBottom:12}}>
