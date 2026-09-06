@@ -4969,7 +4969,7 @@ function BossokApp({ session, onLogout }) {
 )}
 
 {/* ══ PRODUITS ══════════════════════════════════════════════════ */}
-{page==="produits" && (()=>{
+{page==="produits" && !showProduitForm && (()=>{
   const produitsFiltres = produits.filter(p=>
     produitFilterStatut==="Tous" || (p.statut||"Actif")===produitFilterStatut
   );
@@ -4980,89 +4980,69 @@ function BossokApp({ session, onLogout }) {
   <div>
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:14}}>
       {[
-        {l:"Total",v:produits.length,c:"#1D4ED8",s:"Tous"},
-        {l:"Actifs",v:nbActifs,c:"#059669",s:"Actif"},
-        {l:"Désactivés",v:nbPassifs,c:"#D97706",s:"Passif"},
+        {l:"Total",v:produits.length,c:"#334155",s:"Tous"},
+        {l:"Actifs",v:nbActifs,c:"#334155",s:"Actif"},
+        {l:"Désactivés",v:nbPassifs,c:"#334155",s:"Passif"},
       ].map((k,i)=>(
         <div key={i} style={{...S.kpi(k.c),cursor:"pointer",outline:produitFilterStatut===k.s?"2px solid "+k.c:"none"}}
           onClick={()=>setProduitFilterStatut(k.s)}>
           <div style={{fontSize:22,fontWeight:800,color:k.c}}>{k.v}</div>
-          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{k.l}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>{k.l}</div>
         </div>
       ))}
     </div>
 
-    <div style={S.card}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div style={{fontWeight:700,fontSize:14}}>Catalogue — {produitsFiltres.length} référence(s)</div>
-      </div>
-      {produitsFiltres.length===0?(
-        <div style={{textAlign:"center",padding:"40px 0",color:"#9CA3AF"}}>
-          <div style={{fontSize:32,marginBottom:8}}>🍺</div>
-          Aucun produit dans cette vue
-        </div>
-      ):(
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-            <thead>
-              <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
-                {["Produit","Cat.","Type","Prix achat","Prix Snack","Marge Snack","Consigne","Statut","Actions"].map(h=>(
-                  <th key={h} style={{textAlign:"left",padding:"8px 10px",color:"#6B7280",fontWeight:600}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {produitsFiltres.map((p,i)=>{
-                const margeSnack = (p.prix_achat!=null&&p.prix_achat>0) ? p.prix?.Snack - p.prix_achat : null;
-                const margeSnackPct = (margeSnack!=null && p.prix?.Snack>0) ? Math.round(margeSnack/p.prix.Snack*100) : null;
-                return(
-                <tr key={p.id} style={{borderBottom:"1px solid #F1F5F9",background:p.statut==="Passif"?"#FAFAFA":i%2===0?"#fff":"#FAFAFA",opacity:p.statut==="Passif"?0.6:1}}>
-                  <td style={{padding:"7px 10px",fontWeight:500}}>{p.nom}</td>
-                  <td style={{padding:"7px 10px"}}><span style={S.badge("#F3F4F6","#374151")}>{p.categorie}</span></td>
-                  <td style={{padding:"7px 10px"}}><span style={S.badge(p.type_emballage==="VC"?"#EDE9FE":p.type_emballage==="CAN"?"#FEF3C7":"#E0F2FE",p.type_emballage==="VC"?"#6D28D9":p.type_emballage==="CAN"?"#92400E":"#0369A1")}>{p.type_emballage}</span></td>
-                  <td style={{padding:"7px 10px"}}>
-                    {p.prix_achat!=null&&p.prix_achat>0 ? fmtFull(p.prix_achat) : <span style={{color:"#DC2626",fontSize:11}}>non renseigné</span>}
-                  </td>
-                  <td style={{padding:"7px 10px"}}>{fmtFull(p.prix?.Snack)}</td>
-                  <td style={{padding:"7px 10px"}}>
-                    {margeSnack!=null ? <span style={{color:"#059669",fontWeight:600}}>{fmtFull(margeSnack)} ({margeSnackPct}%)</span> : "—"}
-                  </td>
-                  <td style={{padding:"7px 10px",color:p.type_emballage==="VC"?"#7C3AED":"#9CA3AF"}}>{p.type_emballage==="VC"?fmtFull(CONSIGNE_PRIX[p.consigne]):"—"}</td>
-                  <td style={{padding:"7px 10px"}}>
-                    <span style={S.badge(p.statut==="Passif"?"#FEF3C7":"#DCFCE7",p.statut==="Passif"?"#92400E":"#166534")}>
-                      {p.statut==="Passif"?"⛔ Désactivé":"✅ Actif"}
-                    </span>
-                  </td>
-                  <td style={{padding:"7px 10px"}}>
-                    <div style={{display:"flex",gap:4}}>
-                      <button title="Modifier" onClick={()=>{
-                        setEditProduit(p);
-                        setProduitForm({
-                          nom:p.nom, categorie:p.categorie, type_emballage:p.type_emballage,
-                          consigne:p.consigne||"",
-                          prix_Snack:p.prix?.Snack??"", prix_Restaurant:p.prix?.Restaurant??"",
-                          prix_Administrative:p.prix?.Administrative??"", prix_Market:p.prix?.Market??"",
-                          prix_Café:p.prix?.Café??"", prix_Creche:p.prix?.Creche??"",
-                          prix_Distributor:p.prix?.Distributor??"",
-                          prix_Privé:p.prix?.Privé??"",
-                          prix_achat:p.prix_achat??"",
-                        });
-                        setShowProduitForm(true);
-                      }} style={{...S.btn("#1D4ED8"),padding:"3px 8px",fontSize:11}}>✏️</button>
-                      <button title={p.statut==="Passif"?"Réactiver":"Désactiver"} onClick={()=>toggleProduitStatut(p)}
-                        style={{...S.btn(p.statut==="Passif"?"#059669":"#F59E0B"),padding:"3px 8px",fontSize:11}}>
-                        {p.statut==="Passif"?"✅":"⛔"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+    <DataTable
+      isMobile={isMobile}
+      rows={produitsFiltres}
+      pageSize={50}
+      onRowClick={p=>{
+        setEditProduit(p);
+        setProduitForm({
+          nom:p.nom, categorie:p.categorie, type_emballage:p.type_emballage,
+          consigne:p.consigne||"",
+          prix_Snack:p.prix?.Snack??"", prix_Restaurant:p.prix?.Restaurant??"",
+          prix_Administrative:p.prix?.Administrative??"", prix_Market:p.prix?.Market??"",
+          prix_Café:p.prix?.Café??"", prix_Creche:p.prix?.Creche??"",
+          prix_Distributor:p.prix?.Distributor??"",
+          prix_Privé:p.prix?.Privé??"",
+          prix_achat:p.prix_achat??"",
+        });
+        setShowProduitForm(true);
+      }}
+      emptyIcon="🍺"
+      emptyMessage="Aucun produit dans cette vue"
+      initialSort={{key:"nom",dir:"asc"}}
+      columns={[
+        {key:"nom", label:"Produit", mobilePrimary:true, sortValue:p=>p.nom||"", render:p=><span style={{fontWeight:600}}>{p.nom}</span>},
+        {key:"categorie", label:"Cat.", mobileShow:true, sortValue:p=>p.categorie||"", render:p=><span style={{color:"#475569"}}>{p.categorie}</span>},
+        {key:"type", label:"Type", mobileShow:true, sortValue:p=>p.type_emballage||"", render:p=><span style={{color:"#475569"}}>{p.type_emballage}</span>},
+        {key:"prix_achat", label:"Prix achat", align:"right", sortValue:p=>p.prix_achat||0, render:p=>
+          p.prix_achat!=null&&p.prix_achat>0 ? fmtFull(p.prix_achat) : <span style={{color:"#DC2626",fontSize:11}}>non renseigné</span>
+        },
+        {key:"prix_snack", label:"Prix Snack", align:"right", mobileShow:true, sortValue:p=>p.prix?.Snack||0, render:p=>fmtFull(p.prix?.Snack)},
+        {key:"marge", label:"Marge Snack", align:"right", sortable:false, render:p=>{
+          const margeSnack = (p.prix_achat!=null&&p.prix_achat>0) ? p.prix?.Snack - p.prix_achat : null;
+          const margeSnackPct = (margeSnack!=null && p.prix?.Snack>0) ? Math.round(margeSnack/p.prix.Snack*100) : null;
+          return margeSnack!=null ? <span style={{color:"#059669",fontWeight:600}}>{fmtFull(margeSnack)} ({margeSnackPct}%)</span> : <span style={{color:"#CBD5E1"}}>—</span>;
+        }},
+        {key:"consigne", label:"Consigne", align:"right", sortable:false, render:p=>
+          p.type_emballage==="VC" ? <span style={{color:"#7C3AED"}}>{fmtFull(CONSIGNE_PRIX[p.consigne])}</span> : <span style={{color:"#CBD5E1"}}>—</span>
+        },
+        {key:"statut", label:"Statut", mobileShow:true, sortValue:p=>p.statut||"Actif", render:p=>(
+          <span style={{display:"inline-flex",alignItems:"center",gap:5,color:"#475569"}}>
+            <span style={{width:6,height:6,borderRadius:99,background:p.statut==="Passif"?"#CBD5E1":"#22C55E",flexShrink:0}}/>
+            {p.statut==="Passif"?"Désactivé":"Actif"}
+          </span>
+        )},
+        {key:"actions", label:"", sortable:false, render:p=>(
+          <button title={p.statut==="Passif"?"Réactiver":"Désactiver"} onClick={e=>{e.stopPropagation();toggleProduitStatut(p);}}
+            style={{...S.btn(p.statut==="Passif"?"#F0FDF4":"#FFFBEB",p.statut==="Passif"?"#059669":"#D97706"),padding:"3px 10px",fontSize:11}}>
+            {p.statut==="Passif"?"✅ Réactiver":"⛔ Désactiver"}
+          </button>
+        )},
+      ]}
+    />
   </div>
   );
 })()}
@@ -5561,13 +5541,18 @@ function BossokApp({ session, onLogout }) {
   </div>
   )}
 
-  {/* ══ MODAL PRODUIT FORM ══════════════════════════════════════════ */}
-  {showProduitForm&&(
-  <div style={S.modal} onClick={()=>setShowProduitForm(false)}>
-    <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+{/* ══ PAGE PRODUIT (nouveau / édition) ══════════════════════════ */}
+{page==="produits" && showProduitForm&&(
+  <div className="page-transition">
+    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
+      <span onClick={()=>{setShowProduitForm(false);setEditProduit(null);}}
+        style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Produits</span>
+      <span style={{color:"#CBD5E1"}}>/</span>
+      <span style={{color:"#64748B",fontWeight:500}}>{editProduit ? editProduit.nom : "Nouveau produit"}</span>
+    </div>
+    <div style={{...S.card,maxWidth:680}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editProduit?"Modifier produit":"Nouveau produit"}</h2>
-        <button onClick={()=>setShowProduitForm(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
       <div style={{display:"grid",gap:10}}>
         <div>
