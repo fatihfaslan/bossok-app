@@ -4759,7 +4759,7 @@ function BossokApp({ session, onLogout }) {
 )}
 
 {/* ══ STOCK ══════════════════════════════════════════════════════ */}
-{page==="stock" && (
+{page==="stock" && !showReceptionForm && !showPerteForm && (
   <div>
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
@@ -5623,13 +5623,18 @@ function BossokApp({ session, onLogout }) {
   </div>
   )}
 
-  {/* ══ MODAL RÉCEPTION STOCK ══════════════════════════════════════ */}
-  {showReceptionForm&&(
-  <div style={S.modal} onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}}>
-    <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+{/* ══ PAGE RÉCEPTION STOCK ══════════════════════════════════════ */}
+{showReceptionForm&&(
+  <div className="page-transition">
+    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
+      <span onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}}
+        style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Stock</span>
+      <span style={{color:"#CBD5E1"}}>/</span>
+      <span style={{color:"#64748B",fontWeight:500}}>Réception</span>
+    </div>
+    <div style={{...S.card,maxWidth:560}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>📥 Réception de stock</h2>
-        <button onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
 
       <div style={{marginBottom:10}}>
@@ -5710,13 +5715,18 @@ function BossokApp({ session, onLogout }) {
   </div>
   )}
 
-  {/* ══ MODAL PERTE STOCK ══════════════════════════════════════════ */}
-  {showPerteForm&&(
-  <div style={S.modal} onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}}>
-    <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+{/* ══ PAGE PERTE STOCK ══════════════════════════════════════════ */}
+{showPerteForm&&(
+  <div className="page-transition">
+    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
+      <span onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}}
+        style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Stock</span>
+      <span style={{color:"#CBD5E1"}}>/</span>
+      <span style={{color:"#64748B",fontWeight:500}}>Déclarer une perte</span>
+    </div>
+    <div style={{...S.card,maxWidth:560}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🗑️ Déclarer une perte</h2>
-        <button onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
 
       <div style={{marginBottom:10}}>
