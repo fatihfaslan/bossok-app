@@ -4784,10 +4784,16 @@ function BossokApp({ session, onLogout }) {
         </div>
       ))}
     </div>
-    <div style={{...S.card,marginBottom:12}}>
+    <div style={{...S.card,marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
       <select value={stockCat} onChange={e=>setStockCat(e.target.value)} style={{padding:"7px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13}}>
         {["Tous",...new Set(produits.map(p=>p.categorie))].sort((a,b)=>a==="Tous"?-1:b==="Tous"?1:a.localeCompare(b)).map(c=><option key={c}>{c}</option>)}
       </select>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>{setReceptionProduit(null);setReceptionForm({date:localDateStr()});setShowReceptionForm(true);}}
+          style={{...S.btn("#F5F3FF","#7C3AED"),padding:"7px 14px",fontSize:12,fontWeight:600}}>📥 Réception</button>
+        <button onClick={()=>{setPerteProduit(null);setPerteForm({motif:"Casse",date:localDateStr()});setShowPerteForm(true);}}
+          style={{...S.btn("#FFFBEB","#D97706"),padding:"7px 14px",fontSize:12,fontWeight:600}}>🗑️ Déclarer une perte</button>
+      </div>
     </div>
     <DataTable
       isMobile={isMobile}
@@ -4835,20 +4841,6 @@ function BossokApp({ session, onLogout }) {
             </div>
           );
         }},
-        {key:"reception", label:"", sortable:false, render:p=>(
-          <button onClick={e=>{e.stopPropagation();
-            setReceptionProduit(p);
-            setReceptionForm({quantite:"",prix_achat_unitaire:p.prix_achat||"",fournisseur:"",date:localDateStr(),notes:""});
-            setShowReceptionForm(true);
-          }} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"5px 10px",fontSize:11}}>📥 Réception</button>
-        )},
-        {key:"perte", label:"", sortable:false, render:p=>(
-          <button onClick={e=>{e.stopPropagation();
-            setPerteProduit(p);
-            setPerteForm({quantite:"",motif:"Casse",date:localDateStr(),notes:""});
-            setShowPerteForm(true);
-          }} style={{...S.btn("#FFFBEB","#D97706"),padding:"5px 10px",fontSize:11}}>🗑️ Perte</button>
-        )},
       ]}
     />
   </div>
@@ -5632,14 +5624,27 @@ function BossokApp({ session, onLogout }) {
   )}
 
   {/* ══ MODAL RÉCEPTION STOCK ══════════════════════════════════════ */}
-  {showReceptionForm&&receptionProduit&&(
+  {showReceptionForm&&(
   <div style={S.modal} onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}}>
     <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>📥 Réception de stock</h2>
         <button onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
-      <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>{receptionProduit.nom}</div>
+
+      <div style={{marginBottom:10}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit *</label>
+        <select value={receptionProduit?.id||""} onChange={e=>{
+          const p = produits.find(x=>x.id===parseInt(e.target.value));
+          setReceptionProduit(p||null);
+          setReceptionForm(prev=>({...prev, prix_achat_unitaire: prev.prix_achat_unitaire || p?.prix_achat || ""}));
+        }} style={S.input}>
+          <option value="">— Choisir un produit —</option>
+          {[...produits].filter(p=>p.statut!=="Passif").sort((a,b)=>a.nom.localeCompare(b.nom)).map(p=>(
+            <option key={p.id} value={p.id}>{p.nom}</option>
+          ))}
+        </select>
+      </div>
 
       <div style={{display:"grid",gap:10}}>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
@@ -5674,7 +5679,7 @@ function BossokApp({ session, onLogout }) {
         </div>
       </div>
 
-      {(() => {
+      {receptionProduit && (() => {
         const historique = receptionsStock.filter(r=>r.produit_id===receptionProduit.id).slice(0,5);
         const coutMoyen = getCoutMoyenPondere(receptionProduit.id, receptionsStock);
         return historique.length>0 ? (
@@ -5696,8 +5701,8 @@ function BossokApp({ session, onLogout }) {
 
       <div style={{display:"flex",gap:8,marginTop:16}}>
         <button onClick={()=>{setShowReceptionForm(false);setReceptionProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={saveReception} disabled={saving||!receptionForm.quantite||!receptionForm.prix_achat_unitaire}
-          style={{...S.btn("#7C3AED"),flex:2,opacity:(saving||!receptionForm.quantite||!receptionForm.prix_achat_unitaire)?0.5:1}}>
+        <button onClick={saveReception} disabled={saving||!receptionProduit||!receptionForm.quantite||!receptionForm.prix_achat_unitaire}
+          style={{...S.btn("#7C3AED"),flex:2,opacity:(saving||!receptionProduit||!receptionForm.quantite||!receptionForm.prix_achat_unitaire)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Enregistrer la réception"}
         </button>
       </div>
@@ -5706,22 +5711,34 @@ function BossokApp({ session, onLogout }) {
   )}
 
   {/* ══ MODAL PERTE STOCK ══════════════════════════════════════════ */}
-  {showPerteForm&&perteProduit&&(
+  {showPerteForm&&(
   <div style={S.modal} onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}}>
     <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🗑️ Déclarer une perte</h2>
         <button onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
-      <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>{perteProduit.nom} · Stock actuel : {stock[perteProduit.id]||0} cs</div>
+
+      <div style={{marginBottom:10}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit *</label>
+        <select value={perteProduit?.id||""} onChange={e=>{
+          const p = produits.find(x=>x.id===parseInt(e.target.value));
+          setPerteProduit(p||null);
+        }} style={S.input}>
+          <option value="">— Choisir un produit —</option>
+          {[...produits].filter(p=>p.statut!=="Passif").sort((a,b)=>a.nom.localeCompare(b.nom)).map(p=>(
+            <option key={p.id} value={p.id}>{p.nom} (stock : {stock[p.id]||0} cs)</option>
+          ))}
+        </select>
+      </div>
 
       <div style={{display:"grid",gap:10}}>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Quantité perdue (caisses) *</label>
-            <input type="number" min="0" max={stock[perteProduit.id]||0} step="1" value={perteForm.quantite||""}
+            <input type="number" min="0" max={perteProduit?stock[perteProduit.id]||0:undefined} step="1" value={perteForm.quantite||""}
               onChange={e=>setPerteForm(p=>({...p,quantite:e.target.value}))}
-              placeholder="0" style={S.input}/>
+              placeholder="0" style={S.input} disabled={!perteProduit}/>
           </div>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Motif</label>
@@ -5741,7 +5758,7 @@ function BossokApp({ session, onLogout }) {
         </div>
       </div>
 
-      {(() => {
+      {perteProduit && (() => {
         const coutMoyen = getCoutMoyenPondere(perteProduit.id, receptionsStock);
         const cout = coutMoyen ?? perteProduit.prix_achat;
         const qte = parseFloat(perteForm.quantite) || 0;
@@ -5752,7 +5769,7 @@ function BossokApp({ session, onLogout }) {
         ) : null;
       })()}
 
-      {(() => {
+      {perteProduit && (() => {
         const historique = pertesStock.filter(p=>p.produit_id===perteProduit.id).slice(0,5);
         return historique.length>0 ? (
           <div style={{marginTop:14}}>
@@ -5771,8 +5788,8 @@ function BossokApp({ session, onLogout }) {
 
       <div style={{display:"flex",gap:8,marginTop:16}}>
         <button onClick={()=>{setShowPerteForm(false);setPerteProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={savePerte} disabled={saving||!perteForm.quantite}
-          style={{...S.btn("#F59E0B"),flex:2,opacity:(saving||!perteForm.quantite)?0.5:1}}>
+        <button onClick={savePerte} disabled={saving||!perteProduit||!perteForm.quantite}
+          style={{...S.btn("#F59E0B"),flex:2,opacity:(saving||!perteProduit||!perteForm.quantite)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Confirmer la perte"}
         </button>
       </div>
