@@ -1754,6 +1754,7 @@ function BossokApp({ session, onLogout }) {
   const [showEventForm, setShowEventForm] = useState(false);
   const [showPaiementForm, setShowPaiementForm] = useState(false);
   const [openFactureMenu, setOpenFactureMenu] = useState(null);
+  const [openCmdMenu, setOpenCmdMenu] = useState(null);
   const [paiementFacture, setPaiementFacture] = useState(null);
   const [paiementForm, setPaiementForm] = useState({});
   const [caissePeriode, setCaissePeriode] = useState("semaine");
@@ -2328,6 +2329,7 @@ function BossokApp({ session, onLogout }) {
   };
 
   const [editingCmd, setEditingCmd] = useState(null);
+  const [showCmdForm, setShowCmdForm] = useState(false);
 
   const supprimerCommande = async (id) => {
     askConfirm("Supprimer cette commande ? Le stock sera restauré et la facture associée annulée.", async () => {
@@ -2359,7 +2361,7 @@ function BossokApp({ session, onLogout }) {
     setCmdProduits(cmd.produits||[]);
     setCmdNotes(cmd.notes||"");
     setSearchCmdClient("");
-    // Scroll to form
+    setShowCmdForm(true);
     window.scrollTo({top:0, behavior:"smooth"});
   };
 
@@ -2369,6 +2371,17 @@ function BossokApp({ session, onLogout }) {
     setCmdProduits(cmd.produits||[]);
     setCmdNotes(cmd.notes||"");
     setSearchCmdClient("");
+    setShowCmdForm(true);
+  };
+  const openNewCmd = () => {
+    setEditingCmd(null);
+    setCmdClientId(null);
+    setCmdProduits([]);
+    setCmdNotes("");
+    setSearchCmdClient("");
+    setManualConsigneLabelCmd(""); setManualConsigneMontantCmd("");
+    setManualConsigneQteCmd("1"); setManualConsigneUnitaireCmd(""); setManualConsigneSensCmd("plus");
+    setShowCmdForm(true);
   };
 
   const saveCmd = async () => {
@@ -2460,6 +2473,8 @@ function BossokApp({ session, onLogout }) {
       await loadAll();
       setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
       setManualConsigneLabelCmd(""); setManualConsigneMontantCmd("");
+      setManualConsigneQteCmd("1"); setManualConsigneUnitaireCmd(""); setManualConsigneSensCmd("plus");
+      setShowCmdForm(false);
     } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
@@ -2745,7 +2760,11 @@ function BossokApp({ session, onLogout }) {
   const echInit = new Date(today); echInit.setDate(echInit.getDate()+7);
   setFactEcheance(echInit.toISOString().split("T")[0]);
 }}>{isMobile?"+":"+ Nouvelle facture"}</button>}
-            {page==="commandes" && <button style={{...S.btn("#fff","#1D4ED8"),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>}
+            {page==="commandes" && (showCmdForm ? (
+              <button style={{...S.btn("#fff","#1D4ED8"),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>
+            ) : (
+              <button style={S.btn("#fff","#1D4ED8")} onClick={openNewCmd}>{isMobile?"+":"+ Nouvelle commande"}</button>
+            ))}
             {page==="produits" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>{isMobile?"+":"+ Nouveau produit"}</button>}
             {page==="calendrier" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:new Date().toISOString().split("T")[0],date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>{isMobile?"+":"+ Nouvel événement"}</button>}
             <button style={{...S.btn("rgba(255,255,255,0.15)","#fff"),display:"flex",alignItems:"center",justifyContent:"center",padding:"9px 11px"}} onClick={loadAll}><Icon name="refresh" size={15}/></button>
@@ -4047,12 +4066,17 @@ function BossokApp({ session, onLogout }) {
 }
 )()}
 {/* ══ COMMANDES ══════════════════════════════════════════════════ */}
-{page==="commandes" && (
-  <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
-    <div style={S.card}>
+{page==="commandes" && showCmdForm && (
+  <div className="page-transition">
+    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
+      <span onClick={()=>setShowCmdForm(false)} style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Commandes</span>
+      <span style={{color:"#CBD5E1"}}>/</span>
+      <span style={{color:"#64748B",fontWeight:500}}>{editingCmd?"Modifier la commande":"Nouvelle commande"}</span>
+    </div>
+    <div style={{...S.card,maxWidth:680}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{fontWeight:700,fontSize:14}}>{editingCmd?"✏️ Modifier la commande":"➕ Nouvelle commande"}</div>
-        {editingCmd&&<button onClick={()=>{setEditingCmd(null);setCmdClientId(null);setCmdProduits([]);setCmdNotes("");}} style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:11}}>✕ Annuler</button>}
+        {editingCmd&&<button onClick={()=>{setEditingCmd(null);setCmdClientId(null);setCmdProduits([]);setCmdNotes("");}} style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:11}}>✕ Annuler la modification</button>}
       </div>
 
       {/* CLIENT - liste déroulante */}
@@ -4180,73 +4204,99 @@ function BossokApp({ session, onLogout }) {
         {saving?"Sauvegarde...":editingCmd?"💾 Enregistrer modifications":`✅ Enregistrer la commande (${cmdProduits.reduce((s,p)=>s+p.qte,0)} caisses)`}
       </button>
     </div>
-    <div>
-      {(()=>{
-        const cmdList = cmdView==="attente"
-          ? commandes.filter(c=>c.statut==="En attente")
-          : cmdView==="livrees"
-          ? [...commandes].filter(c=>c.statut==="Livré").sort((a,b)=>(b.date_commande||"").localeCompare(a.date_commande||"")).slice(0,100)
-          : [...commandes].sort((a,b)=>(b.date_commande||"").localeCompare(a.date_commande||""));
-        return(<>
-          <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-            {[["attente","⏳ En attente",commandes.filter(c=>c.statut==="En attente").length],
-              ["livrees","✅ Livrées",commandes.filter(c=>c.statut==="Livré").length],
-              ["toutes","📋 Toutes",commandes.length]
-            ].map(([k,l,n])=>(
-              <button key={k} onClick={()=>setCmdView(k)}
-                style={{...S.btn(cmdView===k?"#1D4ED8":"#F1F5F9",cmdView===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:cmdView===k?700:400}}>
-                {l} ({n})
-              </button>
-            ))}
-          </div>
-          {cmdList.length===0?(
-            <div style={{...S.card,textAlign:"center",padding:"40px 0",color:"#9CA3AF",fontSize:13}}>
-              <div style={{fontSize:32,marginBottom:8}}>📋</div>Aucune commande
-            </div>
-          ):(
-            cmdList.map(cmd=>(
-              <div key={cmd.id} style={{...S.card,marginBottom:8,borderLeft:"3px solid "+(cmd.statut==="Livré"?"#059669":"#F59E0B")}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div>
-                    <div style={{fontWeight:600,fontSize:13}}>{cmd.client_nom}</div>
-                    <div style={{fontSize:11,color:"#6B7280"}}>📍 {cmd.client_adresse}</div>
-                    <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:3}}>
-                      <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 {cmd.chauffeur==="A"?"Sefa":"Mikail"}</span>
-                      {cmd.jour_livraison&&<span style={S.badge("#FEF3C7","#92400E")}>📅 {cmd.jour_livraison}</span>}
-                      {cmd.date_commande&&<span style={S.badge("#F3F4F6","#6B7280")}>🗓️ {cmd.date_commande}</span>}
-                      {cmd.statut==="Livré"&&<span style={S.badge("#DCFCE7","#166534")}>✅ Livré</span>}
-                    </div>
-                    <div style={{fontSize:11,marginTop:4,display:"flex",flexWrap:"wrap",gap:4}}>
-                      {(cmd.produits||[]).map((p,i)=>(
-                        <span key={i} style={{background:"#F1F5F9",padding:"1px 6px",borderRadius:4,fontSize:10}}>📦 {p.nom} ×{p.qte}</span>
-                      ))}
-                    </div>
-                    {cmd.notes&&<div style={{fontSize:11,color:"#F59E0B",marginTop:3}}>💬 {cmd.notes}</div>}
-                  </div>
-                  {cmd.statut!=="Livré"&&(
-                    <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
-                      <button onClick={()=>marquerLivre(cmd.id)} style={{...S.btn("#059669"),padding:"4px 10px",fontSize:11}}>✓ Livré</button>
-                      <button onClick={()=>imprimerFactureCommande(cmd)} style={{...S.btn("#374151"),padding:"4px 10px",fontSize:11}}>🖨️ Imprimer facture</button>
-                      <button onClick={()=>imprimerBonLivraison(cmd)} style={{...S.btn("#7C3AED"),padding:"4px 10px",fontSize:11}}>📦 Bon de livraison</button>
-                      <button onClick={()=>openEditCmd(cmd)} style={{...S.btn("#1D4ED8"),padding:"4px 10px",fontSize:11}}>✏️ Modifier</button>
-                      <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
-                      <button onClick={()=>supprimerCommande(cmd.id)} style={{...S.btn("#EF4444"),padding:"4px 10px",fontSize:11}}>🗑️ Supprimer</button>
-                    </div>
-                  )}
-                  {cmd.statut==="Livré"&&(
-                    <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
-                      <button onClick={()=>imprimerFactureCommande(cmd)} style={{...S.btn("#374151"),padding:"4px 10px",fontSize:11}}>🖨️ Imprimer facture</button>
-                      <button onClick={()=>imprimerBonLivraison(cmd)} style={{...S.btn("#7C3AED"),padding:"4px 10px",fontSize:11}}>📦 Bon de livraison</button>
-                      <button onClick={()=>dupliquerCommande(cmd)} style={{...S.btn("#0EA5E9"),padding:"4px 10px",fontSize:11}}>📋 Dupliquer</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </>);
-      })()}
+  </div>
+)}
+
+{/* ══ LISTE DES COMMANDES ══════════════════════════════════════ */}
+{page==="commandes" && !showCmdForm && (
+  <div>
+    <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+      {[["attente","⏳ En attente",commandes.filter(c=>c.statut==="En attente").length],
+        ["livrees","✅ Livrées",commandes.filter(c=>c.statut==="Livré").length],
+        ["toutes","📋 Toutes",commandes.length]
+      ].map(([k,l,n])=>(
+        <button key={k} onClick={()=>setCmdView(k)}
+          style={{...S.btn(cmdView===k?"#1D4ED8":"#F1F5F9",cmdView===k?"#fff":"#374151"),padding:"6px 14px",fontSize:12,fontWeight:cmdView===k?700:400}}>
+          {l} ({n})
+        </button>
+      ))}
     </div>
+    {(()=>{
+      const cmdList = cmdView==="attente"
+        ? commandes.filter(c=>c.statut==="En attente")
+        : cmdView==="livrees"
+        ? [...commandes].filter(c=>c.statut==="Livré")
+        : [...commandes];
+      return (
+        <DataTable
+          isMobile={isMobile}
+          rows={cmdList}
+          pageSize={50}
+          onRowClick={c=>c.statut!=="Livré" ? openEditCmd(c) : null}
+          emptyIcon="📋"
+          emptyMessage="Aucune commande"
+          initialSort={{key:"date",dir:"desc"}}
+          columns={[
+            {key:"client", label:"Client", mobilePrimary:true, sortValue:c=>c.client_nom||"", render:c=>(
+              <div>
+                <div style={{fontWeight:600}}>{c.client_nom}</div>
+                <div style={{fontSize:11,color:"#94A3B8"}}>{c.client_adresse}</div>
+              </div>
+            )},
+            {key:"chauffeur", label:"Chauffeur", mobileShow:true, sortValue:c=>c.chauffeur||"", render:c=>c.chauffeur==="A"?"Sefa":"Mikail"},
+            {key:"jour", label:"Jour livraison", sortValue:c=>c.jour_livraison||"", render:c=>c.jour_livraison||<span style={{color:"#CBD5E1"}}>—</span>},
+            {key:"date", label:"Date", mobileShow:true, sortValue:c=>c.date_commande||""},
+            {key:"produits", label:"Produits", sortable:false, wrap:true, render:c=>(
+              <div style={{display:"flex",flexWrap:"wrap",gap:4,maxWidth:280}}>
+                {(c.produits||[]).map((p,i)=>(
+                  <span key={i} style={{background:"#F1F5F9",padding:"1px 6px",borderRadius:4,fontSize:10}}>{p.nom} ×{p.qte}</span>
+                ))}
+              </div>
+            )},
+            {key:"statut", label:"Statut", mobileShow:true, sortValue:c=>c.statut||"", render:c=>(
+              <span style={{display:"inline-flex",alignItems:"center",gap:5,color:"#475569"}}>
+                <span style={{width:6,height:6,borderRadius:99,background:c.statut==="Livré"?"#22C55E":"#F59E0B",flexShrink:0}}/>
+                {c.statut}
+              </span>
+            )},
+            {key:"actions", label:"", sortable:false, render:c=>(
+              <div style={{position:"relative",display:"inline-block"}} onClick={e=>e.stopPropagation()}>
+                <button onClick={()=>setOpenCmdMenu(openCmdMenu===c.id?null:c.id)}
+                  style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:14,fontWeight:700}}>⋯</button>
+                {openCmdMenu===c.id&&(
+                  <>
+                    <div onClick={()=>setOpenCmdMenu(null)} style={{position:"fixed",inset:0,zIndex:250}}/>
+                    <div style={{position:"absolute",right:0,top:"100%",marginTop:4,background:"#fff",border:"1px solid #E5E7EB",borderRadius:10,boxShadow:"0 12px 32px rgba(15,23,42,0.18)",zIndex:260,minWidth:200,overflow:"hidden"}}>
+                      {c.statut!=="Livré"&&(
+                        <button onClick={()=>{setOpenCmdMenu(null);marquerLivre(c.id);}}
+                          className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#059669"}}>✓ Marquer livré</button>
+                      )}
+                      <button onClick={()=>{setOpenCmdMenu(null);imprimerFactureCommande(c);}}
+                        className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer facture</button>
+                      <button onClick={()=>{setOpenCmdMenu(null);imprimerBonLivraison(c);}}
+                        className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#7C3AED"}}>📦 Bon de livraison</button>
+                      {c.statut!=="Livré"&&(
+                        <button onClick={()=>{setOpenCmdMenu(null);openEditCmd(c);}}
+                          className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
+                      )}
+                      <button onClick={()=>{setOpenCmdMenu(null);dupliquerCommande(c);}}
+                        className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
+                      {c.statut!=="Livré"&&(
+                        <>
+                          <div style={{borderTop:"1px solid #F1F5F9"}}/>
+                          <button onClick={()=>{setOpenCmdMenu(null);supprimerCommande(c.id);}}
+                            className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#EF4444"}}>🗑️ Supprimer</button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )},
+          ]}
+        />
+      );
+    })()}
   </div>
 )}
 
