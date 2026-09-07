@@ -1914,11 +1914,20 @@ function BossokApp({ session, onLogout }) {
   }).sort((a,b)=>(a.nom||"").localeCompare(b.nom||"")),[clients,searchC,filterType,filterStatut,filterZone,filterFidelite]);
 
   const clientFactures = (cid) => factures.filter(f=>f.client_id===cid);
+
+  // Retrouve la facture liée à une commande, que ce soit une facture individuelle
+  // ("Commande #12") ou une facture groupée qui l'inclut parmi d'autres
+  // ("Facture groupée — Commande #12, Commande #15"). Centralisé ici pour éviter
+  // que chaque endroit de l'app réimplémente sa propre comparaison fragile.
+  const findFactureForCommande = (cmdId) => {
+    const refRegex = new RegExp(`Commande #${cmdId}(\\D|$)`);
+    return factures.find(f => f.notes && refRegex.test(f.notes));
+  };
   const clientImpayees = (cid) => clientFactures(cid).filter(f=>f.statut==="Impayée");
 
   // ── Facturation groupée (clients en mode_facturation==="groupee") ──
   const commandesNonFacturees = (cid) => commandes.filter(c =>
-    c.client_id===cid && !factures.some(f => f.notes === `Commande #${c.id}`)
+    c.client_id===cid && !findFactureForCommande(c.id)
   );
   const facturerCommandesGroupees = async (cmdIds) => {
     const cmdsAFacturer = commandes.filter(c => cmdIds.includes(c.id));
@@ -2400,11 +2409,43 @@ function BossokApp({ session, onLogout }) {
   };
 
   const supprimerFacture = async (id, numero) => {
-    askConfirm(`Supprimer la facture ${numero} ? Cette action est irréversible.`, async () => {
+    const facture = factures.find(f => f.id === id);
+    // Retrouve les commandes liées, qu'elles soient référencées individuellement
+    // ("Commande #12") ou groupées ("Facture groupée — Commande #12, Commande #15").
+    const idsLies = facture?.notes
+      ? [...facture.notes.matchAll(/Commande #(\d+)/g)].map(m => parseInt(m[1]))
+      : [];
+    const cmdsLiees = commandes.filter(c => idsLies.includes(c.id));
+    const estGroupee = facture?.notes?.startsWith("Facture groupée");
+
+    const confirmMsg = cmdsLiees.length===0
+      ? `Supprimer la facture ${numero} ? Cette action est irréversible.`
+      : estGroupee
+        ? `Supprimer la facture ${numero} ? Le stock des ${cmdsLiees.length} commande(s) qu'elle regroupe sera restauré, et elles redeviendront disponibles pour une nouvelle facturation. Cette action est irréversible.`
+        : `Supprimer la facture ${numero} ? La commande liée sera aussi supprimée et son stock restauré. Cette action est irréversible.`;
+
+    askConfirm(confirmMsg, async () => {
       setSaving(true);
       try {
+        // Restaure le stock de chaque commande liée
+        for (const cmd of cmdsLiees) {
+          for (const p of (cmd.produits||[])) {
+            const prod = findProduitByNom(produits, p.nom);
+            if (!prod) continue;
+            const currentQte = stock[prod.id] || 0;
+            await updateStock(prod.id, currentQte + p.qte);
+          }
+        }
+        // Facture individuelle liée à UNE commande : on supprime aussi la commande
+        // (elle n'a pas d'existence utile sans sa facture, en mode normal).
+        // Facture groupée : on garde les commandes, elles redeviennent "à facturer".
+        if (!estGroupee) {
+          for (const cmd of cmdsLiees) {
+            await db.delete("commandes", cmd.id);
+          }
+        }
         await db.delete("factures", id);
-        setFactures(prev=>prev.filter(f=>f.id!==id));
+        await loadAll();
       } catch(e) { logError(e); }
       finally { setSaving(false); }
     }, {danger:true, confirmLabel:"Supprimer"});
@@ -2441,7 +2482,7 @@ function BossokApp({ session, onLogout }) {
   const showCmdForm = activeWorkTab?.type==="commande";
 
   const supprimerCommande = async (id) => {
-    askConfirm("Supprimer cette commande ? Le stock sera restauré et la facture associée annulée.", async () => {
+    askConfirm("Supprimer cette commande ? Le stock sera restauré.", async () => {
       setSaving(true);
       try {
         const cmd = commandes.find(c=>c.id===id);
@@ -2452,9 +2493,19 @@ function BossokApp({ session, onLogout }) {
             const currentQte = stock[prod.id] || 0;
             await updateStock(prod.id, currentQte + p.qte);
           }
-          const facture = factures.find(f => f.notes === `Commande #${id}`);
+          // Repère la facture liée, qu'elle soit individuelle ("Commande #12")
+          // ou groupée ("Facture groupée — Commande #12, Commande #15").
+          const facture = findFactureForCommande(id);
           if (facture) {
-            await db.update("factures", facture.id, {statut: "Annulée"});
+            const estGroupee = facture.notes.startsWith("Facture groupée");
+            if (estGroupee) {
+              // Une facture groupée couvre plusieurs commandes : on ne l'annule
+              // jamais automatiquement, ça pénaliserait les autres commandes
+              // qu'elle contient aussi. On prévient simplement l'utilisateur.
+              notifyError(`Attention : cette commande faisait partie de la facture groupée ${facture.numero}, qui n'a pas été modifiée. Vérifie-la manuellement si besoin.`);
+            } else {
+              await db.update("factures", facture.id, {statut: "Annulée"});
+            }
           }
         }
         await db.delete("commandes", id);
@@ -2521,7 +2572,7 @@ function BossokApp({ session, onLogout }) {
         });
 
         // Répercuter les nouvelles lignes sur la facture déjà créée pour cette commande
-        const facture = factures.find(f => f.notes === `Commande #${editingCmd.id}`);
+        const facture = findFactureForCommande(editingCmd.id);
         if (facture) {
           const lignes = cmdProduits.map(p => {
             const produit = findProduitByNom(produits, p.nom);
@@ -2602,7 +2653,7 @@ function BossokApp({ session, onLogout }) {
 
       // Le stock et la facture sont déjà créés depuis la commande — on propose
       // simplement d'imprimer la facture existante.
-      const facture = factures.find(f => f.notes === `Commande #${id}`);
+      const facture = findFactureForCommande(id);
       if (facture) {
         const client = clients.find(c=>c.id===cmd.client_id);
         setLastFacture({ facture, client });
@@ -2612,7 +2663,7 @@ function BossokApp({ session, onLogout }) {
   };
 
   const imprimerFactureCommande = (cmd) => {
-    const facture = factures.find(f => f.notes === `Commande #${cmd.id}`);
+    const facture = findFactureForCommande(cmd.id);
     if (!facture) {
       notifyError("Aucune facture liée à cette commande n'a été trouvée.");
       return;
@@ -4492,7 +4543,7 @@ function BossokApp({ session, onLogout }) {
   const selectedDate = getDayDate(selectedDay);
 
   const getCmdMontant = (cmd) => {
-    const fact = factures.find(f => f.notes === `Commande #${cmd.id}`);
+    const fact = findFactureForCommande(cmd.id);
     return fact ? totalFact(fact.lignes).total : null;
   };
 
