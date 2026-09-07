@@ -1642,6 +1642,7 @@ function BossokApp({ session, onLogout }) {
 
   // UI
   const [clientTab, setClientTab] = useState("info");
+  const [selectedCmdsToInvoice, setSelectedCmdsToInvoice] = useState([]);
 
   // ── Onglets de travail génériques (comme des onglets de navigateur) ──
   // Chaque onglet : {id, type, label, page, ...données spécifiques au type}
@@ -1914,6 +1915,46 @@ function BossokApp({ session, onLogout }) {
 
   const clientFactures = (cid) => factures.filter(f=>f.client_id===cid);
   const clientImpayees = (cid) => clientFactures(cid).filter(f=>f.statut==="Impayée");
+
+  // ── Facturation groupée (clients en mode_facturation==="groupee") ──
+  const commandesNonFacturees = (cid) => commandes.filter(c =>
+    c.client_id===cid && !factures.some(f => f.notes === `Commande #${c.id}`)
+  );
+  const facturerCommandesGroupees = async (cmdIds) => {
+    const cmdsAFacturer = commandes.filter(c => cmdIds.includes(c.id));
+    if (cmdsAFacturer.length===0) return;
+    const client = clients.find(c => c.id === cmdsAFacturer[0].client_id);
+    if (!client) return;
+    const uneSeule = cmdsAFacturer.length === 1;
+    setSaving(true);
+    try {
+      const lignes = [];
+      for (const cmd of cmdsAFacturer) {
+        for (const p of (cmd.produits||[])) {
+          const produit = findProduitByNom(produits, p.nom);
+          const pu = produit ? getClientPrix(produit, client) : 0;
+          const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
+          const nom = uneSeule ? p.nom : `${p.nom} (${cmd.date_commande||cmd.date_livraison||"?"})`;
+          lignes.push({ produitId: produit?.id||"", nom, qte: p.qte, pu, consigne });
+        }
+      }
+      const today = localDateStr();
+      const ech = new Date(); ech.setDate(ech.getDate()+7);
+      const num = genererNumeroFacture(today);
+      await db.insert("factures", {
+        numero: num, client_id: client.id,
+        client_nom: client.nom||"", client_adresse: client.adresse||"",
+        client_tva: client.tva||"",
+        date: today, echeance: ech.toISOString().split("T")[0],
+        lignes, statut: "Impayée",
+        notes: uneSeule ? `Commande #${cmdsAFacturer[0].id}` : "Facture groupée — " + cmdsAFacturer.map(c=>`Commande #${c.id}`).join(", "),
+        retours: []
+      });
+      await loadAll();
+      notifySuccess(uneSeule ? `Facture ${num} créée.` : `Facture ${num} créée avec ${cmdsAFacturer.length} livraisons groupées.`);
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
 
   const planningA = commandes.filter(c=>c.statut==="En attente"&&getChauffeur(c.client_region)==="A");
   const planningB = commandes.filter(c=>c.statut==="En attente"&&getChauffeur(c.client_region)==="B");
@@ -2516,26 +2557,30 @@ function BossokApp({ session, onLogout }) {
           await updateStock(prod.id, Math.max(0, currentQte - p.qte));
         }
 
-        // Créer la facture immédiatement, liée à cette commande
-        const ech = new Date(); ech.setDate(ech.getDate()+7);
-        const num = genererNumeroFacture(today);
-        const lignes = cmdProduits.map(p => {
-          const produit = findProduitByNom(produits, p.nom);
-          const pu = produit ? getClientPrix(produit, client) : 0;
-          const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
-          return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
-        });
-        if (manualConsigneMontantCmd && parseFloat(manualConsigneMontantCmd)) {
-          const montant = parseFloat(manualConsigneMontantCmd);
-          lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: manualConsigneLabelCmd || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
+        // Créer la facture immédiatement, liée à cette commande —
+        // SAUF pour les clients en facturation groupée : la commande reste
+        // "en attente de facturation", regroupée plus tard avec d'autres.
+        if (client?.mode_facturation !== "groupee") {
+          const ech = new Date(); ech.setDate(ech.getDate()+7);
+          const num = genererNumeroFacture(today);
+          const lignes = cmdProduits.map(p => {
+            const produit = findProduitByNom(produits, p.nom);
+            const pu = produit ? getClientPrix(produit, client) : 0;
+            const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
+            return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
+          });
+          if (manualConsigneMontantCmd && parseFloat(manualConsigneMontantCmd)) {
+            const montant = parseFloat(manualConsigneMontantCmd);
+            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: manualConsigneLabelCmd || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
+          }
+          await db.insert("factures", {
+            numero: num, client_id: cmdClientId,
+            client_nom: client?.nom||"", client_adresse: client?.adresse||"",
+            client_tva: client?.tva||"",
+            date: today, echeance: ech.toISOString().split("T")[0],
+            lignes, statut: "Impayée", notes: `Commande #${newCmd.id}`, retours: []
+          });
         }
-        await db.insert("factures", {
-          numero: num, client_id: cmdClientId,
-          client_nom: client?.nom||"", client_adresse: client?.adresse||"",
-          client_tva: client?.tva||"",
-          date: today, echeance: ech.toISOString().split("T")[0],
-          lignes, statut: "Impayée", notes: `Commande #${newCmd.id}`, retours: []
-        });
       }
       await loadAll();
       setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
@@ -3487,6 +3532,22 @@ function BossokApp({ session, onLogout }) {
 
   return(
   <div>
+    {(()=>{
+      const now = new Date();
+      const dernierJourMois = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+      const finDeMoisProche = now.getDate() >= dernierJourMois - 2; // 3 derniers jours du mois
+      if (!finDeMoisProche) return null;
+      const clientsConcernes = clients.filter(c => c.mode_facturation==="groupee" && commandesNonFacturees(c.id).length>0);
+      if (clientsConcernes.length===0) return null;
+      return (
+        <div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+          <div style={{fontSize:13,color:"#5B21B6"}}>
+            ♻️ <strong>Fin de mois proche</strong> — {clientsConcernes.length} client(s) en facturation groupée ont des livraisons en attente : {clientsConcernes.map(c=>c.nom).join(", ")}
+          </div>
+          <button onClick={()=>openClientTab(clientsConcernes[0],"factures")} style={{...S.btn("#7C3AED"),padding:"6px 12px",fontSize:12}}>Traiter maintenant</button>
+        </div>
+      );
+    })()}
     {/* ── Filtres ── */}
     <div style={{...S.card,marginBottom:14,padding:"12px 16px"}}>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
@@ -5105,6 +5166,49 @@ function BossokApp({ session, onLogout }) {
       )}
       {clientTab==="factures"&&(
         <div>
+          {selClient.mode_facturation==="groupee" && (()=>{
+            const enAttente = commandesNonFacturees(selClient.id);
+            if (enAttente.length===0) return (
+              <div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:8,padding:10,marginBottom:12,fontSize:12,color:"#5B21B6"}}>
+                ♻️ Facturation groupée activée pour ce client — aucune livraison en attente de facturation pour l'instant.
+              </div>
+            );
+            const totalSelection = enAttente.filter(c=>selectedCmdsToInvoice.includes(c.id))
+              .reduce((s,c)=>s+(c.produits||[]).reduce((s2,p)=>{
+                const produit = findProduitByNom(produits, p.nom);
+                const pu = produit ? getClientPrix(produit, selClient) : 0;
+                return s2 + pu*p.qte;
+              },0),0);
+            return (
+              <div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:8,padding:12,marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{fontWeight:700,fontSize:12,color:"#5B21B6"}}>♻️ Livraisons en attente de facturation ({enAttente.length})</div>
+                  <button onClick={()=>setSelectedCmdsToInvoice(
+                    selectedCmdsToInvoice.length===enAttente.length ? [] : enAttente.map(c=>c.id)
+                  )} style={{background:"none",border:"none",color:"#7C3AED",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                    {selectedCmdsToInvoice.length===enAttente.length ? "Tout désélectionner" : "Tout sélectionner"}
+                  </button>
+                </div>
+                <div style={{display:"grid",gap:5,marginBottom:10}}>
+                  {enAttente.map(c=>(
+                    <label key={c.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,background:"#fff",borderRadius:6,padding:"7px 9px",cursor:"pointer"}}>
+                      <input type="checkbox" checked={selectedCmdsToInvoice.includes(c.id)}
+                        onChange={e=>setSelectedCmdsToInvoice(prev => e.target.checked ? [...prev,c.id] : prev.filter(id=>id!==c.id))}/>
+                      <span style={{flex:1}}>{c.date_commande||c.date_livraison} — {(c.produits||[]).map(p=>p.nom+" ×"+p.qte).join(", ")}</span>
+                    </label>
+                  ))}
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontSize:12,color:"#5B21B6"}}>{selectedCmdsToInvoice.length} sélectionnée(s) · {fmtFull(totalSelection)}</span>
+                  <button onClick={async ()=>{ await facturerCommandesGroupees(selectedCmdsToInvoice); setSelectedCmdsToInvoice([]); }}
+                    disabled={selectedCmdsToInvoice.length===0||saving}
+                    style={{...S.btn("#7C3AED"),padding:"7px 14px",fontSize:12,opacity:selectedCmdsToInvoice.length===0?0.5:1}}>
+                    Facturer la sélection
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
           {clientImpayees(selClient.id).length>0&&(
             <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,padding:10,marginBottom:10}}>
               <div style={{fontWeight:600,color:"#DC2626",fontSize:12,marginBottom:6}}>⚠️ Impayées</div>
@@ -5530,6 +5634,19 @@ function BossokApp({ session, onLogout }) {
               </select>
             </div>
           ))}
+        </div>
+
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Mode de facturation</label>
+          <select value={clientForm.mode_facturation||"commande"} onChange={e=>setClientForm(p=>({...p,mode_facturation:e.target.value}))} style={S.input}>
+            <option value="commande">À chaque commande (par défaut)</option>
+            <option value="groupee">Groupée — je choisis quand facturer plusieurs livraisons ensemble</option>
+          </select>
+          {clientForm.mode_facturation==="groupee" && (
+            <div style={{fontSize:11,color:"#7C3AED",marginTop:4}}>
+              ♻️ Les commandes de ce client ne génèreront plus de facture automatique. Tu les factureras groupées depuis sa fiche.
+            </div>
+          )}
         </div>
       </div>
       <div style={{display:"flex",gap:8,marginTop:16}}>
