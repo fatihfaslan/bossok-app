@@ -1744,9 +1744,14 @@ function BossokApp({ session, onLogout }) {
   const [filterZone, setFilterZone] = useState("Tous");
   const [filterFidelite, setFilterFidelite] = useState("Tous");
   const [consignesManuelles, setConsignesManuelles] = useState([]);
-  const [showConsigneForm, setShowConsigneForm] = useState(false);
+  const showConsigneForm = activeWorkTab?.type==="consigne";
   const [consigneForm, setConsigneForm] = useState({});
   const [consigneClientId, setConsigneClientId] = useState(null);
+  const openConsigneTab = () => {
+    setConsigneClientId(null);
+    setConsigneForm({date:localDateStr()});
+    openWorkTab({id:"consigne", type:"consigne", label:"Retour consigne", page:"consignes"});
+  };
   const [manualConsigneLabel, setManualConsigneLabel] = useState("");
   const [manualConsigneMontant, setManualConsigneMontant] = useState("");
   const [manualConsigneLabelCmd, setManualConsigneLabelCmd] = useState("");
@@ -1758,19 +1763,21 @@ function BossokApp({ session, onLogout }) {
   const [showClientForm, setShowClientForm] = useState(false);
   const [editClient, setEditClient] = useState(null);
   const [clientForm, setClientForm] = useState({});
-  const [showProduitForm, setShowProduitForm] = useState(false);
+  const showProduitForm = activeWorkTab?.type==="produit";
   const [editProduit, setEditProduit] = useState(null);
   const [produitForm, setProduitForm] = useState({});
   const [produitFilterStatut, setProduitFilterStatut] = useState("Actif");
   const showReceptionForm = activeWorkTab?.type==="reception";
-  const [receptionProduit, setReceptionProduit] = useState(null);
+  const [receptionLignes, setReceptionLignes] = useState([]); // [{produitId, nom, qte, prix}]
+  const [receptionSearch, setReceptionSearch] = useState("");
   const [receptionForm, setReceptionForm] = useState({});
   const showPerteForm = activeWorkTab?.type==="perte";
   const [stockDraft, setStockDraft] = useState({});
   const [perteProduit, setPerteProduit] = useState(null);
   const [perteForm, setPerteForm] = useState({});
   const openReceptionTab = () => {
-    setReceptionProduit(null);
+    setReceptionLignes([]);
+    setReceptionSearch("");
     setReceptionForm({date:localDateStr()});
     openWorkTab({id:"reception", type:"reception", label:"Réception stock", page:"stock"});
   };
@@ -1790,7 +1797,7 @@ function BossokApp({ session, onLogout }) {
   const [editEvent, setEditEvent] = useState(null);
   const [eventForm, setEventForm] = useState({});
   const [calMonth, setCalMonth] = useState(()=>{const d=new Date();return {year:d.getFullYear(),month:d.getMonth()};});
-  const [showFactForm, setShowFactForm] = useState(false);
+  const showFactForm = activeWorkTab?.type==="facture";
   const [factFilterStatut, setFactFilterStatut] = useState("Tous");
   const [factFilterSearch, setFactFilterSearch] = useState("");
   const [factFilterMois, setFactFilterMois] = useState("Tous");
@@ -1967,7 +1974,7 @@ function BossokApp({ session, onLogout }) {
         utilise: false,
       });
       await loadAll();
-      setShowConsigneForm(false);
+      closeWorkTab("consigne");
       setConsigneForm({});
       setConsigneClientId(null);
     } catch(e) { logError(e); }
@@ -2087,11 +2094,30 @@ function BossokApp({ session, onLogout }) {
         await db.insert("produits", {...payload, id: newId, statut: "Actif"});
       }
       await loadAll();
-      setShowProduitForm(false);
+      closeWorkTab("produit");
       setEditProduit(null);
       setProduitForm({});
     } catch(e) { logError(e); }
     finally { setSaving(false); }
+  };
+  const openNewProduitTab = () => {
+    setEditProduit(null);
+    setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});
+    openWorkTab({id:"produit", type:"produit", label:"Nouveau produit", page:"produits"});
+  };
+  const openEditProduitTab = (p) => {
+    setEditProduit(p);
+    setProduitForm({
+      nom:p.nom, categorie:p.categorie, type_emballage:p.type_emballage,
+      consigne:p.consigne||"",
+      prix_Snack:p.prix?.Snack??"", prix_Restaurant:p.prix?.Restaurant??"",
+      prix_Administrative:p.prix?.Administrative??"", prix_Market:p.prix?.Market??"",
+      prix_Café:p.prix?.Café??"", prix_Creche:p.prix?.Creche??"",
+      prix_Distributor:p.prix?.Distributor??"",
+      prix_Privé:p.prix?.Privé??"",
+      prix_achat:p.prix_achat??"",
+    });
+    openWorkTab({id:"produit", type:"produit", label:p.nom, page:"produits"});
   };
 
   const toggleProduitStatut = async (produit) => {
@@ -2105,24 +2131,25 @@ function BossokApp({ session, onLogout }) {
   };
 
   const saveReception = async () => {
-    const qte = parseFloat(receptionForm.quantite);
-    const prixUnit = parseFloat(receptionForm.prix_achat_unitaire);
-    if (!receptionProduit || !qte || qte <= 0 || !prixUnit || prixUnit <= 0) return;
+    const lignesValides = receptionLignes.filter(l => l.qte>0 && l.prix>0);
+    if (lignesValides.length===0) return;
     setSaving(true);
     try {
-      await db.insert("receptions_stock", {
-        produit_id: receptionProduit.id,
-        quantite: qte,
-        prix_achat_unitaire: prixUnit,
-        fournisseur: receptionForm.fournisseur || null,
-        date: receptionForm.date || new Date().toISOString().split("T")[0],
-        notes: receptionForm.notes || null,
-      });
-      const newQte = (stock[receptionProduit.id] || 0) + qte;
-      await updateStock(receptionProduit.id, newQte);
+      for (const l of lignesValides) {
+        await db.insert("receptions_stock", {
+          produit_id: l.produitId,
+          quantite: l.qte,
+          prix_achat_unitaire: l.prix,
+          fournisseur: receptionForm.fournisseur || null,
+          date: receptionForm.date || localDateStr(),
+          notes: receptionForm.notes || null,
+        });
+        const newQte = (stock[l.produitId] || 0) + l.qte;
+        await updateStock(l.produitId, newQte);
+      }
       await loadAll();
       closeWorkTab("reception");
-      setReceptionProduit(null);
+      setReceptionLignes([]);
       setReceptionForm({});
     } catch(e) { logError(e); }
     finally { setSaving(false); }
@@ -2246,7 +2273,20 @@ function BossokApp({ session, onLogout }) {
     setFactNumero(f.numero || "");
     setFactEcheance(f.echeance || "");
     setSearchFactClient("");
-    setShowFactForm(true);
+    openWorkTab({id:"facture", type:"facture", label:"Facture "+(f.numero||""), page:"factures"});
+  };
+  const openNewFactureTab = () => {
+    const today = localDateStr();
+    setEditingFacture(null);
+    setFactClientId(null);
+    setFactLignes([]);
+    setSearchFactClient("");
+    setFactDate(today);
+    setFactNumero(genererNumeroFacture(today));
+    const echInit = new Date(today); echInit.setDate(echInit.getDate()+7);
+    setFactEcheance(echInit.toISOString().split("T")[0]);
+    setFactNotes(""); setFactNoteClient("");
+    openWorkTab({id:"facture", type:"facture", label:"Nouvelle facture", page:"factures"});
   };
 
   const saveFact = async () => {
@@ -2287,7 +2327,7 @@ function BossokApp({ session, onLogout }) {
         setLastFacture({facture:newFact, client});
       }
       setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactClientId(null);
-      setFactNumero(""); setSearchFactClient(""); setShowFactForm(false);
+      setFactNumero(""); setSearchFactClient(""); closeWorkTab("facture");
     } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
@@ -2357,7 +2397,7 @@ function BossokApp({ session, onLogout }) {
   };
 
   const [editingCmd, setEditingCmd] = useState(null);
-  const [showCmdForm, setShowCmdForm] = useState(false);
+  const showCmdForm = activeWorkTab?.type==="commande";
 
   const supprimerCommande = async (id) => {
     askConfirm("Supprimer cette commande ? Le stock sera restauré et la facture associée annulée.", async () => {
@@ -2389,8 +2429,7 @@ function BossokApp({ session, onLogout }) {
     setCmdProduits(cmd.produits||[]);
     setCmdNotes(cmd.notes||"");
     setSearchCmdClient("");
-    setShowCmdForm(true);
-    window.scrollTo({top:0, behavior:"smooth"});
+    openWorkTab({id:"commande", type:"commande", label:"Nouvelle commande", page:"commandes"});
   };
 
   const openEditCmd = (cmd) => {
@@ -2399,7 +2438,7 @@ function BossokApp({ session, onLogout }) {
     setCmdProduits(cmd.produits||[]);
     setCmdNotes(cmd.notes||"");
     setSearchCmdClient("");
-    setShowCmdForm(true);
+    openWorkTab({id:"commande", type:"commande", label:"Commande — "+(cmd.client_nom||""), page:"commandes"});
   };
   const openNewCmd = () => {
     setEditingCmd(null);
@@ -2409,7 +2448,7 @@ function BossokApp({ session, onLogout }) {
     setSearchCmdClient("");
     setManualConsigneLabelCmd(""); setManualConsigneMontantCmd("");
     setManualConsigneQteCmd("1"); setManualConsigneUnitaireCmd(""); setManualConsigneSensCmd("plus");
-    setShowCmdForm(true);
+    openWorkTab({id:"commande", type:"commande", label:"Nouvelle commande", page:"commandes"});
   };
 
   const saveCmd = async () => {
@@ -2502,7 +2541,7 @@ function BossokApp({ session, onLogout }) {
       setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
       setManualConsigneLabelCmd(""); setManualConsigneMontantCmd("");
       setManualConsigneQteCmd("1"); setManualConsigneUnitaireCmd(""); setManualConsigneSensCmd("plus");
-      setShowCmdForm(false);
+      closeWorkTab("commande");
     } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
@@ -2778,21 +2817,13 @@ function BossokApp({ session, onLogout }) {
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
-            {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{
-  const today = new Date().toISOString().split("T")[0];
-  setShowFactForm(true);setFactClientId(null);setFactLignes([]);
-  setSearchFactClient("");setEditingFacture(null);
-  setFactDate(today);
-  setFactNumero(genererNumeroFacture(today));
-  const echInit = new Date(today); echInit.setDate(echInit.getDate()+7);
-  setFactEcheance(echInit.toISOString().split("T")[0]);
-}}>{isMobile?"+":"+ Nouvelle facture"}</button>}
+            {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewFactureTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
             {page==="commandes" && (showCmdForm ? (
               <button style={{...S.btn("#fff","#1D4ED8"),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>
             ) : (
               <button style={S.btn("#fff","#1D4ED8")} onClick={openNewCmd}>{isMobile?"+":"+ Nouvelle commande"}</button>
             ))}
-            {page==="produits" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditProduit(null);setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});setShowProduitForm(true);}}>{isMobile?"+":"+ Nouveau produit"}</button>}
+            {page==="produits" && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewProduitTab}>{isMobile?"+":"+ Nouveau produit"}</button>}
             {page==="calendrier" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditEvent(null);setEventForm({titre:"",description:"",date_debut:new Date().toISOString().split("T")[0],date_fin:"",toute_journee:false,heure_debut:"09:00",heure_fin:"10:00",couleur:"#1D4ED8"});setShowEventForm(true);}}>{isMobile?"+":"+ Nouvel événement"}</button>}
             <button style={{...S.btn("rgba(255,255,255,0.15)","#fff"),display:"flex",alignItems:"center",justifyContent:"center",padding:"9px 11px"}} onClick={loadAll}><Icon name="refresh" size={15}/></button>
           </div>
@@ -3929,11 +3960,12 @@ function BossokApp({ session, onLogout }) {
     setFactNotes(f.notes||"");
     setFactNumero(genererNumeroFacture(new Date().toISOString().split("T")[0]));
     setSearchFactClient("");
-    setShowFactForm(true);
+    openWorkTab({id:"facture", type:"facture", label:"Nouvelle facture", page:"factures"});
   };
 
   return(
   <div>
+    {workTabStrip()}
     {/* KPIs */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
       {[
@@ -4095,11 +4127,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ COMMANDES ══════════════════════════════════════════════════ */}
 {page==="commandes" && showCmdForm && (
   <div className="page-transition">
-    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
-      <span onClick={()=>setShowCmdForm(false)} style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Commandes</span>
-      <span style={{color:"#CBD5E1"}}>/</span>
-      <span style={{color:"#64748B",fontWeight:500}}>{editingCmd?"Modifier la commande":"Nouvelle commande"}</span>
-    </div>
+    {workTabStrip()}
     <div style={{...S.card,maxWidth:680}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{fontWeight:700,fontSize:14}}>{editingCmd?"✏️ Modifier la commande":"➕ Nouvelle commande"}</div>
@@ -4282,6 +4310,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ LISTE DES COMMANDES ══════════════════════════════════════ */}
 {page==="commandes" && !showCmdForm && (
   <div>
+    {workTabStrip()}
     <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
       {[["attente","⏳ En attente",commandes.filter(c=>c.statut==="En attente").length],
         ["livrees","✅ Livrées",commandes.filter(c=>c.statut==="Livré").length],
@@ -4857,9 +4886,9 @@ function BossokApp({ session, onLogout }) {
 )}
 
 {/* ══ CONSIGNES ══════════════════════════════════════════════════ */}
-{page==="consignes" && (
+{page==="consignes" && !showConsigneForm && (
   <div>
-    {/* Stats */}
+    {workTabStrip()}
     {(() => {
       const clientsAvecSolde = clientsActifs.map(c => ({
         ...c,
@@ -4874,107 +4903,81 @@ function BossokApp({ session, onLogout }) {
       return (
         <div>
           <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
-            <button onClick={()=>{setConsigneClientId(null);setConsigneForm({date:new Date().toISOString().split("T")[0]});setShowConsigneForm(true);}}
-              style={S.btn()}>+ Enregistrer un retour</button>
+            <button onClick={openConsigneTab} style={S.btn()}>+ Enregistrer un retour</button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
-            <div style={S.kpi("#7C3AED")}>
-              <div style={{fontSize:22,fontWeight:800,color:"#7C3AED"}}>{fmtFull(totalGlobal)}</div>
+            <div style={S.kpi("#334155")}>
+              <div style={{fontSize:22,fontWeight:800,color:"#334155"}}>{fmtFull(totalGlobal)}</div>
               <div style={{fontSize:11,color:"#6B7280"}}>Valeur consignes en circulation</div>
             </div>
-            <div style={S.kpi("#059669")}>
-              <div style={{fontSize:22,fontWeight:800,color:"#059669"}}>{fmtFull(totalCredit)}</div>
+            <div style={S.kpi("#334155")}>
+              <div style={{fontSize:22,fontWeight:800,color:"#334155"}}>{fmtFull(totalCredit)}</div>
               <div style={{fontSize:11,color:"#6B7280"}}>Crédits à déduire (retours déclarés)</div>
             </div>
-            <div style={S.kpi("#1D4ED8")}>
-              <div style={{fontSize:22,fontWeight:800,color:"#1D4ED8"}}>{clientsAvecSolde.length}</div>
+            <div style={S.kpi("#334155")}>
+              <div style={{fontSize:22,fontWeight:800,color:"#334155"}}>{clientsAvecSolde.length}</div>
               <div style={{fontSize:11,color:"#6B7280"}}>Clients avec consignes</div>
             </div>
           </div>
 
-          {clientsAvecSolde.length === 0 ? (
-            <div style={{...S.card,textAlign:"center",padding:"60px 0",color:"#9CA3AF"}}>
-              <div style={{fontSize:40,marginBottom:12}}>♻️</div>
-              <div>Aucune consigne en cours</div>
-            </div>
-          ) : (
-            <div style={S.card}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <thead>
-                  <tr style={{borderBottom:"2px solid #E5E7EB",background:"#F9FAFB"}}>
-                    {["Client","Région","Caisses en circulation","Valeur consignes","Crédit à déduire","Détail"].map(h=>(
-                      <th key={h} style={{textAlign:"left",padding:"8px 12px",color:"#6B7280",fontWeight:600,fontSize:11}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {clientsAvecSolde.map((c,i) => (
-                    <tr key={c.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFAFA"}}>
-                      <td style={{padding:"8px 12px"}}>
-                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                          <div style={{width:28,height:28,borderRadius:7,background:tc(c.type).bg,color:tc(c.type).text,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:10,flexShrink:0}}>{initials(c.nom)}</div>
-                          <span style={{fontWeight:600}}>{c.nom}</span>
-                        </div>
-                      </td>
-                      <td style={{padding:"8px 12px",color:"#6B7280",fontSize:12}}>{c.region}</td>
-                      <td style={{padding:"8px 12px",textAlign:"center",fontWeight:700,color:"#7C3AED"}}>
-                        {c.sol.reduce((s,r)=>s+r.solde,0)}
-                      </td>
-                      <td style={{padding:"8px 12px",fontWeight:700,color:"#7C3AED"}}>{fmtFull(c.total)}</td>
-                      <td style={{padding:"8px 12px",fontWeight:700,color:c.credit>0?"#059669":"#9CA3AF"}}>
-                        {c.credit>0?`- ${fmtFull(c.credit)}`:"—"}
-                      </td>
-                      <td style={{padding:"8px 12px"}}>
-                        <button onClick={()=>openClientTab(c,"consignes")} style={{...S.btn("#F5F3FF"),color:"#7C3AED",padding:"3px 10px",fontSize:11}}>
-                          Voir détail
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr style={{borderTop:"2px solid #E5E7EB",background:"#F9FAFB",fontWeight:700}}>
-                    <td colSpan={3} style={{padding:"8px 12px",color:"#7C3AED"}}>TOTAL</td>
-                    <td style={{padding:"8px 12px",color:"#7C3AED"}}>{fmtFull(totalGlobal)}</td>
-                    <td style={{padding:"8px 12px",color:"#059669"}}>- {fmtFull(totalCredit)}</td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
+          <DataTable
+            isMobile={isMobile}
+            rows={clientsAvecSolde}
+            pageSize={50}
+            onRowClick={c=>openClientTab(c,"consignes")}
+            emptyIcon="♻️"
+            emptyMessage="Aucune consigne en cours"
+            initialSort={{key:"total",dir:"desc"}}
+            footer={isMobile ? (
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span>Total</span>
+                <span>{fmtFull(totalGlobal)} · − {fmtFull(totalCredit)}</span>
+              </div>
+            ) : (
+              <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+                <td colSpan={3} style={{padding:"8px 12px"}}>TOTAL</td>
+                <td style={{padding:"8px 12px"}}>{fmtFull(totalGlobal)}</td>
+                <td style={{padding:"8px 12px"}}>− {fmtFull(totalCredit)}</td>
+                <td></td>
+              </tr>
+            )}
+            columns={[
+              {key:"nom", label:"Client", mobilePrimary:true, sortValue:c=>c.nom||"", render:c=>(
+                <div style={{display:"flex",gap:9,alignItems:"center"}}>
+                  <div style={{width:28,height:28,borderRadius:8,background:"#F1F5F9",color:"#5D6B82",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:10.5,flexShrink:0}}>{initials(c.nom)}</div>
+                  <span style={{fontWeight:600}}>{c.nom}</span>
+                </div>
+              )},
+              {key:"region", label:"Région", mobileShow:true, sortValue:c=>c.region||""},
+              {key:"caisses", label:"Caisses", align:"right", mobileShow:true, sortValue:c=>c.sol.reduce((s,r)=>s+r.solde,0), render:c=>c.sol.reduce((s,r)=>s+r.solde,0)},
+              {key:"total", label:"Valeur", align:"right", mobileShow:true, sortValue:c=>c.total, render:c=><span style={{fontWeight:700}}>{fmtFull(c.total)}</span>},
+              {key:"credit", label:"Crédit à déduire", align:"right", sortValue:c=>c.credit, render:c=>
+                c.credit>0 ? <span style={{color:"#059669",fontWeight:600}}>− {fmtFull(c.credit)}</span> : <span style={{color:"#CBD5E1"}}>—</span>
+              },
+            ]}
+          />
 
           {consignesManuelles.filter(c=>!c.utilise).length > 0 && (
-            <div style={{...S.card, marginTop:16}}>
-              <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>📋 Retours déclarés, pas encore utilisés</div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead>
-                  <tr style={{borderBottom:"1px solid #E5E7EB"}}>
-                    {["Date","Client","Produit","Qté","Consigne unit.","Montant","",""].map(h=>(
-                      <th key={h} style={{textAlign:"left",padding:"6px 8px",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {consignesManuelles.filter(c=>!c.utilise).sort((a,b)=>b.date.localeCompare(a.date)).map(c=>{
-                    const cl = clients.find(x=>x.id===c.client_id);
-                    return (
-                      <tr key={c.id} style={{borderBottom:"1px solid #F1F5F9"}}>
-                        <td style={{padding:"6px 8px"}}>{c.date}</td>
-                        <td style={{padding:"6px 8px",fontWeight:600}}>{cl?.nom||"—"}</td>
-                        <td style={{padding:"6px 8px",color:"#6B7280"}}>{c.produit_nom||"—"}</td>
-                        <td style={{padding:"6px 8px"}}>{c.quantite}</td>
-                        <td style={{padding:"6px 8px"}}>{fmtFull(c.consigne_unitaire)}</td>
-                        <td style={{padding:"6px 8px",fontWeight:700,color:"#059669"}}>{fmtFull(c.quantite*c.consigne_unitaire)}</td>
-                        <td style={{padding:"6px 8px",color:"#9CA3AF",fontSize:11}}>{c.notes||""}</td>
-                        <td style={{padding:"6px 8px"}}>
-                          <button onClick={()=>supprimerConsigneManuelle(c.id)} style={{...S.btn("#FEE2E2","#DC2626"),padding:"3px 8px",fontSize:10}}>🗑️</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div style={{marginTop:20}}>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:"#334155"}}>Retours déclarés, pas encore utilisés</div>
+              <DataTable
+                isMobile={isMobile}
+                rows={consignesManuelles.filter(c=>!c.utilise)}
+                pageSize={50}
+                emptyIcon="📋"
+                emptyMessage="Aucun retour en attente"
+                initialSort={{key:"date",dir:"desc"}}
+                columns={[
+                  {key:"date", label:"Date", mobilePrimary:true, sortValue:c=>c.date||""},
+                  {key:"client", label:"Client", mobileShow:true, sortValue:c=>clients.find(x=>x.id===c.client_id)?.nom||"", render:c=>clients.find(x=>x.id===c.client_id)?.nom||"—"},
+                  {key:"produit", label:"Produit", sortValue:c=>c.produit_nom||"", render:c=>c.produit_nom||<span style={{color:"#CBD5E1"}}>—</span>},
+                  {key:"qte", label:"Qté", align:"right", sortValue:c=>c.quantite||0},
+                  {key:"montant", label:"Montant", align:"right", mobileShow:true, sortValue:c=>c.quantite*c.consigne_unitaire, render:c=><span style={{fontWeight:600,color:"#059669"}}>{fmtFull(c.quantite*c.consigne_unitaire)}</span>},
+                  {key:"actions", label:"", sortable:false, render:c=>(
+                    <button onClick={e=>{e.stopPropagation();supprimerConsigneManuelle(c.id);}} style={{...S.btn("#FEE2E2","#DC2626"),padding:"3px 8px",fontSize:10}}>🗑️</button>
+                  )},
+                ]}
+              />
             </div>
           )}
         </div>
@@ -4993,6 +4996,7 @@ function BossokApp({ session, onLogout }) {
 
   return(
   <div>
+    {workTabStrip()}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:produits.length,c:"#334155",s:"Tous"},
@@ -5011,20 +5015,7 @@ function BossokApp({ session, onLogout }) {
       isMobile={isMobile}
       rows={produitsFiltres}
       pageSize={50}
-      onRowClick={p=>{
-        setEditProduit(p);
-        setProduitForm({
-          nom:p.nom, categorie:p.categorie, type_emballage:p.type_emballage,
-          consigne:p.consigne||"",
-          prix_Snack:p.prix?.Snack??"", prix_Restaurant:p.prix?.Restaurant??"",
-          prix_Administrative:p.prix?.Administrative??"", prix_Market:p.prix?.Market??"",
-          prix_Café:p.prix?.Café??"", prix_Creche:p.prix?.Creche??"",
-          prix_Distributor:p.prix?.Distributor??"",
-          prix_Privé:p.prix?.Privé??"",
-          prix_achat:p.prix_achat??"",
-        });
-        setShowProduitForm(true);
-      }}
+      onRowClick={openEditProduitTab}
       emptyIcon="🍺"
       emptyMessage="Aucun produit dans cette vue"
       initialSort={{key:"nom",dir:"asc"}}
@@ -5086,7 +5077,7 @@ function BossokApp({ session, onLogout }) {
             </div>
           </div>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
-            <button onClick={()=>{setShowFactForm(true);setFactClientId(selClient.id);setFactLignes([]);}} style={S.btn()}>+ Facture</button>
+            <button onClick={()=>{openNewFactureTab();setFactClientId(selClient.id);}} style={S.btn()}>+ Facture</button>
             <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);}} style={S.btn("#F1F5F9","#334155")}>✏️</button>
           </div>
         </div>
@@ -5271,12 +5262,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ PAGE FACTURE (nouvelle / édition) ══════════════════════════ */}
 {page==="factures" && showFactForm&&(
   <div className="page-transition">
-    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
-      <span onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");setFactEcheance("");}}
-        style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Factures</span>
-      <span style={{color:"#CBD5E1"}}>/</span>
-      <span style={{color:"#64748B",fontWeight:500}}>{editingFacture ? "Facture "+editingFacture.numero : "Nouvelle facture"}</span>
-    </div>
+    {workTabStrip()}
     <div style={{...S.card,maxWidth:680}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editingFacture ? "Modifier la facture" : "Nouvelle facture"}</h2>
@@ -5420,7 +5406,7 @@ function BossokApp({ session, onLogout }) {
         <input value={factNoteClient} onChange={e=>setFactNoteClient(e.target.value)} placeholder="Ex: Merci pour votre commande, à bientôt !" style={S.input}/>
       </div>
       <div style={{display:"flex",gap:8}}>
-        <button onClick={()=>{setShowFactForm(false);setEditingFacture(null);setFactNumero("");setFactEcheance("");}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={()=>{closeWorkTab("facture");setEditingFacture(null);setFactNumero("");setFactEcheance("");}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveFact} disabled={!factClientId||factLignes.length===0||saving} style={{...S.btn(),flex:2,opacity:(!factClientId||factLignes.length===0||saving)?0.4:1}}>
           {saving?"Sauvegarde...":editingFacture?"Enregistrer les modifications":"Créer la facture"}
         </button>
@@ -5557,12 +5543,7 @@ function BossokApp({ session, onLogout }) {
 {/* ══ PAGE PRODUIT (nouveau / édition) ══════════════════════════ */}
 {page==="produits" && showProduitForm&&(
   <div className="page-transition">
-    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:14}}>
-      <span onClick={()=>{setShowProduitForm(false);setEditProduit(null);}}
-        style={{cursor:"pointer",color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>← Produits</span>
-      <span style={{color:"#CBD5E1"}}>/</span>
-      <span style={{color:"#64748B",fontWeight:500}}>{editProduit ? editProduit.nom : "Nouveau produit"}</span>
-    </div>
+    {workTabStrip()}
     <div style={{...S.card,maxWidth:680}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editProduit?"Modifier produit":"Nouveau produit"}</h2>
@@ -5621,7 +5602,7 @@ function BossokApp({ session, onLogout }) {
         </div>
       </div>
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{setShowProduitForm(false);setEditProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={()=>{closeWorkTab("produit");setEditProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveProduit} disabled={saving||!produitForm.nom||!produitForm.categorie}
           style={{...S.btn(),flex:2,opacity:(saving||!produitForm.nom||!produitForm.categorie)?0.5:1}}>
           {saving?"Sauvegarde...":editProduit?"Enregistrer":"Créer"}
@@ -5635,40 +5616,68 @@ function BossokApp({ session, onLogout }) {
 {showReceptionForm&&(
   <div className="page-transition">
     {workTabStrip()}
-    <div style={{...S.card,maxWidth:560}}>
+    <div style={{...S.card,maxWidth:620}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>📥 Réception de stock</h2>
       </div>
+      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>Ajoute un ou plusieurs produits reçus dans cette livraison.</div>
 
-      <div style={{marginBottom:10}}>
-        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit *</label>
-        <select value={receptionProduit?.id||""} onChange={e=>{
-          const p = produits.find(x=>x.id===parseInt(e.target.value));
-          setReceptionProduit(p||null);
-          setReceptionForm(prev=>({...prev, prix_achat_unitaire: prev.prix_achat_unitaire || p?.prix_achat || ""}));
-        }} style={S.input}>
-          <option value="">— Choisir un produit —</option>
-          {[...produits].filter(p=>p.statut!=="Passif").sort((a,b)=>a.nom.localeCompare(b.nom)).map(p=>(
-            <option key={p.id} value={p.id}>{p.nom}</option>
-          ))}
-        </select>
+      <div style={{marginBottom:14}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Ajouter un produit</label>
+        <div style={{position:"relative"}}>
+          <input value={receptionSearch} onChange={e=>setReceptionSearch(e.target.value)}
+            placeholder="🔍 Rechercher un produit..." style={S.input}/>
+          {receptionSearch&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,.1)",zIndex:50,maxHeight:220,overflowY:"auto"}}>
+              {produits.filter(p=>p.statut!=="Passif" && p.nom.toLowerCase().includes(receptionSearch.toLowerCase())).sort((a,b)=>a.nom.localeCompare(b.nom)).slice(0,8).map(p=>{
+                const dejaAjoute = receptionLignes.some(l=>l.produitId===p.id);
+                return (
+                  <div key={p.id} onClick={()=>{
+                    if (dejaAjoute) return;
+                    setReceptionLignes(prev=>[...prev,{produitId:p.id, nom:p.nom, qte:"", prix:p.prix_achat||""}]);
+                    setReceptionSearch("");
+                  }} style={{padding:"9px 12px",cursor:dejaAjoute?"default":"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center",opacity:dejaAjoute?0.4:1}}
+                    onMouseEnter={e=>{if(!dejaAjoute)e.currentTarget.style.background="#F9FAFB";}}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <span>{p.nom}</span>
+                    {dejaAjoute && <span style={{fontSize:11,color:"#9CA3AF"}}>déjà ajouté</span>}
+                  </div>
+                );
+              })}
+              {produits.filter(p=>p.statut!=="Passif" && p.nom.toLowerCase().includes(receptionSearch.toLowerCase())).length===0 && (
+                <div style={{padding:"10px 12px",fontSize:12,color:"#9CA3AF"}}>Aucun produit trouvé</div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      <div style={{display:"grid",gap:10}}>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
-          <div>
-            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Quantité reçue (caisses) *</label>
-            <input type="number" min="0" step="1" value={receptionForm.quantite||""}
-              onChange={e=>setReceptionForm(p=>({...p,quantite:e.target.value}))}
-              placeholder="0" style={S.input}/>
+      {receptionLignes.length>0 && (
+        <div style={{marginBottom:14}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.8fr 0.8fr 0.9fr auto",gap:6,padding:"0 2px 6px",fontSize:10.5,color:"#9CA3AF",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.03em",display:isMobile?"none":"grid"}}>
+            <span>Produit</span><span>Quantité</span><span>Prix / caisse</span><span></span>
           </div>
-          <div>
-            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Prix d'achat / caisse *</label>
-            <input type="number" min="0" step="0.01" value={receptionForm.prix_achat_unitaire||""}
-              onChange={e=>setReceptionForm(p=>({...p,prix_achat_unitaire:e.target.value}))}
-              placeholder="0.00" style={S.input}/>
+          <div style={{display:"grid",gap:6}}>
+            {receptionLignes.map((l,i)=>(
+              <div key={l.produitId} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.8fr 0.8fr 0.9fr auto",gap:6,alignItems:"center",background:"#F8FAFC",border:"1px solid #E3E7ED",borderRadius:8,padding:isMobile?10:"7px 8px"}}>
+                <span style={{fontWeight:600,fontSize:13}}>{l.nom}</span>
+                <input type="number" min="0" step="1" value={l.qte} placeholder="Qté"
+                  onChange={e=>setReceptionLignes(prev=>prev.map((x,xi)=>xi===i?{...x,qte:e.target.value}:x))}
+                  style={{...S.input,padding:"6px 8px"}}/>
+                <input type="number" min="0" step="0.01" value={l.prix} placeholder="Prix"
+                  onChange={e=>setReceptionLignes(prev=>prev.map((x,xi)=>xi===i?{...x,prix:e.target.value}:x))}
+                  style={{...S.input,padding:"6px 8px"}}/>
+                <button onClick={()=>setReceptionLignes(prev=>prev.filter((_,xi)=>xi!==i))}
+                  style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:6,display:"flex",justifySelf:isMobile?"end":"center"}}>
+                  <Icon name="close" size={15}/>
+                </button>
+              </div>
+            ))}
           </div>
         </div>
+      )}
+
+      <div style={{display:"grid",gap:10}}>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Fournisseur</label>
@@ -5687,31 +5696,11 @@ function BossokApp({ session, onLogout }) {
         </div>
       </div>
 
-      {receptionProduit && (() => {
-        const historique = receptionsStock.filter(r=>r.produit_id===receptionProduit.id).slice(0,5);
-        const coutMoyen = getCoutMoyenPondere(receptionProduit.id, receptionsStock);
-        return historique.length>0 ? (
-          <div style={{marginTop:14}}>
-            <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginBottom:6}}>
-              Historique récent {coutMoyen!=null&&<span style={{color:"#7C3AED"}}>· Coût moyen actuel : {fmtFull(coutMoyen)}</span>}
-            </div>
-            <div style={{maxHeight:120,overflowY:"auto"}}>
-              {historique.map(r=>(
-                <div key={r.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 8px",background:"#F9FAFB",borderRadius:6,marginBottom:3}}>
-                  <span style={{color:"#6B7280"}}>{r.date}{r.fournisseur?" · "+r.fournisseur:""}</span>
-                  <span style={{fontWeight:600}}>{r.quantite} cs × {fmtFull(r.prix_achat_unitaire)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null;
-      })()}
-
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{closeWorkTab("reception");setReceptionProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={saveReception} disabled={saving||!receptionProduit||!receptionForm.quantite||!receptionForm.prix_achat_unitaire}
-          style={{...S.btn("#7C3AED"),flex:2,opacity:(saving||!receptionProduit||!receptionForm.quantite||!receptionForm.prix_achat_unitaire)?0.5:1}}>
-          {saving?"Enregistrement...":"✅ Enregistrer la réception"}
+        <button onClick={()=>{closeWorkTab("reception");setReceptionLignes([]);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveReception} disabled={saving||receptionLignes.filter(l=>l.qte>0&&l.prix>0).length===0}
+          style={{...S.btn("#7C3AED"),flex:2,opacity:(saving||receptionLignes.filter(l=>l.qte>0&&l.prix>0).length===0)?0.5:1}}>
+          {saving?"Enregistrement...":`✅ Enregistrer (${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length} produit${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length>1?"s":""})`}
         </button>
       </div>
     </div>
@@ -5931,13 +5920,13 @@ function BossokApp({ session, onLogout }) {
   </div>
   )}
 
-  {/* ══ MODAL RETOUR CONSIGNE MANUEL ═══════════════════════════════ */}
-  {showConsigneForm&&(
-  <div style={S.modal} onClick={()=>{setShowConsigneForm(false);setConsigneClientId(null);}}>
-    <div style={{...S.modalBox,maxWidth:440}} onClick={e=>e.stopPropagation()}>
+{/* ══ PAGE RETOUR CONSIGNE MANUEL ═══════════════════════════════ */}
+{showConsigneForm&&(
+  <div className="page-transition">
+    {workTabStrip()}
+    <div style={{...S.card,maxWidth:440}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>♻️ Déclarer un retour de consignes</h2>
-        <button onClick={()=>{setShowConsigneForm(false);setConsigneClientId(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
       <div style={{display:"grid",gap:10}}>
         <div>
@@ -5984,7 +5973,7 @@ function BossokApp({ session, onLogout }) {
         )}
       </div>
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{setShowConsigneForm(false);setConsigneClientId(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={()=>{closeWorkTab("consigne");setConsigneClientId(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveConsigneManuelle} disabled={saving||!consigneClientId||!consigneForm.quantite||!consigneForm.consigne_unitaire}
           style={{...S.btn(),flex:2,opacity:(saving||!consigneClientId||!consigneForm.quantite||!consigneForm.consigne_unitaire)?0.5:1}}>
           {saving?"Enregistrement...":"Enregistrer le retour"}
