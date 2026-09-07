@@ -687,6 +687,7 @@ const TVA_PREFIX = { "Belgique": "BE", "France": "FR", "Hollande": "NL" };
 const tvaIntracomValide = (client) => {
   const region = client?.region || "";
   if (!EXPORT_REGIONS.includes(region)) return true; // n/a pour clients LU
+  if (client?.nature_client === "Particulier") return true; // n/a pour les particuliers (règles B2C)
   const tva = (client?.tva || "").replace(/[\s.\-]/g, "").toUpperCase();
   const prefix = TVA_PREFIX[region];
   return tva.startsWith(prefix) && tva.length >= prefix.length + 6;
@@ -1915,13 +1916,15 @@ function BossokApp({ session, onLogout }) {
 
   const clientFactures = (cid) => factures.filter(f=>f.client_id===cid);
 
-  // Retrouve la facture liée à une commande, que ce soit une facture individuelle
-  // ("Commande #12") ou une facture groupée qui l'inclut parmi d'autres
-  // ("Facture groupée — Commande #12, Commande #15"). Centralisé ici pour éviter
-  // que chaque endroit de l'app réimplémente sa propre comparaison fragile.
+  // Retrouve la facture ACTIVE liée à une commande, que ce soit une facture
+  // individuelle ("Commande #12") ou une facture groupée qui l'inclut parmi
+  // d'autres ("Facture groupée — Commande #12, Commande #15"). Une facture
+  // "Annulée" (ex: via un avoir) ne compte pas — la commande redevient alors
+  // disponible pour être (re)facturée. Centralisé ici pour éviter que chaque
+  // endroit de l'app réimplémente sa propre comparaison fragile.
   const findFactureForCommande = (cmdId) => {
     const refRegex = new RegExp(`Commande #${cmdId}(\\D|$)`);
-    return factures.find(f => f.notes && refRegex.test(f.notes));
+    return factures.find(f => f.notes && f.statut !== "Annulée" && refRegex.test(f.notes));
   };
   const clientImpayees = (cid) => clientFactures(cid).filter(f=>f.statut==="Impayée");
 
@@ -2472,7 +2475,7 @@ function BossokApp({ session, onLogout }) {
         });
         await db.update("factures", facture.id, {statut:"Annulée"});
         await loadAll();
-        notifySuccess("Avoir " + avoirNum + " créé avec succès !");
+        notifySuccess("Avoir " + avoirNum + " créé. La facture est annulée et les livraisons concernées redeviennent disponibles pour une nouvelle facturation.");
       } catch(e) { logError(e); }
       finally { setSaving(false); }
     }, {confirmLabel:"Créer l'avoir"});
@@ -5207,7 +5210,9 @@ function BossokApp({ session, onLogout }) {
               🧾 <strong>Pas de n° de TVA intracommunautaire valide.</strong> Les factures pour ce client sont émises à 0% (exonération intracommunautaire), ce qui n'est légal que si un n° de TVA {TVA_PREFIX[selClient.region]}... est renseigné. Complète le champ "N° TVA" ci-dessous.
             </div>
           )}
-          {[["Adresse",selClient.adresse],["Téléphone",selClient.telephone],["Email",selClient.email||"—"],["Contact",selClient.contact||"—"],["N° TVA",selClient.tva||"—"],["Région",selClient.region],["Conditions",selClient.conditions],["Statut",selClient.statut]].map(([l,v])=>(
+          {[["Nature",selClient.nature_client||"Professionnel"],["Adresse",selClient.adresse],["Téléphone",selClient.telephone],["Email",selClient.email||"—"],
+            ...(selClient.nature_client!=="Particulier" ? [["Contact",selClient.contact||"—"],["N° TVA",selClient.tva||"—"],["N° RCS",selClient.rcs||"—"]] : []),
+            ["Région",selClient.region],["Conditions",selClient.conditions],["Statut",selClient.statut]].map(([l,v])=>(
             <div key={l} style={{display:"flex",gap:12,fontSize:13}}>
               <span style={{color:"#9CA3AF",width:100,flexShrink:0}}>{l}</span>
               <span style={{fontWeight:500}}>{v}</span>
@@ -5642,7 +5647,17 @@ function BossokApp({ session, onLogout }) {
         <button onClick={()=>setShowClientForm(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
       <div style={{display:"grid",gap:10}}>
-        {[["Nom *","nom","text"],["Adresse","adresse","text"],["Téléphone","telephone","text"],["Email","email","email"],["N° TVA","tva","text"],["Personne de contact","contact","text"]].map(([l,k,t])=>(
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Nature du client</label>
+          <select value={clientForm.nature_client||"Professionnel"} onChange={e=>setClientForm(p=>({...p,nature_client:e.target.value}))} style={S.input}>
+            <option value="Professionnel">Professionnel</option>
+            <option value="Particulier">Particulier</option>
+          </select>
+        </div>
+        {(clientForm.nature_client==="Particulier"
+          ? [["Nom *","nom","text"],["Adresse","adresse","text"],["Téléphone","telephone","text"],["Email","email","email"]]
+          : [["Nom / Raison sociale *","nom","text"],["Adresse","adresse","text"],["Téléphone","telephone","text"],["Email","email","email"],["N° TVA","tva","text"],["N° RCS","rcs","text"],["Personne de contact","contact","text"]]
+        ).map(([l,k,t])=>(
           <div key={k}>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{l}</label>
             <input type={t} value={clientForm[k]||""} onChange={e=>{
