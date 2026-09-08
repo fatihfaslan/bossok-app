@@ -247,6 +247,26 @@ const sb = async (path, method = "GET", body = null, rangeFrom = null, rangeTo =
   return text ? JSON.parse(text) : [];
 };
 
+// Upload d'un fichier (photo/PDF) vers Supabase Storage. Retourne son URL publique.
+const uploadFichier = async (file, dossier = "general") => {
+  const extension = (file.name.split(".").pop() || "bin").toLowerCase();
+  const chemin = `${dossier}/${Date.now()}-${Math.round(Math.random()*1e6)}.${extension}`;
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/receptions/${chemin}`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${getSession()?.access_token || SUPABASE_KEY}`,
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+  return { url: `${SUPABASE_URL}/storage/v1/object/public/receptions/${chemin}`, nom: file.name };
+};
+
 const db = {
   get: (table, query = "") => {
     const orderCol = table === 'stock' ? 'produit_id' : 'id';
@@ -707,6 +727,34 @@ const totalFact = (lignes=[]) => {
   const prod = lignes.reduce((s,l)=>s+l.qte*l.pu,0);
   const cons = lignes.reduce((s,l)=>s+l.qte*(l.consigne||0),0);
   return {prod, cons, total: prod+cons};
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// RELANCES IMPAYÉS — messages simples, un seul lien qui ouvre l'app déjà
+// installée sur le téléphone (WhatsApp / SMS / Email), rien à configurer.
+// ═══════════════════════════════════════════════════════════════════
+const messageRelance = (facture, client, total) => {
+  const nom = client?.nom || "Client";
+  return `Bonjour ${nom}, petit rappel : la facture ${facture.numero} du ${facture.date} d'un montant de ${fmtFull(total)} est arrivée à échéance le ${facture.echeance||"?"}. Merci de régulariser dès que possible. Bonne journée !`;
+};
+const cleanPhoneForLink = (tel) => (tel||"").replace(/[^\d+]/g,"").replace(/^00/,"+");
+const relancerWhatsApp = (facture, client, total) => {
+  const tel = cleanPhoneForLink(client?.telephone).replace(/^\+/,"");
+  if (!tel) { window.alert("Ce client n'a pas de numéro de téléphone renseigné."); return; }
+  const msg = encodeURIComponent(messageRelance(facture, client, total));
+  window.open(`https://wa.me/${tel}?text=${msg}`, "_blank");
+};
+const relancerSMS = (facture, client, total) => {
+  const tel = cleanPhoneForLink(client?.telephone);
+  if (!tel) { window.alert("Ce client n'a pas de numéro de téléphone renseigné."); return; }
+  const msg = encodeURIComponent(messageRelance(facture, client, total));
+  window.open(`sms:${tel}?body=${msg}`, "_blank");
+};
+const relancerEmail = (facture, client, total) => {
+  if (!client?.email) { window.alert("Ce client n'a pas d'email renseigné."); return; }
+  const sujet = encodeURIComponent(`Rappel — Facture ${facture.numero} en attente de paiement`);
+  const msg = encodeURIComponent(messageRelance(facture, client, total));
+  window.open(`mailto:${client.email}?subject=${sujet}&body=${msg}`, "_blank");
 };
 
 // Coût moyen pondéré d'un produit à partir de son historique de réceptions de stock.
@@ -1773,6 +1821,8 @@ function BossokApp({ session, onLogout }) {
   const [receptionLignes, setReceptionLignes] = useState([]); // [{produitId, nom, qte, prix}]
   const [receptionSearch, setReceptionSearch] = useState("");
   const [receptionForm, setReceptionForm] = useState({});
+  const [receptionFichier, setReceptionFichier] = useState(null); // File en attente d'upload
+  const [receptionUploading, setReceptionUploading] = useState(false);
   const showPerteForm = activeWorkTab?.type==="perte";
   const [stockDraft, setStockDraft] = useState({});
   const [perteProduit, setPerteProduit] = useState(null);
@@ -1781,6 +1831,7 @@ function BossokApp({ session, onLogout }) {
     setReceptionLignes([]);
     setReceptionSearch("");
     setReceptionForm({date:localDateStr()});
+    setReceptionFichier(null);
     openWorkTab({id:"reception", type:"reception", label:"Réception stock", page:"stock"});
   };
   const openPerteTab = () => {
@@ -2188,6 +2239,18 @@ function BossokApp({ session, onLogout }) {
     if (lignesValides.length===0) return;
     setSaving(true);
     try {
+      let pieceJointe = null;
+      if (receptionFichier) {
+        setReceptionUploading(true);
+        try {
+          pieceJointe = await uploadFichier(receptionFichier, "receptions");
+        } catch(e) {
+          logError(e, "upload-piece-jointe-reception");
+          setSaving(false); setReceptionUploading(false);
+          return; // on n'enregistre pas la réception si l'upload a échoué, pour éviter une réception sans sa preuve
+        }
+        setReceptionUploading(false);
+      }
       for (const l of lignesValides) {
         await db.insert("receptions_stock", {
           produit_id: l.produitId,
@@ -2196,6 +2259,8 @@ function BossokApp({ session, onLogout }) {
           fournisseur: receptionForm.fournisseur || null,
           date: receptionForm.date || localDateStr(),
           notes: receptionForm.notes || null,
+          piece_jointe_url: pieceJointe?.url || null,
+          piece_jointe_nom: pieceJointe?.nom || null,
         });
         const newQte = (stock[l.produitId] || 0) + l.qte;
         await updateStock(l.produitId, newQte);
@@ -2204,6 +2269,7 @@ function BossokApp({ session, onLogout }) {
       closeWorkTab("reception");
       setReceptionLignes([]);
       setReceptionForm({});
+      setReceptionFichier(null);
     } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
@@ -3587,6 +3653,40 @@ function BossokApp({ session, onLogout }) {
   return(
   <div>
     {(()=>{
+      const todayStr = localDateStr();
+      const facturesEnRetard = factures.filter(f => f.statut==="Impayée" && f.echeance && f.echeance < todayStr);
+      if (facturesEnRetard.length===0) return null;
+      const totalRetard = facturesEnRetard.reduce((s,f)=>s+totalFact(f.lignes).total,0);
+      return (
+        <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:facturesEnRetard.length>0?10:0}}>
+            <div style={{fontSize:13,color:"#991B1B"}}>
+              🔴 <strong>{facturesEnRetard.length} facture(s) en retard</strong> — {fmtFull(totalRetard)} à relancer
+            </div>
+          </div>
+          <div style={{display:"grid",gap:6}}>
+            {facturesEnRetard.slice(0,6).map(f=>{
+              const cl = clients.find(c=>c.id===f.client_id);
+              const {total} = totalFact(f.lignes);
+              return (
+                <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#fff",borderRadius:8,padding:"7px 10px",fontSize:12,flexWrap:"wrap",gap:6}}>
+                  <span><strong>{f.client_nom}</strong> — {f.numero} · {fmtFull(total)} · échéance {f.echeance}</span>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>relancerWhatsApp(f,cl,total)} title="Relancer par WhatsApp" style={{...S.btn("#F0FDF4","#22C55E"),padding:"4px 9px",fontSize:11}}>💬</button>
+                    <button onClick={()=>relancerSMS(f,cl,total)} title="Relancer par SMS" style={{...S.btn("#F1F5F9","#374151"),padding:"4px 9px",fontSize:11}}>📱</button>
+                    <button onClick={()=>relancerEmail(f,cl,total)} title="Relancer par Email" style={{...S.btn("#F1F5F9","#374151"),padding:"4px 9px",fontSize:11}}>✉️</button>
+                  </div>
+                </div>
+              );
+            })}
+            {facturesEnRetard.length>6 && (
+              <div style={{fontSize:11,color:"#991B1B",textAlign:"center",marginTop:2}}>+ {facturesEnRetard.length-6} autre(s) — voir la page Factures</div>
+            )}
+          </div>
+        </div>
+      );
+    })()}
+    {(()=>{
       const now = new Date();
       const dernierJourMois = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
       const finDeMoisProche = now.getDate() >= dernierJourMois - 2; // 3 derniers jours du mois
@@ -4207,6 +4307,20 @@ function BossokApp({ session, onLogout }) {
                     <button onClick={()=>{setOpenFactureMenu(null);setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}}
                       className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#059669"}}>✓ Marquer Payée</button>
                   )}
+                  {f.statut==="Impayée"&&(()=>{
+                    const cl = clients.find(c=>c.id===f.client_id);
+                    const {total} = totalFact(f.lignes);
+                    return (
+                      <>
+                        <button onClick={()=>{setOpenFactureMenu(null);relancerWhatsApp(f,cl,total);}}
+                          className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#22C55E"}}>💬 Relancer par WhatsApp</button>
+                        <button onClick={()=>{setOpenFactureMenu(null);relancerSMS(f,cl,total);}}
+                          className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>📱 Relancer par SMS</button>
+                        <button onClick={()=>{setOpenFactureMenu(null);relancerEmail(f,cl,total);}}
+                          className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>✉️ Relancer par Email</button>
+                      </>
+                    );
+                  })()}
                   {f.statut==="Payée"&&(
                     <button onClick={()=>{setOpenFactureMenu(null);marquerImpayee(f.id);}}
                       className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#D97706"}}>↺ Remettre Impayée</button>
@@ -4997,6 +5111,30 @@ function BossokApp({ session, onLogout }) {
         }},
       ]}
     />
+    {receptionsStock.length>0 && (
+      <div style={{marginTop:20}}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:"#334155"}}>Réceptions récentes</div>
+        <div style={{background:"#fff",borderRadius:10,border:"1px solid #E3E7ED",overflow:"hidden"}}>
+          {[...receptionsStock].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,10).map((r,i,arr)=>{
+            const prod = produits.find(p=>p.id===r.produit_id);
+            return (
+              <div key={r.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",borderBottom:i<arr.length-1?"1px solid #F1F5F9":"none",fontSize:12,flexWrap:"wrap",gap:6}}>
+                <span>
+                  <strong>{prod?.nom||"Produit supprimé"}</strong> · {r.quantite} cs × {fmtFull(r.prix_achat_unitaire)}
+                  <span style={{color:"#94A3B8"}}> — {r.date}{r.fournisseur?" · "+r.fournisseur:""}</span>
+                </span>
+                {r.piece_jointe_url ? (
+                  <a href={r.piece_jointe_url} target="_blank" rel="noopener noreferrer"
+                    style={{...S.btn("#F5F3FF","#7C3AED"),padding:"3px 9px",fontSize:11,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}>
+                    📎 {r.piece_jointe_nom||"Voir la pièce jointe"}
+                  </a>
+                ) : <span style={{color:"#CBD5E1",fontSize:11}}>Pas de pièce jointe</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )}
   </div>
 )}
 
@@ -5877,13 +6015,29 @@ function BossokApp({ session, onLogout }) {
           <input value={receptionForm.notes||""} onChange={e=>setReceptionForm(p=>({...p,notes:e.target.value}))}
             placeholder="Optionnel — n° de bon de livraison, etc." style={S.input}/>
         </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Facture fournisseur (photo ou PDF)</label>
+          {!receptionFichier ? (
+            <label style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",border:"1px dashed #CBD5E1",borderRadius:8,cursor:"pointer",fontSize:13,color:"#64748B",background:"#F8FAFC"}}>
+              <Icon name="produits" size={16} style={{color:"#94A3B8"}}/>
+              Ajouter une photo ou un PDF
+              <input type="file" accept="image/*,application/pdf" style={{display:"none"}}
+                onChange={e=>{ if (e.target.files[0]) setReceptionFichier(e.target.files[0]); }}/>
+            </label>
+          ) : (
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,fontSize:13}}>
+              <span style={{color:"#166534",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📎 {receptionFichier.name}</span>
+              <button onClick={()=>setReceptionFichier(null)} style={{background:"none",border:"none",color:"#166534",cursor:"pointer",flexShrink:0}}><Icon name="close" size={14}/></button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{closeWorkTab("reception");setReceptionLignes([]);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={()=>{closeWorkTab("reception");setReceptionLignes([]);setReceptionFichier(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveReception} disabled={saving||receptionLignes.filter(l=>l.qte>0&&l.prix>0).length===0}
           style={{...S.btn("#7C3AED"),flex:2,opacity:(saving||receptionLignes.filter(l=>l.qte>0&&l.prix>0).length===0)?0.5:1}}>
-          {saving?"Enregistrement...":`✅ Enregistrer (${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length} produit${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length>1?"s":""})`}
+          {saving?(receptionUploading?"Envoi de la pièce jointe...":"Enregistrement..."):`✅ Enregistrer (${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length} produit${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length>1?"s":""})`}
         </button>
       </div>
     </div>
