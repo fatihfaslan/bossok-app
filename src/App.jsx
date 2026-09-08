@@ -264,7 +264,29 @@ const uploadFichier = async (file, dossier = "general") => {
     const err = await res.text();
     throw new Error(err);
   }
-  return { url: `${SUPABASE_URL}/storage/v1/object/public/receptions/${chemin}`, nom: file.name };
+  // Bucket privé : on garde le CHEMIN, pas une URL — un lien d'accès temporaire
+  // sera généré à la demande (voir getUrlSigneeFichier), au moment de consulter le fichier.
+  return { chemin, nom: file.name };
+};
+
+// Génère un lien d'accès temporaire (1h) vers un fichier du bucket privé "receptions".
+// Nécessaire à chaque consultation : pas de lien fixe et permanent, il expire.
+const getUrlSigneeFichier = async (chemin) => {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/receptions/${chemin}`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${getSession()?.access_token || SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ expiresIn: 3600 }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+  const data = await res.json();
+  return `${SUPABASE_URL}/storage/v1${data.signedURL}`;
 };
 
 const db = {
@@ -2259,7 +2281,7 @@ function BossokApp({ session, onLogout }) {
           fournisseur: receptionForm.fournisseur || null,
           date: receptionForm.date || localDateStr(),
           notes: receptionForm.notes || null,
-          piece_jointe_url: pieceJointe?.url || null,
+          piece_jointe_url: pieceJointe?.chemin || null,
           piece_jointe_nom: pieceJointe?.nom || null,
         });
         const newQte = (stock[l.produitId] || 0) + l.qte;
@@ -5124,10 +5146,18 @@ function BossokApp({ session, onLogout }) {
                   <span style={{color:"#94A3B8"}}> — {r.date}{r.fournisseur?" · "+r.fournisseur:""}</span>
                 </span>
                 {r.piece_jointe_url ? (
-                  <a href={r.piece_jointe_url} target="_blank" rel="noopener noreferrer"
-                    style={{...S.btn("#F5F3FF","#7C3AED"),padding:"3px 9px",fontSize:11,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}>
+                  <button onClick={async ()=>{
+                    const fenetre = window.open("", "_blank");
+                    try {
+                      const url = await getUrlSigneeFichier(r.piece_jointe_url);
+                      if (fenetre) fenetre.location.href = url;
+                    } catch(e) {
+                      if (fenetre) fenetre.close();
+                      logError(e, "consultation-piece-jointe");
+                    }
+                  }} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"3px 9px",fontSize:11,display:"inline-flex",alignItems:"center",gap:4,border:"none",cursor:"pointer"}}>
                     📎 {r.piece_jointe_nom||"Voir la pièce jointe"}
-                  </a>
+                  </button>
                 ) : <span style={{color:"#CBD5E1",fontSize:11}}>Pas de pièce jointe</span>}
               </div>
             );
