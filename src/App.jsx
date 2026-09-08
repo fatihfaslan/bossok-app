@@ -5394,7 +5394,9 @@ function BossokApp({ session, onLogout }) {
           )}
           {[["Nature",selClient.nature_client||"Professionnel"],["Adresse",selClient.adresse],["Téléphone",selClient.telephone],["Email",selClient.email||"—"],
             ...(selClient.nature_client!=="Particulier" ? [["Contact",selClient.contact||"—"],["N° TVA",selClient.tva||"—"],["N° RCS",selClient.rcs||"—"]] : []),
-            ["Région",selClient.region],["Conditions",selClient.conditions],["Statut",selClient.statut]].map(([l,v])=>(
+            ["Type",selClient.type||"—"],["Région",selClient.region],["Conditions",selClient.conditions],["Statut",selClient.statut],
+            ["Fidélité",selClient.categorie_fidelite||"Aucune"],
+            ["Mode de facturation",selClient.mode_facturation==="groupee"?"Groupée":"À chaque commande"]].map(([l,v])=>(
             <div key={l} style={{display:"flex",gap:12,fontSize:13}}>
               <span style={{color:"#9CA3AF",width:100,flexShrink:0}}>{l}</span>
               <span style={{fontWeight:500}}>{v}</span>
