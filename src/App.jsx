@@ -1847,7 +1847,8 @@ function BossokApp({ session, onLogout }) {
   const [receptionUploading, setReceptionUploading] = useState(false);
   const showPerteForm = activeWorkTab?.type==="perte";
   const [stockDraft, setStockDraft] = useState({});
-  const [perteProduit, setPerteProduit] = useState(null);
+  const [perteLignes, setPerteLignes] = useState([]); // [{produitId, nom, qte}]
+  const [perteSearch, setPerteSearch] = useState("");
   const [perteForm, setPerteForm] = useState({});
   const openReceptionTab = () => {
     setReceptionLignes([]);
@@ -1857,7 +1858,8 @@ function BossokApp({ session, onLogout }) {
     openWorkTab({id:"reception", type:"reception", label:"Réception stock", page:"stock"});
   };
   const openPerteTab = () => {
-    setPerteProduit(null);
+    setPerteLignes([]);
+    setPerteSearch("");
     setPerteForm({motif:"Casse", date:localDateStr()});
     openWorkTab({id:"perte", type:"perte", label:"Déclarer une perte", page:"stock"});
   };
@@ -2258,7 +2260,11 @@ function BossokApp({ session, onLogout }) {
 
   const saveReception = async () => {
     const lignesValides = receptionLignes.filter(l => l.qte>0 && l.prix>0);
-    if (lignesValides.length===0) return;
+    if (lignesValides.length===0) {
+      if (receptionLignes.length===0) notifyError("Ajoute au moins un produit avant d'enregistrer la réception.");
+      else notifyError("Renseigne une quantité et un prix pour chaque produit ajouté (les deux sont obligatoires).");
+      return;
+    }
     setSaving(true);
     try {
       let pieceJointe = null;
@@ -2297,22 +2303,28 @@ function BossokApp({ session, onLogout }) {
   };
 
   const savePerte = async () => {
-    const qte = parseFloat(perteForm.quantite);
-    if (!perteProduit || !qte || qte <= 0) return;
+    const lignesValides = perteLignes.filter(l => l.qte>0);
+    if (lignesValides.length===0) {
+      if (perteLignes.length===0) notifyError("Ajoute au moins un produit avant de confirmer la perte.");
+      else notifyError("Renseigne une quantité pour chaque produit ajouté.");
+      return;
+    }
     setSaving(true);
     try {
-      await db.insert("pertes_stock", {
-        produit_id: perteProduit.id,
-        quantite: qte,
-        motif: perteForm.motif || "Casse",
-        date: perteForm.date || new Date().toISOString().split("T")[0],
-        notes: perteForm.notes || null,
-      });
-      const newQte = Math.max(0, (stock[perteProduit.id] || 0) - qte);
-      await updateStock(perteProduit.id, newQte);
+      for (const l of lignesValides) {
+        await db.insert("pertes_stock", {
+          produit_id: l.produitId,
+          quantite: l.qte,
+          motif: perteForm.motif || "Casse",
+          date: perteForm.date || localDateStr(),
+          notes: perteForm.notes || null,
+        });
+        const newQte = Math.max(0, (stock[l.produitId] || 0) - l.qte);
+        await updateStock(l.produitId, newQte);
+      }
       await loadAll();
       closeWorkTab("perte");
-      setPerteProduit(null);
+      setPerteLignes([]);
       setPerteForm({});
     } catch(e) { logError(e); }
     finally { setSaving(false); }
@@ -2431,7 +2443,8 @@ function BossokApp({ session, onLogout }) {
   };
 
   const saveFact = async () => {
-    if (!factClientId || factLignes.length===0) return;
+    if (!factClientId) { notifyError("Choisis un client avant d'enregistrer la facture."); return; }
+    if (factLignes.length===0) { notifyError("Ajoute au moins un produit à la facture avant d'enregistrer."); return; }
     const client = clients.find(c=>c.id===factClientId);
     const num = factNumero || "F-" + Date.now().toString().slice(-6);
     const echDate = factEcheance || (() => { const e = new Date(factDate); e.setDate(e.getDate()+7); return e.toISOString().split("T")[0]; })();
@@ -2635,7 +2648,8 @@ function BossokApp({ session, onLogout }) {
   };
 
   const saveCmd = async () => {
-    if (!cmdClientId || cmdProduits.length===0) return;
+    if (!cmdClientId) { notifyError("Choisis un client avant d'enregistrer la commande."); return; }
+    if (cmdProduits.length===0) { notifyError("Ajoute au moins un produit à la commande avant d'enregistrer."); return; }
     const client = clients.find(c=>c.id===cmdClientId);
     setSaving(true);
     try {
@@ -3006,7 +3020,7 @@ function BossokApp({ session, onLogout }) {
             {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
             {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewFactureTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
             {page==="commandes" && (showCmdForm ? (
-              <button style={{...S.btn("#fff","#1D4ED8"),opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.5:1}} onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}>{isMobile?"✅":"✅ Enregistrer"}</button>
+              <button style={{...S.btn("#fff","#1D4ED8"),opacity:saving?0.6:1}} onClick={saveCmd} disabled={saving}>{isMobile?"✅":"✅ Enregistrer"}</button>
             ) : (
               <button style={S.btn("#fff","#1D4ED8")} onClick={openNewCmd}>{isMobile?"+":"+ Nouvelle commande"}</button>
             ))}
@@ -4550,9 +4564,9 @@ function BossokApp({ session, onLogout }) {
         <input value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} placeholder="Instructions spéciales..." style={S.input}/>
       </div>
 
-      <button onClick={saveCmd} disabled={!cmdClientId||cmdProduits.length===0||saving}
-        style={{...S.btn(),width:"100%",opacity:(!cmdClientId||cmdProduits.length===0||saving)?0.4:1,fontSize:13}}>
-        {saving?"Sauvegarde...":editingCmd?"💾 Enregistrer modifications":`✅ Enregistrer la commande (${cmdProduits.reduce((s,p)=>s+p.qte,0)} caisses)`}
+      <button onClick={saveCmd} disabled={saving}
+        style={{...S.btn(),width:"100%",opacity:saving?0.6:1,fontSize:13}}>
+        {saving?"Sauvegarde...":editingCmd?"💾 Enregistrer modifications":`✅ Enregistrer la commande${cmdProduits.length>0?` (${cmdProduits.reduce((s,p)=>s+p.qte,0)} caisses)`:""}`}
       </button>
     </div>
   </div>
@@ -5735,7 +5749,7 @@ function BossokApp({ session, onLogout }) {
       </div>
       <div style={{display:"flex",gap:8}}>
         <button onClick={()=>{closeWorkTab("facture");setEditingFacture(null);setFactNumero("");setFactEcheance("");}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={saveFact} disabled={!factClientId||factLignes.length===0||saving} style={{...S.btn(),flex:2,opacity:(!factClientId||factLignes.length===0||saving)?0.4:1}}>
+        <button onClick={saveFact} disabled={saving} style={{...S.btn(),flex:2,opacity:saving?0.6:1}}>
           {saving?"Sauvegarde...":editingFacture?"Enregistrer les modifications":"Créer la facture"}
         </button>
       </div>
@@ -6065,9 +6079,9 @@ function BossokApp({ session, onLogout }) {
 
       <div style={{display:"flex",gap:8,marginTop:16}}>
         <button onClick={()=>{closeWorkTab("reception");setReceptionLignes([]);setReceptionFichier(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={saveReception} disabled={saving||receptionLignes.filter(l=>l.qte>0&&l.prix>0).length===0}
-          style={{...S.btn("#7C3AED"),flex:2,opacity:(saving||receptionLignes.filter(l=>l.qte>0&&l.prix>0).length===0)?0.5:1}}>
-          {saving?(receptionUploading?"Envoi de la pièce jointe...":"Enregistrement..."):`✅ Enregistrer (${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length} produit${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length>1?"s":""})`}
+        <button onClick={saveReception} disabled={saving}
+          style={{...S.btn("#7C3AED"),flex:2,opacity:saving?0.6:1}}>
+          {saving?(receptionUploading?"Envoi de la pièce jointe...":"Enregistrement..."):`✅ Enregistrer${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length>0?` (${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length} produit${receptionLignes.filter(l=>l.qte>0&&l.prix>0).length>1?"s":""})`:""}`}
         </button>
       </div>
     </div>
@@ -6078,42 +6092,79 @@ function BossokApp({ session, onLogout }) {
 {showPerteForm&&(
   <div className="page-transition">
     {workTabStrip()}
-    <div style={{...S.card,maxWidth:560}}>
+    <div style={{...S.card,maxWidth:620}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🗑️ Déclarer une perte</h2>
       </div>
+      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>Ajoute un ou plusieurs produits concernés par cet incident.</div>
 
-      <div style={{marginBottom:10}}>
-        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit *</label>
-        <select value={perteProduit?.id||""} onChange={e=>{
-          const p = produits.find(x=>x.id===parseInt(e.target.value));
-          setPerteProduit(p||null);
-        }} style={S.input}>
-          <option value="">— Choisir un produit —</option>
-          {[...produits].filter(p=>p.statut!=="Passif").sort((a,b)=>a.nom.localeCompare(b.nom)).map(p=>(
-            <option key={p.id} value={p.id}>{p.nom} (stock : {stock[p.id]||0} cs)</option>
-          ))}
-        </select>
+      <div style={{marginBottom:14}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Ajouter un produit</label>
+        <div style={{position:"relative"}}>
+          <input value={perteSearch} onChange={e=>setPerteSearch(e.target.value)}
+            placeholder="🔍 Rechercher un produit..." style={S.input}/>
+          {perteSearch&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,.1)",zIndex:50,maxHeight:220,overflowY:"auto"}}>
+              {produits.filter(p=>p.statut!=="Passif" && p.nom.toLowerCase().includes(perteSearch.toLowerCase())).sort((a,b)=>a.nom.localeCompare(b.nom)).slice(0,8).map(p=>{
+                const dejaAjoute = perteLignes.some(l=>l.produitId===p.id);
+                return (
+                  <div key={p.id} onClick={()=>{
+                    if (dejaAjoute) return;
+                    setPerteLignes(prev=>[...prev,{produitId:p.id, nom:p.nom, qte:""}]);
+                    setPerteSearch("");
+                  }} style={{padding:"9px 12px",cursor:dejaAjoute?"default":"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center",opacity:dejaAjoute?0.4:1}}
+                    onMouseEnter={e=>{if(!dejaAjoute)e.currentTarget.style.background="#F9FAFB";}}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <span>{p.nom} <span style={{color:"#94A3B8",fontSize:11}}>(stock : {stock[p.id]||0} cs)</span></span>
+                    {dejaAjoute && <span style={{fontSize:11,color:"#9CA3AF"}}>déjà ajouté</span>}
+                  </div>
+                );
+              })}
+              {produits.filter(p=>p.statut!=="Passif" && p.nom.toLowerCase().includes(perteSearch.toLowerCase())).length===0 && (
+                <div style={{padding:"10px 12px",fontSize:12,color:"#9CA3AF"}}>Aucun produit trouvé</div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
+
+      {perteLignes.length>0 && (
+        <div style={{marginBottom:14}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2.2fr 1fr auto",gap:6,padding:"0 2px 6px",fontSize:10.5,color:"#9CA3AF",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.03em",display:isMobile?"none":"grid"}}>
+            <span>Produit</span><span>Quantité perdue</span><span></span>
+          </div>
+          <div style={{display:"grid",gap:6}}>
+            {perteLignes.map((l,i)=>{
+              const stockDispo = stock[l.produitId]||0;
+              return (
+                <div key={l.produitId} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2.2fr 1fr auto",gap:6,alignItems:"center",background:"#F8FAFC",border:"1px solid #E3E7ED",borderRadius:8,padding:isMobile?10:"7px 8px"}}>
+                  <span style={{fontWeight:600,fontSize:13}}>{l.nom} <span style={{color:"#94A3B8",fontWeight:400,fontSize:11}}>(stock : {stockDispo} cs)</span></span>
+                  <input type="number" min="0" max={stockDispo} step="1" value={l.qte} placeholder="Qté"
+                    onChange={e=>setPerteLignes(prev=>prev.map((x,xi)=>xi===i?{...x,qte:e.target.value}:x))}
+                    style={{...S.input,padding:"6px 8px"}}/>
+                  <button onClick={()=>setPerteLignes(prev=>prev.filter((_,xi)=>xi!==i))}
+                    style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:6,display:"flex",justifySelf:isMobile?"end":"center"}}>
+                    <Icon name="close" size={15}/>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={{display:"grid",gap:10}}>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
-          <div>
-            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Quantité perdue (caisses) *</label>
-            <input type="number" min="0" max={perteProduit?stock[perteProduit.id]||0:undefined} step="1" value={perteForm.quantite||""}
-              onChange={e=>setPerteForm(p=>({...p,quantite:e.target.value}))}
-              placeholder="0" style={S.input} disabled={!perteProduit}/>
-          </div>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Motif</label>
             <select value={perteForm.motif||"Casse"} onChange={e=>setPerteForm(p=>({...p,motif:e.target.value}))} style={S.input}>
               {["Casse","Périmé","Vol","Erreur inventaire","Autre"].map(m=><option key={m} value={m}>{m}</option>)}
             </select>
           </div>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
-          <input type="date" value={perteForm.date||""} onChange={e=>setPerteForm(p=>({...p,date:e.target.value}))} style={{...S.input,maxWidth:180}}/>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
+            <input type="date" value={perteForm.date||""} onChange={e=>setPerteForm(p=>({...p,date:e.target.value}))} style={S.input}/>
+          </div>
         </div>
         <div>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
@@ -6122,39 +6173,25 @@ function BossokApp({ session, onLogout }) {
         </div>
       </div>
 
-      {perteProduit && (() => {
-        const coutMoyen = getCoutMoyenPondere(perteProduit.id, receptionsStock);
-        const cout = coutMoyen ?? perteProduit.prix_achat;
-        const qte = parseFloat(perteForm.quantite) || 0;
-        return cout && qte>0 ? (
+      {perteLignes.filter(l=>l.qte>0).length>0 && (()=>{
+        const totalCout = perteLignes.filter(l=>l.qte>0).reduce((s,l)=>{
+          const prod = produits.find(p=>p.id===l.produitId);
+          const coutMoyen = getCoutMoyenPondere(l.produitId, receptionsStock);
+          const cout = coutMoyen ?? prod?.prix_achat ?? 0;
+          return s + cout*l.qte;
+        },0);
+        return totalCout>0 ? (
           <div style={{marginTop:12,padding:"8px 12px",background:"#FEF3C7",borderRadius:8,fontSize:12,color:"#92400E"}}>
-            💶 Coût estimé de cette perte : <strong>{fmtFull(cout*qte)}</strong>
-          </div>
-        ) : null;
-      })()}
-
-      {perteProduit && (() => {
-        const historique = pertesStock.filter(p=>p.produit_id===perteProduit.id).slice(0,5);
-        return historique.length>0 ? (
-          <div style={{marginTop:14}}>
-            <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginBottom:6}}>Historique récent</div>
-            <div style={{maxHeight:120,overflowY:"auto"}}>
-              {historique.map(p=>(
-                <div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 8px",background:"#F9FAFB",borderRadius:6,marginBottom:3}}>
-                  <span style={{color:"#6B7280"}}>{p.date} · {p.motif}</span>
-                  <span style={{fontWeight:600}}>{p.quantite} cs</span>
-                </div>
-              ))}
-            </div>
+            💶 Coût total estimé de cette perte : <strong>{fmtFull(totalCout)}</strong>
           </div>
         ) : null;
       })()}
 
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{closeWorkTab("perte");setPerteProduit(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={savePerte} disabled={saving||!perteProduit||!perteForm.quantite}
-          style={{...S.btn("#F59E0B"),flex:2,opacity:(saving||!perteProduit||!perteForm.quantite)?0.5:1}}>
-          {saving?"Enregistrement...":"✅ Confirmer la perte"}
+        <button onClick={()=>{closeWorkTab("perte");setPerteLignes([]);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={savePerte} disabled={saving}
+          style={{...S.btn("#F59E0B"),flex:2,opacity:saving?0.6:1}}>
+          {saving?"Enregistrement...":`✅ Confirmer${perteLignes.filter(l=>l.qte>0).length>0?` (${perteLignes.filter(l=>l.qte>0).length} produit${perteLignes.filter(l=>l.qte>0).length>1?"s":""})`:""}`}
         </button>
       </div>
     </div>
