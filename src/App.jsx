@@ -1830,9 +1830,11 @@ function BossokApp({ session, onLogout }) {
   const showConsigneForm = activeWorkTab?.type==="consigne";
   const [consigneForm, setConsigneForm] = useState({});
   const [consigneClientId, setConsigneClientId] = useState(null);
+  const [consigneLignes, setConsigneLignes] = useState([]); // [{produitNom, qte, consigneUnitaire}]
   const openConsigneTab = () => {
     setConsigneClientId(null);
     setConsigneForm({date:localDateStr()});
+    setConsigneLignes([{produitNom:"", qte:"", consigneUnitaire:""}]);
     openWorkTab({id:"consigne", type:"consigne", label:"Retour consigne", page:"consignes"});
   };
   const [manualConsigneLabel, setManualConsigneLabel] = useState("");
@@ -2100,22 +2102,30 @@ function BossokApp({ session, onLogout }) {
 
   // ── CONSIGNES : retours déclarés manuellement, indépendants d'une facture ──
   const saveConsigneManuelle = async () => {
-    if (!consigneClientId || !consigneForm.quantite || !consigneForm.consigne_unitaire) return;
+    const lignesValides = consigneLignes.filter(l => l.qte>0 && l.consigneUnitaire);
+    if (!consigneClientId || lignesValides.length===0) {
+      if (!consigneClientId) notifyError("Choisis un client avant d'enregistrer.");
+      else notifyError("Renseigne au moins une consigne avec une quantité et une taille.");
+      return;
+    }
     setSaving(true);
     try {
-      await db.insert("consignes_manuelles", {
-        client_id: consigneClientId,
-        produit_nom: consigneForm.produit_nom || null,
-        quantite: parseFloat(consigneForm.quantite),
-        consigne_unitaire: parseFloat(consigneForm.consigne_unitaire),
-        date: consigneForm.date || new Date().toISOString().split("T")[0],
-        notes: consigneForm.notes || null,
-        utilise: false,
-      });
+      for (const l of lignesValides) {
+        await db.insert("consignes_manuelles", {
+          client_id: consigneClientId,
+          produit_nom: l.produitNom || null,
+          quantite: parseFloat(l.qte),
+          consigne_unitaire: parseFloat(l.consigneUnitaire),
+          date: consigneForm.date || localDateStr(),
+          notes: consigneForm.notes || null,
+          utilise: false,
+        });
+      }
       await loadAll();
       closeWorkTab("consigne");
       setConsigneForm({});
       setConsigneClientId(null);
+      setConsigneLignes([]);
     } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
@@ -6455,26 +6465,48 @@ function BossokApp({ session, onLogout }) {
             ))}
           </select>
         </div>
+
         <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit <span style={{color:"#D1D5DB"}}>(optionnel)</span></label>
-          <input value={consigneForm.produit_nom||""} onChange={e=>setConsigneForm(p=>({...p,produit_nom:e.target.value}))}
-            placeholder="Ex: Coca VC 24x20cl" style={S.input}/>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <div>
-            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Quantité (caisses) *</label>
-            <input type="number" min="0" value={consigneForm.quantite||""} onChange={e=>setConsigneForm(p=>({...p,quantite:e.target.value}))} style={S.input}/>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Consignes à déclarer *</label>
+          <div style={{display:"grid",gap:8}}>
+            {consigneLignes.map((l,i)=>(
+              <div key={i} style={{background:"#F8FAFC",border:"1px solid #E3E7ED",borderRadius:8,padding:10}}>
+                <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr auto",gap:6,marginBottom:6}}>
+                  <input value={l.produitNom} onChange={e=>setConsigneLignes(prev=>prev.map((x,xi)=>xi===i?{...x,produitNom:e.target.value}:x))}
+                    placeholder="Produit (optionnel) — ex: Coca VC 24x20cl" style={{...S.input,padding:"7px 9px",fontSize:13}}/>
+                  {consigneLignes.length>1 && (
+                    <button onClick={()=>setConsigneLignes(prev=>prev.filter((_,xi)=>xi!==i))}
+                      style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:"4px 8px",display:"flex",alignItems:"center",justifySelf:isMobile?"end":"auto"}}>
+                      <Icon name="close" size={14}/>
+                    </button>
+                  )}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <input type="number" min="0" value={l.qte} placeholder="Quantité (caisses)"
+                    onChange={e=>setConsigneLignes(prev=>prev.map((x,xi)=>xi===i?{...x,qte:e.target.value}:x))}
+                    style={{...S.input,padding:"7px 9px",fontSize:13}}/>
+                  <select value={l.consigneUnitaire} onChange={e=>setConsigneLignes(prev=>prev.map((x,xi)=>xi===i?{...x,consigneUnitaire:e.target.value}:x))}
+                    style={{...S.input,padding:"7px 9px",fontSize:13}}>
+                    <option value="">— Taille —</option>
+                    {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
+                      <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
+                    ))}
+                  </select>
+                </div>
+                {l.qte>0 && l.consigneUnitaire && (
+                  <div style={{fontSize:11,color:"#059669",fontWeight:600,marginTop:5}}>
+                    Crédit : {fmtFull(l.qte*l.consigneUnitaire)}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-          <div>
-            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Consigne unitaire (€) *</label>
-            <select value={consigneForm.consigne_unitaire||""} onChange={e=>setConsigneForm(p=>({...p,consigne_unitaire:e.target.value}))} style={S.input}>
-              <option value="">— Choisir —</option>
-              {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
-                <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
-              ))}
-            </select>
-          </div>
+          <button onClick={()=>setConsigneLignes(prev=>[...prev,{produitNom:"",qte:"",consigneUnitaire:""}])}
+            style={{...S.btn("#F5F3FF","#7C3AED"),marginTop:8,width:"100%",padding:"8px",fontSize:12,fontWeight:600}}>
+            + Ajouter une autre consigne
+          </button>
         </div>
+
         <div>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
           <input type="date" value={consigneForm.date||""} onChange={e=>setConsigneForm(p=>({...p,date:e.target.value}))} style={S.input}/>
@@ -6483,16 +6515,19 @@ function BossokApp({ session, onLogout }) {
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
           <input value={consigneForm.notes||""} onChange={e=>setConsigneForm(p=>({...p,notes:e.target.value}))} placeholder="Optionnel" style={S.input}/>
         </div>
-        {consigneForm.quantite&&consigneForm.consigne_unitaire&&(
-          <div style={{background:"#ECFDF5",borderRadius:8,padding:10,fontSize:13,fontWeight:700,color:"#059669"}}>
-            Crédit : {fmtFull(parseFloat(consigneForm.quantite)*parseFloat(consigneForm.consigne_unitaire))}
-          </div>
-        )}
+        {(() => {
+          const total = consigneLignes.filter(l=>l.qte>0&&l.consigneUnitaire).reduce((s,l)=>s+l.qte*l.consigneUnitaire,0);
+          return total>0 ? (
+            <div style={{background:"#ECFDF5",borderRadius:8,padding:10,fontSize:13,fontWeight:700,color:"#059669"}}>
+              Crédit total : {fmtFull(total)}
+            </div>
+          ) : null;
+        })()}
       </div>
       <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{closeWorkTab("consigne");setConsigneClientId(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={saveConsigneManuelle} disabled={saving||!consigneClientId||!consigneForm.quantite||!consigneForm.consigne_unitaire}
-          style={{...S.btn(),flex:2,opacity:(saving||!consigneClientId||!consigneForm.quantite||!consigneForm.consigne_unitaire)?0.5:1}}>
+        <button onClick={()=>{closeWorkTab("consigne");setConsigneClientId(null);setConsigneLignes([]);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveConsigneManuelle} disabled={saving}
+          style={{...S.btn(),flex:2,opacity:saving?0.6:1}}>
           {saving?"Enregistrement...":"Enregistrer le retour"}
         </button>
       </div>
