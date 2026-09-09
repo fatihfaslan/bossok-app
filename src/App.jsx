@@ -3567,6 +3567,32 @@ function BossokApp({ session, onLogout }) {
   const sefaCmds = dashCmds.filter(c=>c.chauffeur==="A"&&c.statut==="Livré").length;
   const mikailCmds = dashCmds.filter(c=>c.chauffeur==="B"&&c.statut==="Livré").length;
 
+  // Rentabilité jour par jour — COGS basé sur le prix d'achat fixe du produit (pas le coût moyen pondéré)
+  const rentabiliteParJourMap = {};
+  factActives.forEach(f=>{
+    const jour = f.date;
+    if (!jour) return;
+    if (!rentabiliteParJourMap[jour]) rentabiliteParJourMap[jour] = {jour, nbFactures:0, ca:0, cogs:0};
+    const {total} = totalFact(f.lignes);
+    rentabiliteParJourMap[jour].ca += total;
+    rentabiliteParJourMap[jour].nbFactures += 1;
+    (f.lignes||[]).forEach(l=>{
+      if (l.isCredit || l.produitId==="CREDIT_CONSIGNES" || l.produitId==="CONSIGNE_MANUELLE") return;
+      const produitLigne = produits.find(p=>p.id===l.produitId);
+      rentabiliteParJourMap[jour].cogs += l.qte * (produitLigne?.prix_achat || 0);
+    });
+  });
+  const rentabiliteJours = Object.values(rentabiliteParJourMap).map(r=>({
+    ...r,
+    marge: r.ca - r.cogs,
+    margePct: r.ca>0 ? (r.ca-r.cogs)/r.ca*100 : 0,
+  })).sort((a,b)=>a.jour.localeCompare(b.jour));
+  const rentabiliteTotal = rentabiliteJours.reduce((acc,r)=>({
+    nbFactures: acc.nbFactures+r.nbFactures, ca: acc.ca+r.ca, cogs: acc.cogs+r.cogs,
+  }), {nbFactures:0, ca:0, cogs:0});
+  rentabiliteTotal.marge = rentabiliteTotal.ca - rentabiliteTotal.cogs;
+  rentabiliteTotal.margePct = rentabiliteTotal.ca>0 ? rentabiliteTotal.marge/rentabiliteTotal.ca*100 : 0;
+
   // Product stats
   const prodStats = {};
   factActives.forEach(f=>{
@@ -3961,6 +3987,59 @@ function BossokApp({ session, onLogout }) {
             </div>
           );
         })}
+      </div>
+    </div>
+
+    {/* ── Rentabilité (COGS / Marge, basé sur le prix d'achat) ── */}
+    <div style={{...S.card,marginBottom:12}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>💶 Rentabilité de la période</div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(5,1fr)",gap:10,marginBottom:14}}>
+        {[
+          {l:"Factures",v:rentabiliteTotal.nbFactures,c:"#334155"},
+          {l:"Chiffre d'affaires",v:fmtFull(rentabiliteTotal.ca),c:"#334155"},
+          {l:"COGS (coût produits)",v:fmtFull(rentabiliteTotal.cogs),c:"#334155"},
+          {l:"Marge brute",v:fmtFull(rentabiliteTotal.marge),c:"#059669"},
+          {l:"Marge %",v:Math.round(rentabiliteTotal.margePct)+"%",c:"#059669"},
+        ].map((k,i)=>(
+          <div key={i} style={S.kpi(k.c)}>
+            <div style={{fontSize:18,fontWeight:800,color:k.c}}>{k.v}</div>
+            <div style={{fontSize:11,color:"#6B7280"}}>{k.l}</div>
+          </div>
+        ))}
+      </div>
+      <DataTable
+        isMobile={isMobile}
+        rows={rentabiliteJours}
+        pageSize={15}
+        emptyIcon="💶"
+        emptyMessage="Aucune facture sur cette période"
+        initialSort={{key:"jour",dir:"desc"}}
+        footer={isMobile ? (
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Total</span>
+            <span>{fmtFull(rentabiliteTotal.ca)} · marge {fmtFull(rentabiliteTotal.marge)}</span>
+          </div>
+        ) : (
+          <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+            <td style={{padding:"8px 12px"}}>Total</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{rentabiliteTotal.nbFactures}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(rentabiliteTotal.ca)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(rentabiliteTotal.cogs)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(rentabiliteTotal.marge)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{Math.round(rentabiliteTotal.margePct)}%</td>
+          </tr>
+        )}
+        columns={[
+          {key:"jour", label:"Date", mobilePrimary:true, sortValue:r=>r.jour},
+          {key:"nbFactures", label:"Factures", align:"right", mobileShow:true, sortValue:r=>r.nbFactures},
+          {key:"ca", label:"Chiffre d'affaires", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+        ]}
+      />
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>
+        COGS calculé à partir du prix d'achat renseigné sur chaque produit (fiche Produits) × quantité vendue.
       </div>
     </div>
 
