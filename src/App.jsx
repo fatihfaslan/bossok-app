@@ -43,6 +43,17 @@ const ICON_PATHS = {
   eyeOff: <><path d="M3 3l18 18"/><path d="M10.6 5.2A10.8 10.8 0 0 1 12 5c7 0 10.5 7 10.5 7a17.7 17.7 0 0 1-3.2 4.2M6.7 6.7C3.7 8.6 1.5 12 1.5 12s3.5 7 10.5 7c1.4 0 2.7-.28 3.85-.75"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></>,
   lock: <><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5"/></>,
   arrowRight: <><path d="M4 12h16M13 5l7 7-7 7"/></>,
+  money: <><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 9v.01M18 15v.01"/></>,
+  trendingUp: <><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></>,
+  users: <><circle cx="9" cy="8" r="3"/><path d="M3.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><circle cx="17" cy="9" r="2.3"/><path d="M15.2 13.2c2.4.3 4.3 2.3 4.3 5.3"/></>,
+  sparkle: <><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/><path d="m6 6 2.2 2.2M15.8 15.8 18 18M18 6l-2.2 2.2M8.2 15.8 6 18"/></>,
+  cart: <><circle cx="9" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/><path d="M2.5 3h2.3l2.2 11.4a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.6L20 7H6"/></>,
+  bulb: <><path d="M9 18h6M10 21h4"/><path d="M12 3a6.5 6.5 0 0 0-4 11.6c.6.5 1 1.2 1 2v.4h6v-.4c0-.8.4-1.5 1-2A6.5 6.5 0 0 0 12 3Z"/></>,
+  trophy: <><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 5H4a3 3 0 0 0 3 3M17 5h3a3 3 0 0 1-3 3"/><path d="M12 14v3M9 21h6M9.5 21c0-2 1-3 2.5-3s2.5 1 2.5 3"/></>,
+  barChart2: <><path d="M4 20V10M12 20V4M20 20v-7"/></>,
+  chat: <><path d="M4 4.5h16v12H9l-4 3.5v-3.5H4Z"/></>,
+  phone: <><path d="M6.5 3.5h3l1.5 4-2 1.5a11 11 0 0 0 5 5l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2Z"/></>,
+  mail: <><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="m3 6.5 9 6.5 9-6.5"/></>,
 };
 const Icon = ({name, size=15, style}) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
@@ -3722,8 +3733,8 @@ function BossokApp({ session, onLogout }) {
       return (
         <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:facturesEnRetard.length>0?10:0}}>
-            <div style={{fontSize:13,color:"#991B1B"}}>
-              🔴 <strong>{facturesEnRetard.length} facture(s) en retard</strong> — {fmtFull(totalRetard)} à relancer
+            <div style={{fontSize:13,color:"#991B1B",display:"flex",alignItems:"center",gap:7}}>
+              <Icon name="warning" size={14}/> <strong>{facturesEnRetard.length} facture(s) en retard</strong> — {fmtFull(totalRetard)} à relancer
             </div>
           </div>
           <div style={{display:"grid",gap:6}}>
@@ -3734,9 +3745,9 @@ function BossokApp({ session, onLogout }) {
                 <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#fff",borderRadius:8,padding:"7px 10px",fontSize:12,flexWrap:"wrap",gap:6}}>
                   <span><strong>{f.client_nom}</strong> — {f.numero} · {fmtFull(total)} · échéance {f.echeance}</span>
                   <div style={{display:"flex",gap:4}}>
-                    <button onClick={()=>relancerWhatsApp(f,cl,total)} title="Relancer par WhatsApp" style={{...S.btn("#F0FDF4","#22C55E"),padding:"4px 9px",fontSize:11}}>💬</button>
-                    <button onClick={()=>relancerSMS(f,cl,total)} title="Relancer par SMS" style={{...S.btn("#F1F5F9","#374151"),padding:"4px 9px",fontSize:11}}>📱</button>
-                    <button onClick={()=>relancerEmail(f,cl,total)} title="Relancer par Email" style={{...S.btn("#F1F5F9","#374151"),padding:"4px 9px",fontSize:11}}>✉️</button>
+                    <button onClick={()=>relancerWhatsApp(f,cl,total)} title="Relancer par WhatsApp" style={{...S.btn("#F0FDF4","#22C55E"),padding:"5px 9px",display:"flex"}}><Icon name="chat" size={13}/></button>
+                    <button onClick={()=>relancerSMS(f,cl,total)} title="Relancer par SMS" style={{...S.btn("#F1F5F9","#374151"),padding:"5px 9px",display:"flex"}}><Icon name="phone" size={13}/></button>
+                    <button onClick={()=>relancerEmail(f,cl,total)} title="Relancer par Email" style={{...S.btn("#F1F5F9","#374151"),padding:"5px 9px",display:"flex"}}><Icon name="mail" size={13}/></button>
                   </div>
                 </div>
               );
@@ -3757,8 +3768,8 @@ function BossokApp({ session, onLogout }) {
       if (clientsConcernes.length===0) return null;
       return (
         <div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-          <div style={{fontSize:13,color:"#5B21B6"}}>
-            ♻️ <strong>Fin de mois proche</strong> — {clientsConcernes.length} client(s) en facturation groupée ont des livraisons en attente : {clientsConcernes.map(c=>c.nom).join(", ")}
+          <div style={{fontSize:13,color:"#5B21B6",display:"flex",alignItems:"center",gap:7}}>
+            <Icon name="consignes" size={14}/> <strong>Fin de mois proche</strong> — {clientsConcernes.length} client(s) en facturation groupée ont des livraisons en attente : {clientsConcernes.map(c=>c.nom).join(", ")}
           </div>
           <button onClick={()=>openClientTab(clientsConcernes[0],"factures")} style={{...S.btn("#7C3AED"),padding:"6px 12px",fontSize:12}}>Traiter maintenant</button>
         </div>
@@ -3825,25 +3836,25 @@ function BossokApp({ session, onLogout }) {
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",borderTop:"1px solid #F1F5F9",paddingTop:10}}>
         <span style={{fontSize:11,color:"#9CA3AF",fontWeight:600,marginRight:4}}>Exporter :</span>
-        <button onClick={exportDash} style={{...S.btn("#059669"),padding:"5px 12px",fontSize:12}}>🧾 Factures</button>
-        <button onClick={exportCommandes} style={{...S.btn("#1D4ED8"),padding:"5px 12px",fontSize:12}}>📋 Commandes</button>
-        <button onClick={exportStock} style={{...S.btn("#7C3AED"),padding:"5px 12px",fontSize:12}}>📦 Stock</button>
+        <button onClick={exportDash} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="factures" size={12}/> Factures</button>
+        <button onClick={exportCommandes} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="commandes" size={12}/> Commandes</button>
+        <button onClick={exportStock} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="stock" size={12}/> Stock</button>
       </div>
     </div>
 
     {/* ── KPIs Row 1 : indicateurs financiers (priorité visuelle) ── */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:12,marginBottom:12}}>
       {[
-        {l:"CA Total",v:fmtFull(ca),c:"#1D4ED8",bg:"#EFF6FF",icon:"💶",sub:factActives.length+" factures"},
-        {l:margeCouverture===100?"Marge réelle":"Marge (estimée)",v:fmtFull(marge),c:"#7C3AED",bg:"#F5F3FF",icon:"📈",sub:margePct+"% du CA"},
-        {l:"Encaissé",v:fmtFull(caPayee),c:"#059669",bg:"#ECFDF5",icon:"✅",sub:dashFacts.filter(f=>f.statut==="Payée").length+" payées"},
-        {l:"Impayés",v:fmtFull(impaye),c:"#DC2626",bg:"#FEF2F2",icon:"⚠️",sub:dashFacts.filter(f=>f.statut==="Impayée").length+" factures"},
+        {l:"CA Total",v:fmtFull(ca),c:"#0F172A",icon:"money",sub:factActives.length+" factures"},
+        {l:margeCouverture===100?"Marge réelle":"Marge (estimée)",v:fmtFull(marge),c:"#0F172A",icon:"trendingUp",sub:margePct+"% du CA"},
+        {l:"Encaissé",v:fmtFull(caPayee),c:"#0F172A",icon:"check",sub:dashFacts.filter(f=>f.statut==="Payée").length+" payées"},
+        {l:"Impayés",v:fmtFull(impaye),c:"#DC2626",icon:"warning",sub:dashFacts.filter(f=>f.statut==="Impayée").length+" factures",alert:true},
       ].map((s,i)=>(
-        <div key={i} style={{...S.card,padding:"18px 20px"}}>
-          <div style={{width:40,height:40,borderRadius:10,background:s.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,marginBottom:10}}>{s.icon}</div>
-          <div style={{fontSize:26,fontWeight:800,color:"#0F172A",letterSpacing:"-0.5px",lineHeight:1.1}}>{s.v}</div>
+        <div key={i} style={{...S.card,padding:"18px 20px",borderLeft:s.alert?"3px solid #DC2626":"1px solid #E3E7ED"}}>
+          <div style={{width:36,height:36,borderRadius:9,background:s.alert?"#FEF2F2":"#F1F5F9",color:s.alert?"#DC2626":"#5D6B82",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:10}}><Icon name={s.icon} size={17}/></div>
+          <div style={{fontSize:26,fontWeight:800,color:s.c,letterSpacing:"-0.5px",lineHeight:1.1}}>{s.v}</div>
           <div style={{fontSize:12,color:"#6B7280",fontWeight:600,marginTop:4}}>{s.l}</div>
-          <div style={{fontSize:11,color:s.c,fontWeight:600,marginTop:2}}>{s.sub}</div>
+          <div style={{fontSize:11,color:"#94A3B8",fontWeight:600,marginTop:2}}>{s.sub}</div>
         </div>
       ))}
     </div>
@@ -3851,13 +3862,13 @@ function BossokApp({ session, onLogout }) {
     {/* ── KPIs Row 2 : indicateurs opérationnels (secondaires) ── */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:16}}>
       {[
-        {l:"Clients actifs",v:nbClients,icon:"👥",sub:"sur la période"},
-        {l:"Nouveaux clients",v:nouveauxClients,icon:"✨",sub:"sur la période"},
-        {l:"Panier moyen",v:fmtFull(panierMoyen),icon:"🛒",sub:"par facture"},
-        {l:"Livraisons",v:(sefaCmds+mikailCmds),icon:"🚚",sub:`Sefa ${sefaCmds} · Mikail ${mikailCmds}`},
+        {l:"Clients actifs",v:nbClients,icon:"users",sub:"sur la période"},
+        {l:"Nouveaux clients",v:nouveauxClients,icon:"sparkle",sub:"sur la période"},
+        {l:"Panier moyen",v:fmtFull(panierMoyen),icon:"cart",sub:"par facture"},
+        {l:"Livraisons",v:(sefaCmds+mikailCmds),icon:"planning",sub:`Sefa ${sefaCmds} · Mikail ${mikailCmds}`},
       ].map((s,i)=>(
         <div key={i} style={{...S.card,padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
-          <div style={{fontSize:18,flexShrink:0}}>{s.icon}</div>
+          <div style={{width:28,height:28,borderRadius:7,background:"#F1F5F9",color:"#5D6B82",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name={s.icon} size={14}/></div>
           <div style={{minWidth:0}}>
             <div style={{fontSize:16,fontWeight:800,color:"#374151",lineHeight:1.1}}>{s.v}</div>
             <div style={{fontSize:10,color:"#9CA3AF",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.l}</div>
@@ -3868,7 +3879,7 @@ function BossokApp({ session, onLogout }) {
 
     {margeCouverture<100&&(
       <div style={{...S.card,marginBottom:14,background:"#FFFBEB",border:"1px solid #FDE68A",display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:18}}>💡</span>
+        <Icon name="bulb" size={16} style={{color:"#92400E",flexShrink:0}}/>
         <div style={{fontSize:12,color:"#92400E"}}>
           <strong>{margeCouverture}%</strong> de la marge est calculée avec les vrais prix d'achat. Le reste utilise une estimation à 28%.
           Renseigne le <strong>prix d'achat</strong> de tes produits dans l'onglet <strong>Produits</strong> pour affiner ce chiffre.
@@ -3883,7 +3894,7 @@ function BossokApp({ session, onLogout }) {
       return(
         <div style={{...S.card,marginBottom:14,background:"#FEF2F2",border:"1px solid #FECACA",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}
           onClick={()=>setPage("stock")}>
-          <span style={{fontSize:18}}>📦</span>
+          <Icon name="stock" size={16} style={{color:"#991B1B",flexShrink:0}}/>
           <div style={{fontSize:12,color:"#991B1B",flex:1}}>
             {nbRuptures>0&&<span><strong>{nbRuptures} produit{nbRuptures>1?"s":""}</strong> en rupture de stock. </span>}
             {nbStockBas>0&&<span><strong>{nbStockBas} produit{nbStockBas>1?"s":""}</strong> en stock bas (≤{STOCK_BAS_SEUIL} caisses). </span>}
@@ -3896,9 +3907,9 @@ function BossokApp({ session, onLogout }) {
     {/* ── Charts row 1 ── */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>📊 CA mensuel (payé vs impayé)</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:2,display:"flex",alignItems:"center",gap:7}}><Icon name="dashboard" size={14} style={{color:"#5D6B82"}}/> CA mensuel (payé vs impayé)</div>
         {historiquePeriode.length>0&&(
-          <div style={{fontSize:10,color:"#9CA3AF",marginBottom:8}}>📁 Inclut {historiquePeriode.length} mois de données historiques (avant l'app)</div>
+          <div style={{fontSize:10,color:"#9CA3AF",marginBottom:8}}>Inclut {historiquePeriode.length} mois de données historiques (avant l'app)</div>
         )}
         {chartData.length>0?(
           <ResponsiveContainer width="100%" height={240}>
@@ -3918,7 +3929,7 @@ function BossokApp({ session, onLogout }) {
         ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"70px 0",fontSize:12}}>Aucune donnée sur la période</div>}
       </div>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>⚠️ Impayés cumulés</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="warning" size={13} style={{color:"#DC2626"}}/> Impayés cumulés</div>
         {impayeChart.length>0?(
           <ResponsiveContainer width="100%" height={228}>
             <BarChart data={impayeChart} margin={{top:0,right:5,left:0,bottom:0}}>
@@ -3937,7 +3948,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:700,fontSize:14}}>🍺 Top produits</div>
+          <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="produits" size={14} style={{color:"#5D6B82"}}/> Top produits</div>
           <div style={{display:"flex",gap:4}}>
             {[["quantite","Ventes"],["marge","Marge"]].map(([k,l])=>(
               <button key={k} onClick={()=>setDashProduitTri(k)}
@@ -3953,8 +3964,9 @@ function BossokApp({ session, onLogout }) {
           return liste.map((p,i)=>(
             <div key={p.nom} style={{marginBottom:5}}>
               <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:1}}>
-                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200,fontWeight:i<3?600:400,color:i===0?"#1D4ED8":"#374151"}}>
-                  {i===0?"🥇 ":i===1?"🥈 ":i===2?"🥉 ":""}{p.nom}
+                <span style={{display:"flex",alignItems:"center",gap:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200,fontWeight:i<3?600:400,color:"#374151"}}>
+                  {i<3 && <span style={{width:14,height:14,borderRadius:99,background:"#1D4ED8",color:"#fff",fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</span>}
+                  {p.nom}
                 </span>
                 <span style={{color:"#6B7280",whiteSpace:"nowrap",marginLeft:4}}>
                   {dashProduitTri==="marge" ? fmtFull(p.marge) : `${p.qte} cs · ${fmtFull(p.ca)}`}
@@ -3969,7 +3981,7 @@ function BossokApp({ session, onLogout }) {
       </div>
 
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>📍 CA par zone</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> CA par zone</div>
         {topZones.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
         topZones.map((z,i)=>{
           const maxCA=topZones[0].ca;
@@ -3992,7 +4004,7 @@ function BossokApp({ session, onLogout }) {
 
     {/* ── Rentabilité (COGS / Marge, basé sur le prix d'achat) ── */}
     <div style={{...S.card,marginBottom:12}}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>💶 Rentabilité de la période</div>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> Rentabilité de la période</div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(5,1fr)",gap:10,marginBottom:14}}>
         {[
           {l:"Factures",v:rentabiliteTotal.nbFactures,c:"#334155"},
@@ -4011,7 +4023,7 @@ function BossokApp({ session, onLogout }) {
         isMobile={isMobile}
         rows={rentabiliteJours}
         pageSize={15}
-        emptyIcon="💶"
+        emptyIcon="€"
         emptyMessage="Aucune facture sur cette période"
         initialSort={{key:"jour",dir:"desc"}}
         footer={isMobile ? (
@@ -4047,7 +4059,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:700,fontSize:14}}>🏆 Top clients par CA</div>
+          <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Top clients par CA</div>
         </div>
         {topClients.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -4061,8 +4073,11 @@ function BossokApp({ session, onLogout }) {
           <tbody>
             {topClients.map((c,i)=>(
               <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB",background:i%2===0?"#fff":"#FAFAFA"}}>
-                <td style={{padding:"7px 8px",fontWeight:600,color:i===0?"#1D4ED8":"#374151"}}>
-                  {i===0?"🥇 ":i===1?"🥈 ":i===2?"🥉 ":""}{c.nom}
+                <td style={{padding:"7px 8px",fontWeight:600,color:"#374151"}}>
+                  <span style={{display:"flex",alignItems:"center",gap:6}}>
+                    {i<3 && <span style={{width:14,height:14,borderRadius:99,background:"#1D4ED8",color:"#fff",fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</span>}
+                    {c.nom}
+                  </span>
                 </td>
                 <td style={{padding:"7px 8px",color:"#6B7280"}}>{c.type}</td>
                 <td style={{padding:"7px 8px",color:"#6B7280"}}>{c.region}</td>
@@ -4076,7 +4091,7 @@ function BossokApp({ session, onLogout }) {
       </div>
 
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>📊 Marge par type de client</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="barChart2" size={14} style={{color:"#5D6B82"}}/> Marge par type de client</div>
         {topTypes.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
         <div>
           {topTypes.map((t,i)=>{
@@ -4108,7 +4123,7 @@ function BossokApp({ session, onLogout }) {
     {/* ── Bottom row ── */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>🧾 Dernières factures</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="factures" size={14} style={{color:"#5D6B82"}}/> Dernières factures</div>
         {dashFacts.length===0?<div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune facture sur la période</div>:
         [...dashFacts].reverse().slice(0,6).map(f=>{
           const {total}=totalFact(f.lignes);
@@ -4123,7 +4138,7 @@ function BossokApp({ session, onLogout }) {
         })}
       </div>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>📋 Commandes en attente</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="commandes" size={14} style={{color:"#5D6B82"}}/> Commandes en attente</div>
         {commandes.filter(c=>c.statut==="En attente").length===0?
           <div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune commande</div>:
           commandes.filter(c=>c.statut==="En attente").slice(0,6).map(c=>(
