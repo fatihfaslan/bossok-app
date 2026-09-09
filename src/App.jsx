@@ -1838,12 +1838,10 @@ function BossokApp({ session, onLogout }) {
     openWorkTab({id:"consigne", type:"consigne", label:"Retour consigne", page:"consignes"});
   };
   const [manualConsigneLabel, setManualConsigneLabel] = useState("");
-  const [manualConsigneMontant, setManualConsigneMontant] = useState("");
-  const [manualConsigneLabelCmd, setManualConsigneLabelCmd] = useState("");
-  const [manualConsigneMontantCmd, setManualConsigneMontantCmd] = useState("");
-  const [manualConsigneQteCmd, setManualConsigneQteCmd] = useState("1");
-  const [manualConsigneUnitaireCmd, setManualConsigneUnitaireCmd] = useState("");
-  const [manualConsigneSensCmd, setManualConsigneSensCmd] = useState("plus");
+  const [manualConsigneQte, setManualConsigneQte] = useState("1");
+  const [manualConsigneUnitaire, setManualConsigneUnitaire] = useState("");
+  const [manualConsigneSens, setManualConsigneSens] = useState("plus");
+  const [manualConsigneLignesCmd, setManualConsigneLignesCmd] = useState([]); // [{label,qte,unitaire,sens}]
   const [geocodingProgress, setGeocodingProgress] = useState(null); // {done, total} | null
   const [showClientForm, setShowClientForm] = useState(false);
   const [editClient, setEditClient] = useState(null);
@@ -2667,8 +2665,7 @@ function BossokApp({ session, onLogout }) {
     setCmdProduits([]);
     setCmdNotes("");
     setSearchCmdClient("");
-    setManualConsigneLabelCmd(""); setManualConsigneMontantCmd("");
-    setManualConsigneQteCmd("1"); setManualConsigneUnitaireCmd(""); setManualConsigneSensCmd("plus");
+    setManualConsigneLignesCmd([]);
     openWorkTab({id:"commande", type:"commande", label:"Nouvelle commande", page:"commandes"});
   };
 
@@ -2710,10 +2707,10 @@ function BossokApp({ session, onLogout }) {
             const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
             return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
           });
-          if (manualConsigneMontantCmd && parseFloat(manualConsigneMontantCmd)) {
-            const montant = parseFloat(manualConsigneMontantCmd);
-            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: manualConsigneLabelCmd || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
-          }
+          manualConsigneLignesCmd.filter(l=>l.qte>0&&l.unitaire).forEach(l=>{
+            const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
+            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: l.label || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
+          });
           await db.update("factures", facture.id, { lignes });
         }
         setEditingCmd(null);
@@ -2750,10 +2747,10 @@ function BossokApp({ session, onLogout }) {
             const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
             return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
           });
-          if (manualConsigneMontantCmd && parseFloat(manualConsigneMontantCmd)) {
-            const montant = parseFloat(manualConsigneMontantCmd);
-            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: manualConsigneLabelCmd || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
-          }
+          manualConsigneLignesCmd.filter(l=>l.qte>0&&l.unitaire).forEach(l=>{
+            const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
+            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: l.label || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
+          });
           await db.insert("factures", {
             numero: num, client_id: cmdClientId,
             client_nom: client?.nom||"", client_adresse: client?.adresse||"",
@@ -2765,8 +2762,7 @@ function BossokApp({ session, onLogout }) {
       }
       await loadAll();
       setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
-      setManualConsigneLabelCmd(""); setManualConsigneMontantCmd("");
-      setManualConsigneQteCmd("1"); setManualConsigneUnitaireCmd(""); setManualConsigneSensCmd("plus");
+      setManualConsigneLignesCmd([]);
       closeWorkTab("commande");
     } catch(e) { logError(e); }
     finally { setSaving(false); }
@@ -4615,56 +4611,53 @@ function BossokApp({ session, onLogout }) {
         )}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1.6fr 0.8fr 1.3fr 1fr",gap:6,marginBottom:12,alignItems:"end"}}>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>♻️ Consigne manuelle <span style={{color:"#D1D5DB"}}>(optionnel)</span></label>
-          <input value={manualConsigneLabelCmd} onChange={e=>setManualConsigneLabelCmd(e.target.value)}
-            placeholder="Libellé (ex: Coca VC)" style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Quantité</label>
-          <input type="number" min="1" value={manualConsigneQteCmd}
-            onChange={e=>{
-              const qte=e.target.value; setManualConsigneQteCmd(qte);
-              const prix=parseFloat(manualConsigneUnitaireCmd)||0;
-              const m=(parseFloat(qte)||0)*prix*(manualConsigneSensCmd==="retour"?-1:1);
-              setManualConsigneMontantCmd(m?String(m):"");
-            }} style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Consigne unitaire</label>
-          <select value={manualConsigneUnitaireCmd}
-            onChange={e=>{
-              const prix=e.target.value; setManualConsigneUnitaireCmd(prix);
-              const qte=parseFloat(manualConsigneQteCmd)||0;
-              const m=qte*(parseFloat(prix)||0)*(manualConsigneSensCmd==="retour"?-1:1);
-              setManualConsigneMontantCmd(m?String(m):"");
-            }} style={S.input}>
-            <option value="">— Choisir —</option>
-            {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
-              <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Sens</label>
-          <select value={manualConsigneSensCmd}
-            onChange={e=>{
-              const sens=e.target.value; setManualConsigneSensCmd(sens);
-              const qte=parseFloat(manualConsigneQteCmd)||0;
-              const prix=parseFloat(manualConsigneUnitaireCmd)||0;
-              const m=qte*prix*(sens==="retour"?-1:1);
-              setManualConsigneMontantCmd(m?String(m):"");
-            }} style={S.input}>
-            <option value="plus">+ Consigne</option>
-            <option value="retour">− Retour</option>
-          </select>
-        </div>
-        {manualConsigneMontantCmd && (
-          <div style={{gridColumn:isMobile?"1/-1":"1/-1",fontSize:12,fontWeight:600,color:parseFloat(manualConsigneMontantCmd)<0?"#DC2626":"#7C3AED"}}>
-            {parseFloat(manualConsigneMontantCmd)<0?"Retour":"Ajout"} : {fmtFull(Math.abs(parseFloat(manualConsigneMontantCmd)))}
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:6}}>♻️ Consigne manuelle <span style={{color:"#D1D5DB"}}>(optionnel)</span></label>
+        {manualConsigneLignesCmd.length>0 && (
+          <div style={{display:"grid",gap:8,marginBottom:8}}>
+            {manualConsigneLignesCmd.map((l,i)=>{
+              const montant = (parseFloat(l.qte)||0)*(parseFloat(l.unitaire)||0)*(l.sens==="retour"?-1:1);
+              return (
+                <div key={i} style={{background:"#F8FAFC",border:"1px solid #E3E7ED",borderRadius:8,padding:10}}>
+                  <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr auto",gap:6,marginBottom:6}}>
+                    <input value={l.label} onChange={e=>setManualConsigneLignesCmd(prev=>prev.map((x,xi)=>xi===i?{...x,label:e.target.value}:x))}
+                      placeholder="Libellé (ex: Coca VC)" style={{...S.input,padding:"7px 9px",fontSize:13}}/>
+                    <button onClick={()=>setManualConsigneLignesCmd(prev=>prev.filter((_,xi)=>xi!==i))}
+                      style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:"4px 8px",display:"flex",alignItems:"center",justifySelf:isMobile?"end":"auto"}}>
+                      <Icon name="close" size={14}/>
+                    </button>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"0.8fr 1.3fr 1fr",gap:6}}>
+                    <input type="number" min="1" value={l.qte} placeholder="Quantité"
+                      onChange={e=>setManualConsigneLignesCmd(prev=>prev.map((x,xi)=>xi===i?{...x,qte:e.target.value}:x))}
+                      style={{...S.input,padding:"7px 9px",fontSize:13}}/>
+                    <select value={l.unitaire} onChange={e=>setManualConsigneLignesCmd(prev=>prev.map((x,xi)=>xi===i?{...x,unitaire:e.target.value}:x))}
+                      style={{...S.input,padding:"7px 9px",fontSize:13}}>
+                      <option value="">— Consigne unitaire —</option>
+                      {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
+                        <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
+                      ))}
+                    </select>
+                    <select value={l.sens} onChange={e=>setManualConsigneLignesCmd(prev=>prev.map((x,xi)=>xi===i?{...x,sens:e.target.value}:x))}
+                      style={{...S.input,padding:"7px 9px",fontSize:13}}>
+                      <option value="plus">+ Consigne</option>
+                      <option value="retour">− Retour</option>
+                    </select>
+                  </div>
+                  {montant!==0 && (
+                    <div style={{fontSize:12,fontWeight:600,color:montant<0?"#DC2626":"#7C3AED",marginTop:5}}>
+                      {montant<0?"Retour":"Ajout"} : {fmtFull(Math.abs(montant))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
+        <button onClick={()=>setManualConsigneLignesCmd(prev=>[...prev,{label:"",qte:"1",unitaire:"",sens:"plus"}])}
+          style={{...S.btn("#F5F3FF","#7C3AED"),width:"100%",padding:"8px",fontSize:12,fontWeight:600}}>
+          + Ajouter une autre consigne
+        </button>
       </div>
 
       <div style={{marginBottom:12}}>
@@ -5833,21 +5826,44 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
       )}
-      <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
-        <input value={manualConsigneLabel} onChange={e=>setManualConsigneLabel(e.target.value)}
-          placeholder="♻️ Consigne manuelle — libellé" style={{...S.input,flex:2}}/>
-        <input type="number" step="0.01" value={manualConsigneMontant} onChange={e=>setManualConsigneMontant(e.target.value)}
-          placeholder="Montant (+/-)" style={{...S.input,flex:1}}/>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1.4fr 0.7fr 1.2fr 0.9fr auto",gap:6,marginBottom:12,alignItems:"end"}}>
+        <div>
+          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>♻️ Consigne manuelle <span style={{color:"#D1D5DB"}}>(optionnel)</span></label>
+          <input value={manualConsigneLabel} onChange={e=>setManualConsigneLabel(e.target.value)}
+            placeholder="Libellé (ex: Coca VC)" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Quantité</label>
+          <input type="number" min="1" value={manualConsigneQte} onChange={e=>setManualConsigneQte(e.target.value)} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Consigne unitaire</label>
+          <select value={manualConsigneUnitaire} onChange={e=>setManualConsigneUnitaire(e.target.value)} style={S.input}>
+            <option value="">— Choisir —</option>
+            {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
+              <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>Sens</label>
+          <select value={manualConsigneSens} onChange={e=>setManualConsigneSens(e.target.value)} style={S.input}>
+            <option value="plus">+ Consigne</option>
+            <option value="retour">− Retour</option>
+          </select>
+        </div>
         <button onClick={()=>{
-          const montant = parseFloat(manualConsigneMontant);
-          if (!montant) return;
+          const qte = parseFloat(manualConsigneQte)||0;
+          const prix = parseFloat(manualConsigneUnitaire)||0;
+          if (!qte || !prix) return;
+          const montant = qte*prix*(manualConsigneSens==="retour"?-1:1);
           setFactLignes(prev=>[...prev, {
             produitId:"CONSIGNE_MANUELLE",
             nom: manualConsigneLabel || (montant<0 ? "Retour consignes (manuel)" : "Consigne supplémentaire"),
             qte:1, pu:montant, consigne:0, isCredit: montant<0,
           }]);
-          setManualConsigneLabel(""); setManualConsigneMontant("");
-        }} disabled={!manualConsigneMontant} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"9px 14px",opacity:manualConsigneMontant?1:0.5}}>+ Ajouter</button>
+          setManualConsigneLabel(""); setManualConsigneQte("1"); setManualConsigneUnitaire(""); setManualConsigneSens("plus");
+        }} disabled={!manualConsigneQte||!manualConsigneUnitaire} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"9px 14px",opacity:(manualConsigneQte&&manualConsigneUnitaire)?1:0.5}}>+ Ajouter</button>
       </div>
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes internes</label>
