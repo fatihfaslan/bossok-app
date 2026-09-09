@@ -2205,7 +2205,11 @@ function BossokApp({ session, onLogout }) {
   };
 
   const saveProduit = async () => {
-    if (!produitForm.nom || !produitForm.categorie || !produitForm.type_emballage) return;
+    const categorieReelle = produitForm.categorie==="__new__" ? (produitForm.categorieNouvelle||"").trim() : produitForm.categorie;
+    if (!produitForm.nom || !categorieReelle || !produitForm.type_emballage) {
+      notifyError("Renseigne le nom, la catégorie et le type d'emballage avant d'enregistrer.");
+      return;
+    }
     setSaving(true);
     try {
       const prix = {
@@ -2220,7 +2224,7 @@ function BossokApp({ session, onLogout }) {
       };
       const payload = {
         nom: produitForm.nom,
-        categorie: produitForm.categorie,
+        categorie: categorieReelle,
         type_emballage: produitForm.type_emballage,
         consigne: produitForm.type_emballage === "VC" ? (produitForm.consigne || null) : null,
         prix,
@@ -2229,7 +2233,7 @@ function BossokApp({ session, onLogout }) {
       if (editProduit) {
         await db.update("produits", editProduit.id, payload);
       } else {
-        const newId = genererIdProduit(produitForm.categorie);
+        const newId = genererIdProduit(categorieReelle);
         await db.insert("produits", {...payload, id: newId, statut: "Actif"});
       }
       await loadAll();
@@ -2241,7 +2245,7 @@ function BossokApp({ session, onLogout }) {
   };
   const openNewProduitTab = () => {
     setEditProduit(null);
-    setProduitForm({categorie:"Canettes",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});
+    setProduitForm({categorie:"",type_emballage:"CAN",nom:"",prix_Snack:"",prix_Restaurant:"",prix_Administrative:"",prix_Market:"",prix_Café:"",prix_Creche:"",prix_Distributor:"",prix_Privé:"",consigne:"",prix_achat:""});
     openWorkTab({id:"produit", type:"produit", label:"Nouveau produit", page:"produits"});
   };
   const openEditProduitTab = (p) => {
@@ -6018,11 +6022,24 @@ function BossokApp({ session, onLogout }) {
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Catégorie *</label>
-            <input value={produitForm.categorie||""} onChange={e=>setProduitForm(p=>({...p,categorie:e.target.value}))}
-              list="categories-list" placeholder="Ex: Canettes" style={S.input}/>
-            <datalist id="categories-list">
-              {[...new Set(produits.map(p=>p.categorie))].sort().map(c=><option key={c} value={c}/>)}
-            </datalist>
+            {produitForm.categorie==="__new__" ? (
+              <div style={{display:"flex",gap:6}}>
+                <input autoFocus value={produitForm.categorieNouvelle||""} onChange={e=>setProduitForm(p=>({...p,categorieNouvelle:e.target.value}))}
+                  placeholder="Nom de la nouvelle catégorie" style={S.input}/>
+                <button type="button" onClick={()=>setProduitForm(p=>({...p,categorie:"",categorieNouvelle:""}))}
+                  style={{...S.btn("#F1F5F9","#374151"),padding:"0 12px",fontSize:12}}>Annuler</button>
+              </div>
+            ) : (
+              <select value={produitForm.categorie||""} onChange={e=>{
+                const val = e.target.value;
+                if (val==="__new__") setProduitForm(p=>({...p,categorie:"__new__",categorieNouvelle:""}));
+                else setProduitForm(p=>({...p,categorie:val}));
+              }} style={S.input}>
+                <option value="">— Choisir —</option>
+                {[...new Set(produits.map(p=>p.categorie))].sort().map(c=><option key={c} value={c}>{c}</option>)}
+                <option value="__new__">+ Nouvelle catégorie...</option>
+              </select>
+            )}
           </div>
           <div>
             <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Type d'emballage *</label>
