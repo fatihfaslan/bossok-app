@@ -1589,7 +1589,7 @@ class ErrorBoundary extends Component {
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(error, info) {
     console.error("Erreur de rendu :", error, info);
-    if (window.Sentry) {
+    if (window.Sentry && typeof window.Sentry.captureException === "function") {
       window.Sentry.captureException(error, { extra: { componentStack: info?.componentStack } });
     }
   }
@@ -1682,19 +1682,19 @@ function BossokApp({ session, onLogout }) {
   // dans index.html — sinon logError se comporte comme avant (toast + console).
   const logError = (e, context) => {
     console.error(context || "Erreur", e);
-    if (window.Sentry) {
+    if (window.Sentry && typeof window.Sentry.captureException === "function") {
       window.Sentry.captureException(e, context ? { tags: { context } } : undefined);
     }
     notifyError("Erreur : " + (e?.message || String(e)));
   };
   useEffect(() => {
-    if (window.Sentry && session?.user?.email) {
+    if (window.Sentry && typeof window.Sentry.setUser === "function" && session?.user?.email) {
       window.Sentry.setUser({ email: session.user.email });
     }
   }, [session]);
   useEffect(() => {
     const onRejection = (event) => {
-      if (window.Sentry) window.Sentry.captureException(event.reason);
+      if (window.Sentry && typeof window.Sentry.captureException === "function") window.Sentry.captureException(event.reason);
       console.error("Promise non gérée :", event.reason);
     };
     window.addEventListener("unhandledrejection", onRejection);
