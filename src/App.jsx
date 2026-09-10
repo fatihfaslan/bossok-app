@@ -615,15 +615,7 @@ ${zonesHTML}
 </body>
 </html>`;
 
-  const blob = new Blob([html], {type:"text/html;charset=utf-8"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "BOSSOK_Clients_par_Zone.html";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  ouvrirEtImprimer(html, "BOSSOK_Clients_par_Zone.html");
 };
 
 // Zone assignments per day (0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri)
@@ -836,6 +828,29 @@ const calcMargeFacture = (facture, produits, receptionsStock) => {
 // ═══════════════════════════════════════════════════════════════════
 // PDF GENERATOR
 // ═══════════════════════════════════════════════════════════════════
+// Ouvre un document HTML dans un nouvel onglet et déclenche directement la boîte
+// d'impression du navigateur (qui propose "Enregistrer en PDF" comme destination) —
+// au lieu de télécharger un fichier .html qu'il faudrait rouvrir manuellement.
+const ouvrirEtImprimer = (html, nomFichierSecours) => {
+  const fenetre = window.open("", "_blank");
+  if (!fenetre) {
+    // Pop-up bloquée par le navigateur : on retombe sur le téléchargement du fichier.
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nomFichierSecours;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return;
+  }
+  fenetre.document.write(html);
+  fenetre.document.close();
+  fenetre.onload = () => { try { fenetre.print(); } catch(e) {} };
+};
+
 const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetail = []) => {
   const lignes = facture.lignes || [];
   const sousTotal = lignes.reduce((s, l) => s + l.qte * l.pu, 0);
@@ -1089,15 +1104,7 @@ ${noteClientHTML}
 </body>
 </html>`;
 
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "Facture_" + facture.numero + ".html";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  ouvrirEtImprimer(html, "Facture_" + facture.numero + ".html");
 };
 
 // Bon de livraison : document de preuve de livraison, distinct de la facture.
@@ -1234,15 +1241,7 @@ const generateBonLivraison = (commande, client) => {
 </body>
 </html>`;
 
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = numeroBL + ".html";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  ouvrirEtImprimer(html, numeroBL + ".html");
 };
 
 
