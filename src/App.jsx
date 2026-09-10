@@ -725,12 +725,17 @@ const getClientPrix = (produit, client) => {
 // (autoliquidation B2B, art. 138 directive TVA UE) — cohérent avec generatePDF.
 const EXPORT_REGIONS = ["Belgique", "France", "Hollande"];
 const TVA_PREFIX = { "Belgique": "BE", "France": "FR", "Hollande": "NL" };
+// Un client est exonéré de TVA (0%) soit parce que sa région est hors Luxembourg,
+// soit parce que la case manuelle "Appliquer TVA 0%" a été cochée sur sa fiche
+// (utile quand la région est absente/incertaine mais qu'on sait que l'exonération s'applique).
+const clientEstExonere = (client) => !!client?.tva_exoneree || EXPORT_REGIONS.includes(client?.region || "");
 // Vérifie qu'un client hors Luxembourg a un numéro de TVA intracommunautaire
 // plausible (préfixe pays correct + longueur minimale). L'exonération à 0%
 // appliquée automatiquement à ces clients n'est légale que si ce numéro est
 // valide et figure sur la facture — sans lui, la TVA luxembourgeoise est due.
 const tvaIntracomValide = (client) => {
   const region = client?.region || "";
+  if (client?.tva_exoneree) return true; // exonération confirmée manuellement, pas besoin du n° de TVA
   if (!EXPORT_REGIONS.includes(region)) return true; // n/a pour clients LU
   if (client?.nature_client === "Particulier") return true; // n/a pour les particuliers (règles B2C)
   const tva = (client?.tva || "").replace(/[\s.\-]/g, "").toUpperCase();
@@ -861,7 +866,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
   // Pour les factures créées avant ce correctif (champ absent), on retombe sur
   // l'ancien calcul dynamique basé sur la région actuelle du client, pour ne
   // pas changer rétroactivement un document déjà émis.
-  const tvaPct = facture.tva_pct != null ? facture.tva_pct : (EXPORT_REGIONS.includes(client?.region || "") ? 0 : 3);
+  const tvaPct = facture.tva_pct != null ? facture.tva_pct : (clientEstExonere(client) ? 0 : 3);
   const tvaVal = sousTotal * tvaPct / 100;
   const total = sousTotal + tvaVal + totalConsignes; // vidanges incluses
 
@@ -2047,7 +2052,7 @@ function BossokApp({ session, onLogout }) {
         client_nom: client.nom||"", client_adresse: client.adresse||"",
         client_tva: client.tva||"",
         date: today, echeance: ech.toISOString().split("T")[0],
-        lignes, statut: "Impayée", tva_pct: EXPORT_REGIONS.includes(client.region) ? 0 : 3,
+        lignes, statut: "Impayée", tva_pct: clientEstExonere(client) ? 0 : 3,
         notes: uneSeule ? `Commande #${cmdsAFacturer[0].id}` : "Facture groupée — " + cmdsAFacturer.map(c=>`Commande #${c.id}`).join(", "),
         retours: []
       });
@@ -2498,7 +2503,7 @@ function BossokApp({ session, onLogout }) {
           client_tva: client?.tva||"",
           date: factDate, echeance: echDate,
           lignes: factLignes, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: [],
-          tva_pct: EXPORT_REGIONS.includes(client?.region) ? 0 : 3,
+          tva_pct: clientEstExonere(client) ? 0 : 3,
         });
         if (contientCredit) await marquerConsignesUtilisees(factClientId);
         await loadAll();
@@ -2762,7 +2767,7 @@ function BossokApp({ session, onLogout }) {
             client_tva: client?.tva||"",
             date: today, echeance: ech.toISOString().split("T")[0],
             lignes, statut: "Impayée", notes: `Commande #${newCmd.id}`, retours: [],
-            tva_pct: EXPORT_REGIONS.includes(client?.region) ? 0 : 3,
+            tva_pct: clientEstExonere(client) ? 0 : 3,
           });
         }
       }
@@ -5503,7 +5508,8 @@ function BossokApp({ session, onLogout }) {
             ...(selClient.nature_client!=="Particulier" ? [["Contact",selClient.contact||"—"],["N° TVA",selClient.tva||"—"],["N° RCS",selClient.rcs||"—"]] : []),
             ["Type",selClient.type||"—"],["Région",selClient.region],["Conditions",selClient.conditions],["Statut",selClient.statut],
             ["Fidélité",selClient.categorie_fidelite||"Aucune"],
-            ["Mode de facturation",selClient.mode_facturation==="groupee"?"Groupée":"À chaque commande"]].map(([l,v])=>(
+            ["Mode de facturation",selClient.mode_facturation==="groupee"?"Groupée":"À chaque commande"],
+            ["TVA 0% manuelle",selClient.tva_exoneree?"Oui":"Non"]].map(([l,v])=>(
             <div key={l} style={{display:"flex",gap:12,fontSize:13}}>
               <span style={{color:"#9CA3AF",width:100,flexShrink:0}}>{l}</span>
               <span style={{fontWeight:500}}>{v}</span>
@@ -6028,6 +6034,16 @@ function BossokApp({ session, onLogout }) {
             </div>
           )}
         </div>
+
+        <label style={{display:"flex",alignItems:"flex-start",gap:8,padding:"10px 12px",background:clientForm.tva_exoneree?"#EFF6FF":"#F8FAFC",border:"1px solid "+(clientForm.tva_exoneree?"#BFDBFE":"#E3E7ED"),borderRadius:8,cursor:"pointer"}}>
+          <input type="checkbox" checked={!!clientForm.tva_exoneree} onChange={e=>setClientForm(p=>({...p,tva_exoneree:e.target.checked}))} style={{marginTop:2}}/>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:"#1D4ED8"}}>Appliquer TVA 0% (exonération manuelle)</div>
+            <div style={{fontSize:11,color:"#6B7280",marginTop:2}}>
+              À cocher toi-même quand la région du client est absente ou incertaine, mais que tu sais que ce client doit être exonéré. Prend le dessus sur la détection automatique par région.
+            </div>
+          </div>
+        </label>
       </div>
       <div style={{display:"flex",gap:8,marginTop:16}}>
         <button onClick={()=>setShowClientForm(false)} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
