@@ -748,10 +748,11 @@ const TYPE_COLORS = {
   Distributor:{bg:"#FFF8E1",text:"#FF6F00"},Privé:{bg:"#EDE9FE",text:"#5B21B6"},
 };
 const tc = (t) => TYPE_COLORS[t]||{bg:"#F3F4F6",text:"#374151"};
-const totalFact = (lignes=[]) => {
+const totalFact = (lignes=[], tvaPct=0) => {
   const prod = lignes.reduce((s,l)=>s+l.qte*l.pu,0);
   const cons = lignes.reduce((s,l)=>s+l.qte*(l.consigne||0),0);
-  return {prod, cons, total: prod+cons};
+  const tva = prod * (tvaPct||0) / 100;
+  return {prod, cons, tva, total: prod+cons+tva};
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -856,8 +857,11 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
   const sousTotal = lignes.reduce((s, l) => s + l.qte * l.pu, 0);
   const totalConsignes = lignes.reduce((s, l) => s + l.qte * (l.consigne || 0), 0);
 
-  const paysExport = EXPORT_REGIONS.includes(client?.region || "");
-  const tvaPct = paysExport ? 0 : 3;
+  // Le taux de TVA est figé au moment de la création de la facture (tva_pct).
+  // Pour les factures créées avant ce correctif (champ absent), on retombe sur
+  // l'ancien calcul dynamique basé sur la région actuelle du client, pour ne
+  // pas changer rétroactivement un document déjà émis.
+  const tvaPct = facture.tva_pct != null ? facture.tva_pct : (EXPORT_REGIONS.includes(client?.region || "") ? 0 : 3);
   const tvaVal = sousTotal * tvaPct / 100;
   const total = sousTotal + tvaVal + totalConsignes; // vidanges incluses
 
@@ -2043,7 +2047,7 @@ function BossokApp({ session, onLogout }) {
         client_nom: client.nom||"", client_adresse: client.adresse||"",
         client_tva: client.tva||"",
         date: today, echeance: ech.toISOString().split("T")[0],
-        lignes, statut: "Impayée",
+        lignes, statut: "Impayée", tva_pct: EXPORT_REGIONS.includes(client.region) ? 0 : 3,
         notes: uneSeule ? `Commande #${cmdsAFacturer[0].id}` : "Facture groupée — " + cmdsAFacturer.map(c=>`Commande #${c.id}`).join(", "),
         retours: []
       });
@@ -2493,7 +2497,8 @@ function BossokApp({ session, onLogout }) {
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
           date: factDate, echeance: echDate,
-          lignes: factLignes, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: []
+          lignes: factLignes, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: [],
+          tva_pct: EXPORT_REGIONS.includes(client?.region) ? 0 : 3,
         });
         if (contientCredit) await marquerConsignesUtilisees(factClientId);
         await loadAll();
@@ -2592,6 +2597,7 @@ function BossokApp({ session, onLogout }) {
           date: new Date().toISOString().split("T")[0],
           echeance: new Date().toISOString().split("T")[0],
           lignes: avoirLignes,
+          tva_pct: facture.tva_pct || 0,
           statut: "Avoir",
           notes: "Avoir pour annulation facture " + facture.numero,
           retours: []
@@ -2755,7 +2761,8 @@ function BossokApp({ session, onLogout }) {
             client_nom: client?.nom||"", client_adresse: client?.adresse||"",
             client_tva: client?.tva||"",
             date: today, echeance: ech.toISOString().split("T")[0],
-            lignes, statut: "Impayée", notes: `Commande #${newCmd.id}`, retours: []
+            lignes, statut: "Impayée", notes: `Commande #${newCmd.id}`, retours: [],
+            tva_pct: EXPORT_REGIONS.includes(client?.region) ? 0 : 3,
           });
         }
       }
@@ -3090,10 +3097,10 @@ function BossokApp({ session, onLogout }) {
   const totalParMode = {"Espèces":0, "Carte":0, "Virement":0};
   facturesPeriode.forEach(f => {
     if (f.mode_paiement && totalParMode[f.mode_paiement] !== undefined) {
-      totalParMode[f.mode_paiement] += totalFact(f.lignes).total;
+      totalParMode[f.mode_paiement] += totalFact(f.lignes, f.tva_pct).total;
     }
   });
-  const totalGeneral = facturesPeriode.reduce((s,f)=>s+totalFact(f.lignes).total,0);
+  const totalGeneral = facturesPeriode.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
 
   return(
   <div>
@@ -3161,7 +3168,7 @@ function BossokApp({ session, onLogout }) {
                     <td style={{padding:"6px 10px"}}>{f.date_paiement||f.date}</td>
                     <td style={{padding:"6px 10px",fontWeight:600}}>{f.numero}</td>
                     <td style={{padding:"6px 10px"}}>{f.client_nom}</td>
-                    <td style={{padding:"6px 10px",fontWeight:700}}>{fmtFull(totalFact(f.lignes).total)}</td>
+                    <td style={{padding:"6px 10px",fontWeight:700}}>{fmtFull(totalFact(f.lignes, f.tva_pct).total)}</td>
                     <td style={{padding:"6px 10px"}}><span style={S.badge(modeStyle.bg,modeStyle.text)}>{f.mode_paiement||"Non renseigné"}</span></td>
                     <td style={{padding:"6px 10px"}}>
                       <button title="Modifier le mode" onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:f.mode_paiement||"",date:f.date_paiement||f.date});setShowPaiementForm(true);}}
@@ -3567,9 +3574,9 @@ function BossokApp({ session, onLogout }) {
   const payeeHistorique = historiquePeriode.reduce((s,m)=>s+m.paye,0);
   const impayeHistorique = historiquePeriode.reduce((s,m)=>s+m.impaye,0);
 
-  const ca = factActives.reduce((s,f)=>s+totalFact(f.lignes).total,0) + caHistorique;
-  const caPayee = dashFacts.filter(f=>f.statut==="Payée").reduce((s,f)=>s+totalFact(f.lignes).total,0) + payeeHistorique;
-  const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0) + impayeHistorique;
+  const ca = factActives.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0) + caHistorique;
+  const caPayee = dashFacts.filter(f=>f.statut==="Payée").reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0) + payeeHistorique;
+  const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0) + impayeHistorique;
   let marge = 0, margeLignesReelles = 0, margeLignesTotal = 0;
   factActives.forEach(f => {
     const r = calcMargeFacture(f, produits, receptionsStock);
@@ -3593,7 +3600,7 @@ function BossokApp({ session, onLogout }) {
     const jour = f.date;
     if (!jour) return;
     if (!rentabiliteParJourMap[jour]) rentabiliteParJourMap[jour] = {jour, nbFactures:0, ca:0, cogs:0};
-    const {total} = totalFact(f.lignes);
+    const {total} = totalFact(f.lignes, f.tva_pct);
     rentabiliteParJourMap[jour].ca += total;
     rentabiliteParJourMap[jour].nbFactures += 1;
     (f.lignes||[]).forEach(l=>{
@@ -3631,7 +3638,7 @@ function BossokApp({ session, onLogout }) {
     const cl=clients.find(c=>c.id===f.client_id);
     const z=cl?.region||"Inconnu";
     if(!zoneStats[z]) zoneStats[z]={zone:z,ca:0,marge:0,nb:0};
-    const t=totalFact(f.lignes).total;
+    const t=totalFact(f.lignes, f.tva_pct).total;
     zoneStats[z].ca+=t; zoneStats[z].marge+=calcMargeFacture(f,produits,receptionsStock).marge; zoneStats[z].nb++;
   });
   const topZones = Object.values(zoneStats).sort((a,b)=>b.ca-a.ca).slice(0,6);
@@ -3642,7 +3649,7 @@ function BossokApp({ session, onLogout }) {
     const cl=clients.find(c=>c.id===f.client_id);
     const cid=f.client_id;
     if(!clientStats[cid]) clientStats[cid]={id:cid,nom:f.client_nom,type:cl?.type||"",region:cl?.region||"",ca:0,marge:0,nb:0};
-    const t=totalFact(f.lignes).total;
+    const t=totalFact(f.lignes, f.tva_pct).total;
     clientStats[cid].ca+=t; clientStats[cid].marge+=calcMargeFacture(f,produits,receptionsStock).marge; clientStats[cid].nb++;
   });
   const topClients = Object.values(clientStats).sort((a,b)=>b.ca-a.ca).slice(0,8);
@@ -3653,7 +3660,7 @@ function BossokApp({ session, onLogout }) {
     const cl=clients.find(c=>c.id===f.client_id);
     const t=cl?.type||"Autre";
     if(!typeStats[t]) typeStats[t]={type:t,ca:0,marge:0,nb:0};
-    const total=totalFact(f.lignes).total;
+    const total=totalFact(f.lignes, f.tva_pct).total;
     typeStats[t].ca+=total; typeStats[t].marge+=calcMargeFacture(f,produits,receptionsStock).marge; typeStats[t].nb++;
   });
   const topTypes = Object.values(typeStats).sort((a,b)=>b.ca-a.ca);
@@ -3663,8 +3670,8 @@ function BossokApp({ session, onLogout }) {
   factActives.forEach(f=>{
     const m=f.date?.slice(0,7)||"";
     if(!monthlyMap[m]) monthlyMap[m]={label:m,paye:0,impaye:0,historique:false};
-    if(f.statut==="Payée") monthlyMap[m].paye+=totalFact(f.lignes).total;
-    else monthlyMap[m].impaye+=totalFact(f.lignes).total;
+    if(f.statut==="Payée") monthlyMap[m].paye+=totalFact(f.lignes, f.tva_pct).total;
+    else monthlyMap[m].impaye+=totalFact(f.lignes, f.tva_pct).total;
   });
   historiquePeriode.forEach(m=>{
     monthlyMap[m.key] = {label:m.key, paye:m.paye, impaye:m.impaye, historique:true};
@@ -3676,7 +3683,7 @@ function BossokApp({ session, onLogout }) {
   dashFacts.filter(f=>f.statut==="Impayée").forEach(f=>{
     const m=f.date.slice(0,7);
     if(!impayeMap[m]) impayeMap[m]={label:m,v:0};
-    impayeMap[m].v+=totalFact(f.lignes).total;
+    impayeMap[m].v+=totalFact(f.lignes, f.tva_pct).total;
   });
   const impayeChart = Object.values(impayeMap).sort((a,b)=>a.label.localeCompare(b.label)).slice(-8);
 
@@ -3685,7 +3692,7 @@ function BossokApp({ session, onLogout }) {
     const rows = [["N°","Date","Client","Type","Zone","Statut","Montant HT","Consignes","Total TTC","Marge"]];
     factActives.forEach(f=>{
       const cl=clients.find(c=>c.id===f.client_id);
-      const {prod,cons,total}=totalFact(f.lignes);
+      const {prod,cons,total}=totalFact(f.lignes, f.tva_pct);
       const margeF=calcMargeFacture(f,produits,receptionsStock).marge;
       rows.push([f.numero,f.date,f.client_nom,cl?.type||"",cl?.region||"",f.statut,
         prod.toFixed(2),cons.toFixed(2),total.toFixed(2),margeF.toFixed(2)]);
@@ -3738,7 +3745,7 @@ function BossokApp({ session, onLogout }) {
       const todayStr = localDateStr();
       const facturesEnRetard = factures.filter(f => f.statut==="Impayée" && f.echeance && f.echeance < todayStr);
       if (facturesEnRetard.length===0) return null;
-      const totalRetard = facturesEnRetard.reduce((s,f)=>s+totalFact(f.lignes).total,0);
+      const totalRetard = facturesEnRetard.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
       return (
         <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:facturesEnRetard.length>0?10:0}}>
@@ -3749,7 +3756,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{display:"grid",gap:6}}>
             {facturesEnRetard.slice(0,6).map(f=>{
               const cl = clients.find(c=>c.id===f.client_id);
-              const {total} = totalFact(f.lignes);
+              const {total} = totalFact(f.lignes, f.tva_pct);
               return (
                 <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#fff",borderRadius:8,padding:"7px 10px",fontSize:12,flexWrap:"wrap",gap:6}}>
                   <span><strong>{f.client_nom}</strong> — {f.numero} · {fmtFull(total)} · échéance {f.echeance}</span>
@@ -4135,7 +4142,7 @@ function BossokApp({ session, onLogout }) {
         <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="factures" size={14} style={{color:"#5D6B82"}}/> Dernières factures</div>
         {dashFacts.length===0?<div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune facture sur la période</div>:
         [...dashFacts].reverse().slice(0,6).map(f=>{
-          const {total}=totalFact(f.lignes);
+          const {total}=totalFact(f.lignes, f.tva_pct);
           return(
             <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #F1F5F9",fontSize:12}}>
               <span style={{color:"#9CA3AF",width:55,flexShrink:0}}>{f.date}</span>
@@ -4288,13 +4295,13 @@ function BossokApp({ session, onLogout }) {
     return matchStatut && matchSearch && matchMois && matchClient && matchFrom && matchTo;
   });
 
-  const totalImpaye = factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes).total,0);
-  const totalFiltre = ff.reduce((s,f)=>s+totalFact(f.lignes).total,0);
+  const totalImpaye = factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
+  const totalFiltre = ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
 
   const exportExcel = () => {
     const rows = [["N°","Date","Client","Montant HT","Consignes","Total TTC","Statut","Notes"]];
     ff.forEach(f=>{
-      const {prod,cons,total}=totalFact(f.lignes);
+      const {prod,cons,total}=totalFact(f.lignes, f.tva_pct);
       rows.push([f.numero,f.date,f.client_nom,prod.toFixed(2),cons.toFixed(2),total.toFixed(2),f.statut,f.notes||""]);
     });
     const csv = rows.map(r=>r.map(v=>`"${v}"`).join(";")).join("\n");
@@ -4398,8 +4405,8 @@ function BossokApp({ session, onLogout }) {
       ) : (
         <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
           <td colSpan={3} style={{padding:"8px 12px"}}>Total ({ff.length} factures)</td>
-          <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes).prod,0))}</td>
-          <td style={{padding:"8px 12px",textAlign:"right",color:"#7C3AED"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes).cons,0))}</td>
+          <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).prod,0))}</td>
+          <td style={{padding:"8px 12px",textAlign:"right",color:"#7C3AED"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).cons,0))}</td>
           <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(totalFiltre)}</td>
           <td colSpan={2}></td>
         </tr>
@@ -4413,13 +4420,13 @@ function BossokApp({ session, onLogout }) {
         )},
         {key:"date", label:"Date", mobileShow:true, sortValue:f=>f.date||""},
         {key:"client", label:"Client", mobileShow:true, sortValue:f=>f.client_nom||"", render:f=>f.client_nom},
-        {key:"montant", label:"Montant HT", align:"right", sortValue:f=>totalFact(f.lignes).total, render:f=>fmtFull(totalFact(f.lignes).prod)},
+        {key:"montant", label:"Montant HT", align:"right", sortValue:f=>totalFact(f.lignes, f.tva_pct).total, render:f=>fmtFull(totalFact(f.lignes, f.tva_pct).prod)},
         {key:"consignes", label:"Consignes", align:"right", sortable:false, render:f=>{
-          const {cons} = totalFact(f.lignes);
+          const {cons} = totalFact(f.lignes, f.tva_pct);
           return cons>0 ? <span style={{color:"#7C3AED"}}>{fmtFull(cons)}</span> : <span style={{color:"#CBD5E1"}}>—</span>;
         }},
-        {key:"total", label:"Total TTC", align:"right", mobileShow:true, sortValue:f=>totalFact(f.lignes).total, render:f=>{
-          const {total} = totalFact(f.lignes);
+        {key:"total", label:"Total TTC", align:"right", mobileShow:true, sortValue:f=>totalFact(f.lignes, f.tva_pct).total, render:f=>{
+          const {total} = totalFact(f.lignes, f.tva_pct);
           const isImp = f.statut==="Impayée";
           const echeanceDepassee = isImp && f.echeance && f.echeance < today;
           return (
@@ -4448,7 +4455,7 @@ function BossokApp({ session, onLogout }) {
                   )}
                   {f.statut==="Impayée"&&(()=>{
                     const cl = clients.find(c=>c.id===f.client_id);
-                    const {total} = totalFact(f.lignes);
+                    const {total} = totalFact(f.lignes, f.tva_pct);
                     return (
                       <>
                         <button onClick={()=>{setOpenFactureMenu(null);relancerWhatsApp(f,cl,total);}}
@@ -4797,7 +4804,7 @@ function BossokApp({ session, onLogout }) {
 
   const getCmdMontant = (cmd) => {
     const fact = findFactureForCommande(cmd.id);
-    return fact ? totalFact(fact.lignes).total : null;
+    return fact ? totalFact(fact.lignes, fact.tva_pct).total : null;
   };
 
   const dayCommandes = isPastWeek
@@ -5555,7 +5562,7 @@ function BossokApp({ session, onLogout }) {
               {clientImpayees(selClient.id).map(f=>(
                 <div key={f.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
                   <span>{f.numero} — {f.date}</span>
-                  <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes).total)}</span>
+                  <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes, f.tva_pct).total)}</span>
                 </div>
               ))}
             </div>
@@ -5564,7 +5571,7 @@ function BossokApp({ session, onLogout }) {
             <div style={{textAlign:"center",color:"#9CA3AF",padding:"30px 0",fontSize:13}}>Aucune facture</div>
           ):(
             clientFactures(selClient.id).map(f=>{
-              const {total}=totalFact(f.lignes);
+              const {total}=totalFact(f.lignes, f.tva_pct);
               return(
                 <div key={f.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:"#F9FAFB",borderRadius:8,fontSize:12,marginBottom:4}}>
                   <span style={{fontWeight:600,color:"#1D4ED8",width:72}}>{f.numero}</span>
@@ -5770,11 +5777,11 @@ function BossokApp({ session, onLogout }) {
           {clientImpayees(factClientId).map(f=>(
             <div key={f.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:2}}>
               <span>{f.numero} — {f.date} (éch. {f.echeance})</span>
-              <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes).total)}</span>
+              <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes, f.tva_pct).total)}</span>
             </div>
           ))}
           <div style={{fontSize:11,color:"#DC2626",fontWeight:600,marginTop:4}}>
-            Total dû : {fmtFull(clientImpayees(factClientId).reduce((s,f)=>s+totalFact(f.lignes).total,0))}
+            Total dû : {fmtFull(clientImpayees(factClientId).reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0))}
           </div>
         </div>
       )}
