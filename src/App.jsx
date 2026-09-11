@@ -663,19 +663,19 @@ const getDriverForDay = (region, dayIdx) => {
 };
 
 // Auto-detect region from Luxembourg postal code
+// Détecte la ZONE DE LIVRAISON luxembourgeoise à partir d'un code postal à 4 chiffres
+// (utile pour préremplir la tournée/le chauffeur). Le PAYS est désormais un champ
+// séparé et explicite, choisi par l'utilisateur — cette fonction ne le devine plus.
 const detectRegionFromAddress = (adresse) => {
   if (!adresse) return "";
-  
-  // Extract postal code - find 4 consecutive digits
+  const cleaned = adresse.replace("L-", "").replace("l-", "");
+  const parts = cleaned.split(/[\s,\-]+/).filter(Boolean);
   let cp = 0;
-  const cleaned = adresse.replace("L-","").replace("l-","");
-  const parts = cleaned.split(" ").concat(cleaned.split(",")).concat(cleaned.split("-"));
   for (const part of parts) {
-    const n = parseInt(part);
-    if (!isNaN(n) && part.length === 4) { cp = n; break; }
+    if (/^\d{4}$/.test(part)) { cp = parseInt(part); break; }
   }
   if (!cp) return "";
-  
+
   // Luxembourg postal code mapping
   if (cp >= 1000 && cp <= 1999) return "Centre-ville";      // Luxembourg-Ville
   if (cp >= 2000 && cp <= 2999) return "Centre-ville";      // Luxembourg-Ville (Kirchberg, Limpertsberg...)
@@ -695,14 +695,7 @@ const detectRegionFromAddress = (adresse) => {
   if (cp >= 9000 && cp <= 9299) return "Nord";              // Diekirch, Ettelbruck
   if (cp >= 9300 && cp <= 9599) return "Nord";              // Vianden, Clervaux région
   if (cp >= 9600 && cp <= 9999) return "Nord";              // Wiltz, Winseler
-  
-  // Belgian postal codes
-  if (cp >= 6700 && cp <= 6999) return "Belgique";
-  if (cp >= 5000 && cp <= 5999 && adresse.toLowerCase().includes('belg')) return "Belgique";
-  
-  // French postal codes (54, 57, 55...)
-  if (cp >= 54000 && cp <= 57999) return "France";
-  
+
   return "";
 };
 
@@ -711,9 +704,15 @@ const STOCK_BAS_SEUIL = 50;
 
 const CHAUFFEUR_REGIONS = {
   A:["Centre-ville","Nord","Nord-ouest","Nord-Est","Nord-est","Est"],
-  B:["Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande"],
+  B:["Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande","Allemagne"],
 };
-const getChauffeur = (r) => CHAUFFEUR_REGIONS.B.includes(r) ? "B" : "A";
+// pays est optionnel (rétrocompatible) : s'il est fourni et différent du Luxembourg,
+// on route directement vers B sans dépendre de la zone/région (qui n'est plus
+// systématiquement remplie pour les clients étrangers depuis l'ajout du champ pays).
+const getChauffeur = (r, pays) => {
+  if (pays && pays !== "Luxembourg") return "B";
+  return CHAUFFEUR_REGIONS.B.includes(r) ? "B" : "A";
+};
 const getClientPrix = (produit, client) => {
   const pi = client?.prix_individuels || {};
   if (pi[produit.id] !== undefined) return pi[produit.id];
@@ -723,23 +722,24 @@ const getClientPrix = (produit, client) => {
 
 // Régions hors Luxembourg traitées en exonération de TVA intracommunautaire
 // (autoliquidation B2B, art. 138 directive TVA UE) — cohérent avec generatePDF.
-const EXPORT_REGIONS = ["Belgique", "France", "Hollande"];
-const TVA_PREFIX = { "Belgique": "BE", "France": "FR", "Hollande": "NL" };
-// Un client est exonéré de TVA (0%) soit parce que sa région est hors Luxembourg,
+const EXPORT_REGIONS = ["Belgique", "France", "Hollande", "Allemagne"];
+const TVA_PREFIX = { "Belgique": "BE", "France": "FR", "Hollande": "NL", "Allemagne": "DE" };
+// Un client est exonéré de TVA (0%) soit parce que son PAYS n'est pas le Luxembourg,
 // soit parce que la case manuelle "Appliquer TVA 0%" a été cochée sur sa fiche
-// (utile quand la région est absente/incertaine mais qu'on sait que l'exonération s'applique).
-const clientEstExonere = (client) => !!client?.tva_exoneree || EXPORT_REGIONS.includes(client?.region || "");
+// (utile en complément, pour tout cas particulier non couvert par le champ pays).
+const clientEstExonere = (client) => !!client?.tva_exoneree || (client?.pays && client.pays !== "Luxembourg");
 // Vérifie qu'un client hors Luxembourg a un numéro de TVA intracommunautaire
 // plausible (préfixe pays correct + longueur minimale). L'exonération à 0%
 // appliquée automatiquement à ces clients n'est légale que si ce numéro est
 // valide et figure sur la facture — sans lui, la TVA luxembourgeoise est due.
 const tvaIntracomValide = (client) => {
-  const region = client?.region || "";
+  const pays = client?.pays || "Luxembourg";
   if (client?.tva_exoneree) return true; // exonération confirmée manuellement, pas besoin du n° de TVA
-  if (!EXPORT_REGIONS.includes(region)) return true; // n/a pour clients LU
+  if (pays === "Luxembourg") return true; // n/a pour clients LU
   if (client?.nature_client === "Particulier") return true; // n/a pour les particuliers (règles B2C)
   const tva = (client?.tva || "").replace(/[\s.\-]/g, "").toUpperCase();
-  const prefix = TVA_PREFIX[region];
+  const prefix = TVA_PREFIX[pays];
+  if (!prefix) return true; // pays "Autre" personnalisé, pas de préfixe connu à vérifier
   return tva.startsWith(prefix) && tva.length >= prefix.length + 6;
 };
 
@@ -1319,7 +1319,7 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
         <div>
           <div style={{fontWeight:600,fontSize:13}}>{cl?.nom}</div>
           <div style={{fontSize:11,color:"#6B7280"}}>{cl?.region} · {cl?.type}</div>
-          <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 Chauffeur {getChauffeur(cl?.region||"")}</span>
+          <span style={S.badge("#DBEAFE","#1D4ED8")}>🚚 Chauffeur {getChauffeur(cl?.region||"", cl?.pays)}</span>
         </div>
         <button onClick={onClear} style={{background:"none",border:"none",color:"#9CA3AF",cursor:"pointer",fontSize:16}}>✕</button>
       </div>
@@ -2166,17 +2166,20 @@ function BossokApp({ session, onLogout }) {
     if (!clientForm.nom) return;
     setSaving(true);
     try {
+      const paysReel = clientForm.pays==="__autre__" ? (clientForm.paysAutre||"").trim() || "Luxembourg" : (clientForm.pays||"Luxembourg");
       let coords = null;
       const adresseChanged = !editClient || (clientForm.adresse||"") !== (editClient.adresse||"");
       if (adresseChanged && clientForm.adresse) {
         coords = await geocodeAddress(clientForm.adresse);
       }
       if (editClient) {
-        const { id, created_at, ...payload } = clientForm;
+        const { id, created_at, paysAutre, ...payload } = clientForm;
+        payload.pays = paysReel;
         if (coords) { payload.lat = coords.lat; payload.lng = coords.lng; }
         await db.update("clients", editClient.id, payload);
       } else {
-        const payload = {...clientForm, prix_individuels: {}};
+        const { paysAutre, ...rest } = clientForm;
+        const payload = {...rest, pays: paysReel, prix_individuels: {}};
         if (coords) { payload.lat = coords.lat; payload.lng = coords.lng; }
         await db.insert("clients", payload);
       }
@@ -4548,7 +4551,7 @@ function BossokApp({ session, onLogout }) {
                       <div style={{fontWeight:500}}>{c.nom}</div>
                       <div style={{fontSize:10,color:"#9CA3AF"}}>{c.region} · {c.type}</div>
                     </div>
-                    <span style={S.badge("#DBEAFE","#1D4ED8")}>Ch. {getChauffeur(c.region)}</span>
+                    <span style={S.badge("#DBEAFE","#1D4ED8")}>Ch. {getChauffeur(c.region, c.pays)}</span>
                   </div>
                 ))}
                 {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchCmdClient.trim().toLowerCase())).length===0&&(
@@ -5506,7 +5509,7 @@ function BossokApp({ session, onLogout }) {
           )}
           {[["Nature",selClient.nature_client||"Professionnel"],["Adresse",selClient.adresse],["Téléphone",selClient.telephone],["Email",selClient.email||"—"],
             ...(selClient.nature_client!=="Particulier" ? [["Contact",selClient.contact||"—"],["N° TVA",selClient.tva||"—"],["N° RCS",selClient.rcs||"—"]] : []),
-            ["Type",selClient.type||"—"],["Région",selClient.region],["Conditions",selClient.conditions],["Statut",selClient.statut],
+            ["Type",selClient.type||"—"],["Pays",selClient.pays||"Luxembourg"],["Zone de livraison",selClient.region||"—"],["Conditions",selClient.conditions],["Statut",selClient.statut],
             ["Fidélité",selClient.categorie_fidelite||"Aucune"],
             ["Mode de facturation",selClient.mode_facturation==="groupee"?"Groupée":"À chaque commande"],
             ["TVA 0% manuelle",selClient.tva_exoneree?"Oui":"Non"]].map(([l,v])=>(
@@ -5992,19 +5995,49 @@ function BossokApp({ session, onLogout }) {
           }} style={S.input}/>
           </div>
         ))}
-        {/* Region with auto-detection */}
+        {/* Pays — détermine la TVA (0% hors Luxembourg). Champ explicite, choisi par l'utilisateur. */}
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Pays</label>
+          {clientForm.pays==="__autre__" ? (
+            <div style={{display:"flex",gap:6}}>
+              <input autoFocus value={clientForm.paysAutre||""} onChange={e=>setClientForm(p=>({...p,paysAutre:e.target.value}))}
+                placeholder="Nom du pays" style={S.input}/>
+              <button type="button" onClick={()=>setClientForm(p=>({...p,pays:"Luxembourg",paysAutre:""}))}
+                style={{...S.btn("#F1F5F9","#374151"),padding:"0 12px",fontSize:12}}>Annuler</button>
+            </div>
+          ) : (
+            <select value={clientForm.pays||"Luxembourg"} onChange={e=>{
+              const val = e.target.value;
+              if (val==="__autre__") setClientForm(p=>({...p,pays:"__autre__",paysAutre:""}));
+              else setClientForm(p=>({...p,pays:val}));
+            }} style={S.input}>
+              <option value="Luxembourg">Luxembourg</option>
+              <option value="France">France</option>
+              <option value="Belgique">Belgique</option>
+              <option value="Allemagne">Allemagne</option>
+              <option value="Hollande">Hollande</option>
+              <option value="__autre__">Autre pays...</option>
+            </select>
+          )}
+          {clientForm.pays && clientForm.pays!=="Luxembourg" && (
+            <div style={{fontSize:10,color:"#7C3AED",marginTop:3}}>
+              ♻️ TVA 0% appliquée automatiquement sur les factures de ce client (hors Luxembourg).
+            </div>
+          )}
+        </div>
+        {/* Zone de livraison (Luxembourg uniquement) avec auto-détection */}
         <div style={{marginBottom:0}}>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Région</label>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Zone de livraison</label>
           <select value={clientForm.region||""} onChange={e=>setClientForm(p=>({...p,region:e.target.value}))}
             style={{...S.input,borderColor:clientForm.region?"#059669":"#E5E7EB"}}>
             <option value="">-- Sélectionner --</option>
-            {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest","Belgique","France","Hollande"].map(r=>(
+            {["Centre-ville","Nord","Nord-ouest","Nord-Est","Est","Sud","Sud-ouest","Sud-Est","Ouest"].map(r=>(
               <option key={r} value={r}>{r} {ZONE_SCHEDULE[r] ? " · " + ZONE_SCHEDULE[r].driver + " (" + (ZONE_SCHEDULE[r].days||[]).join(", ") + ")" : ""}</option>
             ))}
           </select>
           {clientForm.adresse && detectRegionFromAddress(clientForm.adresse) && (
             <div style={{fontSize:10,color:"#059669",marginTop:3}}>
-              ✅ Région auto-détectée depuis l'adresse : <strong>{detectRegionFromAddress(clientForm.adresse)}</strong>
+              ✅ Zone auto-détectée depuis l'adresse : <strong>{detectRegionFromAddress(clientForm.adresse)}</strong>
               {!clientForm.region && <button onClick={()=>setClientForm(p=>({...p,region:detectRegionFromAddress(p.adresse)}))}
                 style={{...S.btn("#059669"),padding:"1px 6px",fontSize:9,marginLeft:6}}>Appliquer</button>}
             </div>
