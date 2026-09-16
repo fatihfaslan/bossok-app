@@ -646,7 +646,7 @@ const getSuggestedDay = (region) => {
       const daysUntil = (d - todayIdx + 7) % 7 || 7;
       const delivDate = new Date();
       delivDate.setDate(delivDate.getDate() + daysUntil);
-      return { day: days[d], date: delivDate.toISOString().split("T")[0], dayIdx: d };
+      return { day: days[d], date: localDateStr(delivDate), dayIdx: d };
     }
   }
   return { day: 'Lundi', date: '', dayIdx: 0 };
@@ -1076,6 +1076,7 @@ ${noteClientHTML}
   <div style="display:flex;justify-content:flex-end;margin-top:6px">
     <div id="qrcode" style="display:inline-block"></div>
   </div>
+  <p style="margin-top:14px;padding-top:10px;border-top:1px solid #EAEAEA;font-size:6.5pt;color:#999;font-style:italic;text-align:justify;">La présente facture vaut contrat. Par sa signature, le client reconnaît la dette et accepte les présentes conditions ainsi que les General Terms &amp; Conditions de Bossok Distribution S.à r.l. Toute contestation doit être formulée par écrit dans un délai de 8 jours à compter de la date de la facture. Le droit luxembourgeois est applicable et les tribunaux de Luxembourg sont exclusivement compétents.</p>
 </div>
 
 <script>
@@ -3077,14 +3078,14 @@ function BossokApp({ session, onLogout }) {
     const dow = (refD.getDay()+6)%7;
     const weekStart = new Date(refD); weekStart.setDate(refD.getDate()-dow);
     const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
-    periodStart = weekStart.toISOString().split("T")[0];
-    periodEnd = weekEnd.toISOString().split("T")[0];
+    periodStart = localDateStr(weekStart);
+    periodEnd = localDateStr(weekEnd);
     periodLabel = `${weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})} → ${weekEnd.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit',year:'numeric'})}`;
   } else {
     const monthStart = new Date(refD.getFullYear(), refD.getMonth(), 1);
     const monthEnd = new Date(refD.getFullYear(), refD.getMonth()+1, 0);
-    periodStart = monthStart.toISOString().split("T")[0];
-    periodEnd = monthEnd.toISOString().split("T")[0];
+    periodStart = localDateStr(monthStart);
+    periodEnd = localDateStr(monthEnd);
     periodLabel = `${monthNames[refD.getMonth()]} ${refD.getFullYear()}`;
   }
 
@@ -3092,7 +3093,7 @@ function BossokApp({ session, onLogout }) {
     const d = new Date(caisseRef+"T00:00:00");
     if (caissePeriode === "semaine") d.setDate(d.getDate() + delta*7);
     else d.setMonth(d.getMonth() + delta);
-    setCaisseRef(d.toISOString().split("T")[0]);
+    setCaisseRef(localDateStr(d));
   };
 
   const facturesPeriode = factures.filter(f => {
@@ -3294,7 +3295,7 @@ function BossokApp({ session, onLogout }) {
   const changeWeek = (deltaWeeks) => {
     const d = new Date(calWeekRef+"T00:00:00");
     d.setDate(d.getDate() + deltaWeeks*7);
-    setCalWeekRef(d.toISOString().split("T")[0]);
+    setCalWeekRef(localDateStr(d));
   };
 
   const openDayEventDate = (dateStr) => {
@@ -3314,7 +3315,7 @@ function BossokApp({ session, onLogout }) {
               {calViewMode==="mois" ? `${monthNames[month]} ${year}` :
                 `${weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})} → ${weekEnd.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit',year:'numeric'})}`}
             </div>
-            <button onClick={()=>{const d=new Date();setCalMonth({year:d.getFullYear(),month:d.getMonth()});setCalWeekRef(d.toISOString().split("T")[0]);}}
+            <button onClick={()=>{const d=new Date();setCalMonth({year:d.getFullYear(),month:d.getMonth()});setCalWeekRef(localDateStr(d));}}
               style={{...S.btn("#EFF6FF","#1D4ED8"),padding:"4px 10px",fontSize:11}}>Aujourd'hui</button>
           </div>
           <button onClick={()=>calViewMode==="mois"?changeMonth(1):changeWeek(1)} style={{...S.btn("#F1F5F9","#374151"),padding:"6px 14px",fontSize:13}}>›</button>
@@ -3373,7 +3374,7 @@ function BossokApp({ session, onLogout }) {
             <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",borderBottom:"1px solid #E5E7EB"}}>
               <div/>
               {weekDays.map((d,idx)=>{
-                const dateStr = d.toISOString().split("T")[0];
+                const dateStr = localDateStr(d);
                 const isToday = dateStr===todayStr;
                 return(
                   <div key={idx} style={{textAlign:"center",padding:"8px 4px",borderLeft:"1px solid #F1F5F9"}}>
@@ -3387,7 +3388,7 @@ function BossokApp({ session, onLogout }) {
             <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",borderBottom:"2px solid #E5E7EB",minHeight:26}}>
               <div style={{fontSize:8,color:"#D1D5DB",textAlign:"right",paddingRight:5,paddingTop:5}}>Jour</div>
               {weekDays.map((d,idx)=>{
-                const dateStr = d.toISOString().split("T")[0];
+                const dateStr = localDateStr(d);
                 const allDayEvts = getEventsForDate(dateStr).filter(e=>e.toute_journee);
                 return(
                   <div key={idx} onClick={()=>openDayEventDate(dateStr)} style={{borderLeft:"1px solid #F1F5F9",padding:2,cursor:"pointer"}}>
@@ -3407,7 +3408,7 @@ function BossokApp({ session, onLogout }) {
                 ))}
               </div>
               {weekDays.map((d,idx)=>{
-                const dateStr = d.toISOString().split("T")[0];
+                const dateStr = localDateStr(d);
                 const timedEvts = getEventsForDate(dateStr).filter(e=>!e.toute_journee&&e.heure_debut);
                 const isToday = dateStr===todayStr;
                 return(
@@ -4805,7 +4806,7 @@ function BossokApp({ session, onLogout }) {
   const getDayDate = (dayIdx) => {
     const d = new Date(weekStart);
     d.setDate(weekStart.getDate() + dayIdx);
-    return d.toISOString().split('T')[0];
+    return localDateStr(d);
   };
 
   const selectedDate = getDayDate(selectedDay);
