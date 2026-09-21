@@ -754,8 +754,11 @@ const TYPE_COLORS = {
 };
 const tc = (t) => TYPE_COLORS[t]||{bg:"#F3F4F6",text:"#374151"};
 const totalFact = (lignes=[], tvaPct=0) => {
-  const prod = lignes.reduce((s,l)=>s+l.qte*l.pu,0);
-  const cons = lignes.reduce((s,l)=>s+l.qte*(l.consigne||0),0);
+  // Les lignes de consigne manuelle (ajout ou retour de vidange, produitId
+  // "CONSIGNE_MANUELLE") ne sont jamais soumises à la TVA — au même titre que
+  // les consignes normales, elles sortent entièrement de l'assiette TVA.
+  const prod = lignes.reduce((s,l)=> l.produitId==="CONSIGNE_MANUELLE" ? s : s+l.qte*l.pu, 0);
+  const cons = lignes.reduce((s,l)=> s + (l.produitId==="CONSIGNE_MANUELLE" ? l.qte*l.pu : l.qte*(l.consigne||0)), 0);
   const tva = prod * (tvaPct||0) / 100;
   return {prod, cons, tva, total: prod+cons+tva};
 };
@@ -859,8 +862,10 @@ const ouvrirEtImprimer = (html, nomFichierSecours) => {
 
 const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetail = []) => {
   const lignes = facture.lignes || [];
-  const sousTotal = lignes.reduce((s, l) => s + l.qte * l.pu, 0);
-  const totalConsignes = lignes.reduce((s, l) => s + l.qte * (l.consigne || 0), 0);
+  // Les lignes de consigne manuelle (ajout/retour de vidange) sortent de l'assiette
+  // TVA au même titre que les consignes normales — voir totalFact() plus haut.
+  const sousTotal = lignes.reduce((s, l) => l.produitId==="CONSIGNE_MANUELLE" ? s : s + l.qte * l.pu, 0);
+  const totalConsignes = lignes.reduce((s, l) => s + (l.produitId==="CONSIGNE_MANUELLE" ? l.qte * l.pu : l.qte * (l.consigne || 0)), 0);
 
   // Le taux de TVA est figé au moment de la création de la facture (tva_pct).
   // Pour les factures créées avant ce correctif (champ absent), on retombe sur
