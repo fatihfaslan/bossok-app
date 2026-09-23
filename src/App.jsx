@@ -2518,12 +2518,20 @@ function BossokApp({ session, onLogout }) {
 
   const saveFact = async () => {
     if (!factClientId) { notifyError("Choisis un client avant d'enregistrer la facture."); return; }
-    if (factLignes.length===0) { notifyError("Ajoute au moins un produit à la facture avant d'enregistrer."); return; }
+    // Si un montant de transport a été saisi mais pas encore validé avec son
+    // bouton "+ Ajouter", on l'ajoute automatiquement ici — pour ne pas obliger
+    // à cliquer deux fois, et pour permettre une facture avec transport seul.
+    const transportEnAttente = parseFloat(factTransportMontant)||0;
+    let lignesFinales = factLignes;
+    if (transportEnAttente > 0 && !factLignes.some(l=>l.produitId==="TRANSPORT_MANUEL")) {
+      lignesFinales = [...factLignes, {produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportEnAttente, consigne:0}];
+    }
+    if (lignesFinales.length===0) { notifyError("Ajoute au moins une ligne à la facture avant d'enregistrer (produit, transport ou consigne)."); return; }
     const client = clients.find(c=>c.id===factClientId);
     const num = factNumero || "F-" + Date.now().toString().slice(-6);
     const echDate = factEcheance || (() => { const e = new Date(factDate); e.setDate(e.getDate()+7); return e.toISOString().split("T")[0]; })();
     const ech = new Date(factDate); ech.setDate(ech.getDate()+7);
-    const contientCredit = factLignes.some(l => l.produitId === "CREDIT_CONSIGNES");
+    const contientCredit = lignesFinales.some(l => l.produitId === "CREDIT_CONSIGNES");
     setSaving(true);
     try {
       if (editingFacture) {
@@ -2533,7 +2541,7 @@ function BossokApp({ session, onLogout }) {
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
           date: factDate, echeance: echDate,
-          lignes: factLignes, notes: factNotes, note_client: factNoteClient,
+          lignes: lignesFinales, notes: factNotes, note_client: factNoteClient,
         });
         if (contientCredit) await marquerConsignesUtilisees(factClientId);
         await loadAll();
@@ -2545,14 +2553,14 @@ function BossokApp({ session, onLogout }) {
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
           date: factDate, echeance: echDate,
-          lignes: factLignes, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: [],
+          lignes: lignesFinales, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: [],
           tva_pct: clientEstExonere(client) ? 0 : 3,
         });
         if (contientCredit) await marquerConsignesUtilisees(factClientId);
         await loadAll();
         const newFact = {numero:num, client_id:factClientId,
           client_nom:client?.nom||"", client_adresse:client?.adresse||"",
-          client_tva:client?.tva||"", date:factDate, lignes:factLignes, statut:"Impayée", note_client:factNoteClient};
+          client_tva:client?.tva||"", date:factDate, lignes:lignesFinales, statut:"Impayée", note_client:factNoteClient};
         setLastFacture({facture:newFact, client});
       }
       setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactTransportMontant(""); setFactClientId(null);
