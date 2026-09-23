@@ -3638,6 +3638,19 @@ function BossokApp({ session, onLogout }) {
   const sefaCmds = dashCmds.filter(c=>c.chauffeur==="A"&&c.statut==="Livré").length;
   const mikailCmds = dashCmds.filter(c=>c.chauffeur==="B"&&c.statut==="Livré").length;
 
+  // Packs offerts (gratuits) — lignes de facture marquées `offert` sur la période filtrée
+  const offertsMap = {};
+  let totalOfferts = 0;
+  factActives.forEach(f=>{
+    (f.lignes||[]).forEach(l=>{
+      if (!l.offert) return;
+      const nom = (l.nom||"").replace(/\s*\(offert\)$/,"");
+      offertsMap[nom] = (offertsMap[nom]||0) + l.qte;
+      totalOfferts += l.qte;
+    });
+  });
+  const offertsListe = Object.entries(offertsMap).map(([nom,qte])=>({nom,qte})).sort((a,b)=>b.qte-a.qte);
+
   // Rentabilité jour par jour — COGS basé sur le prix d'achat fixe du produit (pas le coût moyen pondéré)
   const rentabiliteParJourMap = {};
   factActives.forEach(f=>{
@@ -3944,6 +3957,27 @@ function BossokApp({ session, onLogout }) {
           <strong>{margeCouverture}%</strong> de la marge est calculée avec les vrais prix d'achat. Le reste utilise une estimation à 28%.
           Renseigne le <strong>prix d'achat</strong> de tes produits dans l'onglet <strong>Produits</strong> pour affiner ce chiffre.
         </div>
+      </div>
+    )}
+
+    {totalOfferts>0&&(
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:offertsListe.length?10:0}}>
+          <div style={{width:36,height:36,borderRadius:9,background:"#FFFBEB",color:"#B45309",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:17}}>🎁</div>
+          <div>
+            <div style={{fontSize:20,fontWeight:800,color:"#0F172A",letterSpacing:"-0.3px",lineHeight:1.1}}>{totalOfferts} <span style={{fontSize:13,fontWeight:600,color:"#6B7280"}}>caisses offertes</span></div>
+            <div style={{fontSize:11,color:"#94A3B8",fontWeight:600,marginTop:2}}>sur la période{dashClient?" · client sélectionné":""}</div>
+          </div>
+        </div>
+        {offertsListe.length>0&&(
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {offertsListe.map((o,i)=>(
+              <span key={i} style={{fontSize:12,background:"#FFFBEB",color:"#92400E",border:"1px solid #FDE68A",padding:"4px 10px",borderRadius:6,fontWeight:600}}>
+                {o.nom} · ×{o.qte}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     )}
 
