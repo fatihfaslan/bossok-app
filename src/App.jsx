@@ -312,6 +312,10 @@ const db = {
 
 const CONSIGNE_PRIX = {"20cl":5.00,"25cl":5.00,"50cl":7.95,"1L":4.20};
 
+// Le transport est un service, toujours soumis au taux de TVA standard (17%)
+// — indépendamment du taux appliqué aux produits (0% ou 3%, selon le client).
+const TVA_TRANSPORT_PCT = 17;
+
 // Alias pour produits renommés dans le catalogue (protège les commandes en attente
 // qui référencent encore un ancien nom, ex: fautes de frappe corrigées)
 const PRODUIT_ALIASES = {
@@ -757,10 +761,13 @@ const totalFact = (lignes=[], tvaPct=0) => {
   // Les lignes de consigne manuelle (ajout ou retour de vidange, produitId
   // "CONSIGNE_MANUELLE") ne sont jamais soumises à la TVA — au même titre que
   // les consignes normales, elles sortent entièrement de l'assiette TVA.
-  const prod = lignes.reduce((s,l)=> l.produitId==="CONSIGNE_MANUELLE" ? s : s+l.qte*l.pu, 0);
+  // Le transport (produitId "TRANSPORT_MANUEL") est un service à part : toujours
+  // soumis à la TVA standard (TVA_TRANSPORT_PCT), quel que soit le taux du client.
+  const prod = lignes.reduce((s,l)=> (l.produitId==="CONSIGNE_MANUELLE"||l.produitId==="TRANSPORT_MANUEL") ? s : s+l.qte*l.pu, 0);
   const cons = lignes.reduce((s,l)=> s + (l.produitId==="CONSIGNE_MANUELLE" ? l.qte*l.pu : l.qte*(l.consigne||0)), 0);
-  const tva = prod * (tvaPct||0) / 100;
-  return {prod, cons, tva, total: prod+cons+tva};
+  const transport = lignes.reduce((s,l)=> s + (l.produitId==="TRANSPORT_MANUEL" ? l.qte*l.pu : 0), 0);
+  const tva = prod * (tvaPct||0) / 100 + transport * TVA_TRANSPORT_PCT / 100;
+  return {prod, cons, transport, tva, total: prod+cons+transport+tva};
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -808,6 +815,9 @@ const getCoutMoyenPondere = (produitId, receptionsStock) => {
 const COUT_RATIO_FALLBACK = 0.72;
 const calcMargeLigne = (ligne, produits, receptionsStock) => {
   if (ligne.isCredit || ligne.produitId === "CREDIT_CONSIGNES") return { marge: 0, reel: true };
+  // Transport : service facturé sans coût d'achat suivi dans le système — marge pleine,
+  // pas d'estimation par ratio (sinon on sous-évalue systématiquement la marge sur le transport).
+  if (ligne.produitId === "TRANSPORT_MANUEL") return { marge: ligne.qte * ligne.pu, reel: true };
   const coutMoyen = getCoutMoyenPondere(ligne.produitId, receptionsStock);
   if (coutMoyen != null && coutMoyen > 0) {
     return { marge: (ligne.pu - coutMoyen) * ligne.qte, reel: true };
@@ -864,8 +874,10 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
   const lignes = facture.lignes || [];
   // Les lignes de consigne manuelle (ajout/retour de vidange) sortent de l'assiette
   // TVA au même titre que les consignes normales — voir totalFact() plus haut.
-  const sousTotal = lignes.reduce((s, l) => l.produitId==="CONSIGNE_MANUELLE" ? s : s + l.qte * l.pu, 0);
+  // Le transport (TRANSPORT_MANUEL) est traité à part : TVA standard fixe (TVA_TRANSPORT_PCT).
+  const sousTotal = lignes.reduce((s, l) => (l.produitId==="CONSIGNE_MANUELLE"||l.produitId==="TRANSPORT_MANUEL") ? s : s + l.qte * l.pu, 0);
   const totalConsignes = lignes.reduce((s, l) => s + (l.produitId==="CONSIGNE_MANUELLE" ? l.qte * l.pu : l.qte * (l.consigne || 0)), 0);
+  const totalTransport = lignes.reduce((s, l) => s + (l.produitId==="TRANSPORT_MANUEL" ? l.qte * l.pu : 0), 0);
 
   // Le taux de TVA est figé au moment de la création de la facture (tva_pct).
   // Pour les factures créées avant ce correctif (champ absent), on retombe sur
@@ -873,7 +885,8 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
   // pas changer rétroactivement un document déjà émis.
   const tvaPct = facture.tva_pct != null ? facture.tva_pct : (clientEstExonere(client) ? 0 : 3);
   const tvaVal = sousTotal * tvaPct / 100;
-  const total = sousTotal + tvaVal + totalConsignes; // vidanges incluses
+  const tvaTransportVal = totalTransport * TVA_TRANSPORT_PCT / 100;
+  const total = sousTotal + tvaVal + totalConsignes + totalTransport + tvaTransportVal; // vidanges + transport inclus
 
   const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
 
@@ -1060,6 +1073,10 @@ ${noteClientHTML}
     <table class="totals-table">
       <tr><td>Sous-total HT</td><td style="text-align:right"><strong>${fmtEur(sousTotal)}</strong></td></tr>
       <tr><td>TVA ${tvaPct}%</td><td style="text-align:right">${fmtEur(tvaVal)}</td></tr>
+      ${totalTransport > 0 ? `
+      <tr><td>Transport HT</td><td style="text-align:right">${fmtEur(totalTransport)}</td></tr>
+      <tr><td>TVA transport ${TVA_TRANSPORT_PCT}%</td><td style="text-align:right">${fmtEur(tvaTransportVal)}</td></tr>
+      ` : ""}
       <tr><td>Vidanges</td><td style="text-align:right">${totalConsignes > 0 ? fmtEur(totalConsignes) : "—"}</td></tr>
       <tr class="total-row"><td>TOTAL TTC</td><td style="text-align:right">${fmtEur(total)}</td></tr>
     </table>
@@ -1232,6 +1249,12 @@ const generateBonLivraison = (commande, client) => {
         <td style="text-align:center">${totalCaisses}</td>
         <td>Total caisses livrées</td>
       </tr>
+      ${commande.transport > 0 ? `
+      <tr>
+        <td style="text-align:center">🚚</td>
+        <td>Transport — ${Number(commande.transport).toFixed(2).replace(".", ",")} €</td>
+      </tr>
+      ` : ""}
     </tbody>
   </table>
 
@@ -1913,12 +1936,14 @@ function BossokApp({ session, onLogout }) {
   const [factDate, setFactDate] = useState(new Date().toISOString().split("T")[0]);
   const [factNotes, setFactNotes] = useState("");
   const [factNoteClient, setFactNoteClient] = useState("");
+  const [factTransportMontant, setFactTransportMontant] = useState("");
   const [factNumero, setFactNumero] = useState("");
   const [factEcheance, setFactEcheance] = useState("");
   const [searchFactClient, setSearchFactClient] = useState("");
   const [cmdClientId, setCmdClientId] = useState(null);
   const [cmdProduits, setCmdProduits] = useState([]);
   const [cmdNotes, setCmdNotes] = useState("");
+  const [cmdTransport, setCmdTransport] = useState("");
   const [searchCmdClient, setSearchCmdClient] = useState("");
   const [showProdAdd, setShowProdAdd] = useState(false);
   const [newProd, setNewProd] = useState("");
@@ -2051,6 +2076,10 @@ function BossokApp({ session, onLogout }) {
           const qtePayante = p.qte - qteOfferte;
           if (qtePayante > 0) lignes.push({ produitId: produit?.id||"", nom, qte: qtePayante, pu, consigne });
           if (qteOfferte > 0) lignes.push({ produitId: produit?.id||"", nom: nom + " (offert)", qte: qteOfferte, pu: 0, consigne, offert: true });
+        }
+        if (cmd.transport > 0) {
+          const nomTransport = uneSeule ? "Transport" : `Transport (${cmd.date_commande||cmd.date_livraison||"?"})`;
+          lignes.push({ produitId:"TRANSPORT_MANUEL", nom: nomTransport, qte:1, pu: cmd.transport, consigne:0 });
         }
       }
       const today = localDateStr();
@@ -2467,6 +2496,7 @@ function BossokApp({ session, onLogout }) {
     setFactDate(f.date || new Date().toISOString().split("T")[0]);
     setFactNotes(f.notes || "");
     setFactNoteClient(f.note_client || "");
+    setFactTransportMontant("");
     setFactNumero(f.numero || "");
     setFactEcheance(f.echeance || "");
     setSearchFactClient("");
@@ -2482,7 +2512,7 @@ function BossokApp({ session, onLogout }) {
     setFactNumero(genererNumeroFacture(today));
     const echInit = new Date(today); echInit.setDate(echInit.getDate()+7);
     setFactEcheance(echInit.toISOString().split("T")[0]);
-    setFactNotes(""); setFactNoteClient("");
+    setFactNotes(""); setFactNoteClient(""); setFactTransportMontant("");
     openWorkTab({id:"facture", type:"facture", label:"Nouvelle facture", page:"factures"});
   };
 
@@ -2525,7 +2555,7 @@ function BossokApp({ session, onLogout }) {
           client_tva:client?.tva||"", date:factDate, lignes:factLignes, statut:"Impayée", note_client:factNoteClient};
         setLastFacture({facture:newFact, client});
       }
-      setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactClientId(null);
+      setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactTransportMontant(""); setFactClientId(null);
       setFactNumero(""); setSearchFactClient(""); closeWorkTab("facture");
     } catch(e) { logError(e); }
     finally { setSaving(false); }
@@ -2670,6 +2700,7 @@ function BossokApp({ session, onLogout }) {
     setCmdClientId(cmd.client_id);
     setCmdProduits(cmd.produits||[]);
     setCmdNotes(cmd.notes||"");
+    setCmdTransport("");
     setSearchCmdClient("");
     openWorkTab({id:"commande", type:"commande", label:"Nouvelle commande", page:"commandes"});
   };
@@ -2679,6 +2710,7 @@ function BossokApp({ session, onLogout }) {
     setCmdClientId(cmd.client_id);
     setCmdProduits(cmd.produits||[]);
     setCmdNotes(cmd.notes||"");
+    setCmdTransport(cmd.transport ? String(cmd.transport) : "");
     setSearchCmdClient("");
     openWorkTab({id:"commande", type:"commande", label:"Commande — "+(cmd.client_nom||""), page:"commandes"});
   };
@@ -2687,6 +2719,7 @@ function BossokApp({ session, onLogout }) {
     setCmdClientId(null);
     setCmdProduits([]);
     setCmdNotes("");
+    setCmdTransport("");
     setSearchCmdClient("");
     setManualConsigneLignesCmd([]);
     openWorkTab({id:"commande", type:"commande", label:"Nouvelle commande", page:"commandes"});
@@ -2713,11 +2746,12 @@ function BossokApp({ session, onLogout }) {
           await updateStock(prod.id, Math.max(0, currentQte - delta));
         }
 
+        const transportMontant = parseFloat(cmdTransport)||0;
         await db.update("commandes", editingCmd.id, {
           client_id: cmdClientId, client_nom: client?.nom||"",
           client_adresse: client?.adresse||"", client_region: client?.region||"",
           client_tel: client?.telephone||"",
-          produits: cmdProduits, notes: cmdNotes,
+          produits: cmdProduits, notes: cmdNotes, transport: transportMontant||null,
           chauffeur: getChauffeur(client?.region||""),
         });
 
@@ -2739,16 +2773,18 @@ function BossokApp({ session, onLogout }) {
             const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
             lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: l.label || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
           });
+          if (transportMontant > 0) lignes.push({ produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportMontant, consigne:0 });
           await db.update("factures", facture.id, { lignes });
         }
         setEditingCmd(null);
       } else {
         const suggested = getSuggestedDay(client?.region||"");
+        const transportMontant = parseFloat(cmdTransport)||0;
         const created = await db.insert("commandes", {
           client_id: cmdClientId, client_nom: client?.nom||"",
           client_adresse: client?.adresse||"", client_region: client?.region||"",
           client_tel: client?.telephone||"",
-          produits: cmdProduits, notes: cmdNotes, statut: "En attente",
+          produits: cmdProduits, notes: cmdNotes, transport: transportMontant||null, statut: "En attente",
           chauffeur: suggested.dayIdx <= 1 ? "A" : getChauffeur(client?.region||""),
           date_commande: today, date_livraison: suggested.date||tomorrow,
           jour_livraison: suggested.day,
@@ -2784,6 +2820,7 @@ function BossokApp({ session, onLogout }) {
             const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
             lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: l.label || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
           });
+          if (transportMontant > 0) lignes.push({ produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportMontant, consigne:0 });
           await db.insert("factures", {
             numero: num, client_id: cmdClientId,
             client_nom: client?.nom||"", client_adresse: client?.adresse||"",
@@ -2796,7 +2833,7 @@ function BossokApp({ session, onLogout }) {
         }
       }
       await loadAll();
-      setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
+      setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setCmdTransport(""); setSearchCmdClient("");
       setManualConsigneLignesCmd([]);
       closeWorkTab("commande");
     } catch(e) { logError(e); }
@@ -4757,9 +4794,15 @@ function BossokApp({ session, onLogout }) {
         </button>
       </div>
 
-      <div style={{marginBottom:12}}>
-        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
-        <input value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} placeholder="Instructions spéciales..." style={S.input}/>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} placeholder="Instructions spéciales..." style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>🚚 Transport <span style={{color:"#9CA3AF"}}>(optionnel — TVA {TVA_TRANSPORT_PCT}%)</span></label>
+          <input type="number" min="0" step="0.01" value={cmdTransport} onChange={e=>setCmdTransport(e.target.value)} placeholder="Laisser vide si aucun" style={S.input}/>
+        </div>
       </div>
 
       <button onClick={saveCmd} disabled={saving}
@@ -5966,6 +6009,25 @@ function BossokApp({ session, onLogout }) {
           setManualConsigneLabel(""); setManualConsigneQte("1"); setManualConsigneUnitaire(""); setManualConsigneSens("plus");
         }} disabled={!manualConsigneQte||!manualConsigneUnitaire} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"9px 14px",opacity:(manualConsigneQte&&manualConsigneUnitaire)?1:0.5}}>+ Ajouter</button>
       </div>
+      {factLignes.some(l=>l.produitId==="TRANSPORT_MANUEL") ? (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,marginBottom:12,fontSize:12}}>
+          <span>🚚 Transport : <b>{fmtFull(factLignes.find(l=>l.produitId==="TRANSPORT_MANUEL")?.pu||0)}</b> <span style={{color:"#6B7280"}}>(TVA {TVA_TRANSPORT_PCT}% incluse au total)</span></span>
+          <button onClick={()=>setFactLignes(prev=>prev.filter(l=>l.produitId!=="TRANSPORT_MANUEL"))} style={{background:"none",border:"none",color:"#EF4444",cursor:"pointer"}}>✕</button>
+        </div>
+      ) : (
+        <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"end"}}>
+          <div style={{flex:1}}>
+            <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>🚚 Transport <span style={{color:"#D1D5DB"}}>(optionnel — TVA {TVA_TRANSPORT_PCT}%)</span></label>
+            <input type="number" min="0" step="0.01" value={factTransportMontant} onChange={e=>setFactTransportMontant(e.target.value)} placeholder="Montant en €" style={S.input}/>
+          </div>
+          <button onClick={()=>{
+            const montant = parseFloat(factTransportMontant)||0;
+            if (!montant) return;
+            setFactLignes(prev=>[...prev, {produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:montant, consigne:0}]);
+            setFactTransportMontant("");
+          }} disabled={!factTransportMontant} style={{...S.btn("#EFF6FF","#1D4ED8"),padding:"9px 14px",opacity:factTransportMontant?1:0.5}}>+ Ajouter</button>
+        </div>
+      )}
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes internes</label>
         <input value={factNotes} onChange={e=>setFactNotes(e.target.value)} placeholder="Notes optionnelles, non visibles par le client..." style={S.input}/>
