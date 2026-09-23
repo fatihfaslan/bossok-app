@@ -2735,7 +2735,8 @@ function BossokApp({ session, onLogout }) {
 
   const saveCmd = async () => {
     if (!cmdClientId) { notifyError("Choisis un client avant d'enregistrer la commande."); return; }
-    if (cmdProduits.length===0) { notifyError("Ajoute au moins un produit à la commande avant d'enregistrer."); return; }
+    // Une commande "transport seul" (sans produit) est autorisée si un montant de transport est saisi.
+    if (cmdProduits.length===0 && !(parseFloat(cmdTransport)>0)) { notifyError("Ajoute au moins un produit, ou un montant de transport, avant d'enregistrer."); return; }
     const client = clients.find(c=>c.id===cmdClientId);
     setSaving(true);
     try {
