@@ -2047,7 +2047,10 @@ function BossokApp({ session, onLogout }) {
           const pu = produit ? getClientPrix(produit, client) : 0;
           const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
           const nom = uneSeule ? p.nom : `${p.nom} (${cmd.date_commande||cmd.date_livraison||"?"})`;
-          lignes.push({ produitId: produit?.id||"", nom, qte: p.qte, pu, consigne });
+          const qteOfferte = Math.min(p.qteOfferte||0, p.qte);
+          const qtePayante = p.qte - qteOfferte;
+          if (qtePayante > 0) lignes.push({ produitId: produit?.id||"", nom, qte: qtePayante, pu, consigne });
+          if (qteOfferte > 0) lignes.push({ produitId: produit?.id||"", nom: nom + " (offert)", qte: qteOfferte, pu: 0, consigne, offert: true });
         }
       }
       const today = localDateStr();
@@ -2721,11 +2724,16 @@ function BossokApp({ session, onLogout }) {
         // Répercuter les nouvelles lignes sur la facture déjà créée pour cette commande
         const facture = findFactureForCommande(editingCmd.id);
         if (facture) {
-          const lignes = cmdProduits.map(p => {
+          const lignes = cmdProduits.flatMap(p => {
             const produit = findProduitByNom(produits, p.nom);
             const pu = produit ? getClientPrix(produit, client) : 0;
             const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
-            return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
+            const qteOfferte = Math.min(p.qteOfferte||0, p.qte);
+            const qtePayante = p.qte - qteOfferte;
+            const res = [];
+            if (qtePayante > 0) res.push({ produitId: produit?.id||"", nom: p.nom, qte: qtePayante, pu, consigne });
+            if (qteOfferte > 0) res.push({ produitId: produit?.id||"", nom: p.nom + " (offert)", qte: qteOfferte, pu: 0, consigne, offert: true });
+            return res;
           });
           manualConsigneLignesCmd.filter(l=>l.qte>0&&l.unitaire).forEach(l=>{
             const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
@@ -2761,11 +2769,16 @@ function BossokApp({ session, onLogout }) {
         if (client?.mode_facturation !== "groupee") {
           const ech = new Date(); ech.setDate(ech.getDate()+7);
           const num = genererNumeroFacture(today);
-          const lignes = cmdProduits.map(p => {
+          const lignes = cmdProduits.flatMap(p => {
             const produit = findProduitByNom(produits, p.nom);
             const pu = produit ? getClientPrix(produit, client) : 0;
             const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
-            return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
+            const qteOfferte = Math.min(p.qteOfferte||0, p.qte);
+            const qtePayante = p.qte - qteOfferte;
+            const res = [];
+            if (qtePayante > 0) res.push({ produitId: produit?.id||"", nom: p.nom, qte: qtePayante, pu, consigne });
+            if (qteOfferte > 0) res.push({ produitId: produit?.id||"", nom: p.nom + " (offert)", qte: qteOfferte, pu: 0, consigne, offert: true });
+            return res;
           });
           manualConsigneLignesCmd.filter(l=>l.qte>0&&l.unitaire).forEach(l=>{
             const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
@@ -2892,9 +2905,24 @@ function BossokApp({ session, onLogout }) {
     const pu = getClientPrix(prod, client);
     const consigne = prod.type_emballage==="VC" ? (CONSIGNE_PRIX[prod.consigne]||0) : 0;
     setFactLignes(prev=>{
-      const ex = prev.find(l=>l.produitId===prod.id);
-      if (ex) return prev.map(l=>l.produitId===prod.id?{...l,qte:l.qte+1}:l);
+      const ex = prev.find(l=>l.produitId===prod.id && !l.offert);
+      if (ex) return prev.map(l=>(l.produitId===prod.id && !l.offert)?{...l,qte:l.qte+1}:l);
       return [...prev,{produitId:prod.id,nom:prod.nom,qte:1,pu,consigne}];
+    });
+  };
+
+  // Bascule 1 unité d'une ligne de facture vers une ligne "offert" (gratuite,
+  // consigne inchangée) du même produit — permet d'offrir une partie d'une
+  // quantité (ex: 1 offert sur 5 commandés) sans tout passer à 0€.
+  const offrirUniteFact = (i) => {
+    setFactLignes(prev => {
+      const line = prev[i];
+      if (!line || line.qte<=0 || line.offert) return prev;
+      let next = prev.map((x,j)=>j===i?{...x,qte:x.qte-1}:x).filter(x=>x.qte>0);
+      const offertIdx = next.findIndex(x=>x.produitId===line.produitId && x.offert);
+      if (offertIdx>=0) next = next.map((x,j)=>j===offertIdx?{...x,qte:x.qte+1}:x);
+      else next = [...next, {produitId:line.produitId, nom: line.nom + " (offert)", qte:1, pu:0, consigne:line.consigne, offert:true}];
+      return next;
     });
   };
 
@@ -4574,7 +4602,7 @@ function BossokApp({ session, onLogout }) {
 
       {/* PRODUITS - grille rapide */}
       <div style={{marginBottom:12}}>
-        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Produits * <span style={{color:"#9CA3AF"}}>(entrez les quantités)</span></label>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Produits * <span style={{color:"#9CA3AF"}}>(entrez les quantités — 🎁 = nombre offert gratuit sur la quantité)</span></label>
         
         {/* Grouped by category */}
         {[...new Set(produits.filter(p=>p.statut!=="Passif").map(p=>p.categorie))].sort().map(cat=>{
@@ -4609,6 +4637,18 @@ function BossokApp({ session, onLogout }) {
                           else setCmdProduits(prev=>[...prev,{nom:p.nom,qte:1}]);
                         }} style={{width:22,height:22,border:"1px solid #E5E7EB",borderRadius:4,background:"#F0FDF4",cursor:"pointer",fontSize:12,fontWeight:700,color:"#16A34A",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                       </div>
+                      {qte>0&&(
+                        <div style={{display:"flex",alignItems:"center",gap:3}} title="Nombre offert (gratuit) sur cette quantité">
+                          <span style={{fontSize:11}}>🎁</span>
+                          <input type="number" min="0" max={qte} value={existing?.qteOfferte||""} placeholder="0"
+                            onChange={e=>{
+                              let v=parseInt(e.target.value)||0;
+                              if(v<0) v=0; if(v>qte) v=qte;
+                              setCmdProduits(prev=>prev.map(x=>x.nom===p.nom?{...x,qteOfferte:v||undefined}:x));
+                            }}
+                            style={{width:30,textAlign:"center",padding:"2px 0",border:"1px solid #FDE68A",borderRadius:4,fontSize:11,outline:"none",background:existing?.qteOfferte?"#FFFBEB":"#fff",color:"#B45309",fontWeight:existing?.qteOfferte?700:400}}/>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -4626,7 +4666,7 @@ function BossokApp({ session, onLogout }) {
             <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
               {cmdProduits.map((p,i)=>(
                 <span key={i} style={{fontSize:10,background:"#DCFCE7",color:"#166534",padding:"2px 6px",borderRadius:4,fontWeight:500}}>
-                  {p.nom} ×{p.qte}
+                  {p.nom} ×{p.qte}{p.qteOfferte>0?` (dont ${p.qteOfferte} 🎁 offert${p.qteOfferte>1?"s":""})`:""}
                 </span>
               ))}
             </div>
@@ -5835,11 +5875,14 @@ function BossokApp({ session, onLogout }) {
       {factLignes.length>0&&(
         <div style={{marginBottom:12,border:"1px solid #E5E7EB",borderRadius:8,overflow:"hidden"}}>
           {factLignes.map((l,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderBottom:"1px solid #F1F5F9",fontSize:12}}>
-              <span style={{flex:1}}>{l.nom}</span>
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderBottom:"1px solid #F1F5F9",fontSize:12,background:l.offert?"#FFFBEB":"transparent"}}>
+              <span style={{flex:1,color:l.offert?"#B45309":"inherit",fontStyle:l.offert?"italic":"normal"}}>{l.nom}</span>
               <input type="number" min="1" value={l.qte} onChange={e=>setFactLignes(prev=>prev.map((x,j)=>j===i?{...x,qte:parseInt(e.target.value)||1}:x))} style={{width:48,padding:"2px 6px",border:"1px solid #E5E7EB",borderRadius:6,fontSize:12}}/>
               <span style={{width:64,textAlign:"right"}}>{fmtFull(l.qte*l.pu)}</span>
               {l.consigne>0&&<span style={{width:64,textAlign:"right",color:"#7C3AED"}}>+{fmtFull(l.qte*l.consigne)}</span>}
+              {!l.offert&&l.produitId!=="CONSIGNE_MANUELLE"&&l.produitId!=="CREDIT_CONSIGNES"&&!l.isCredit&&(
+                <button onClick={()=>offrirUniteFact(i)} title="Offrir 1 unité de cette ligne (gratuit)" style={{background:"none",border:"none",color:"#D97706",cursor:"pointer",fontSize:13}}>🎁</button>
+              )}
               <button onClick={()=>setFactLignes(prev=>prev.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#EF4444",cursor:"pointer"}}>✕</button>
             </div>
           ))}
