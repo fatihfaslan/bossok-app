@@ -4333,6 +4333,7 @@ function BossokApp({ session, onLogout }) {
     setFactLignes(f.lignes||[]);
     setFactDate(new Date().toISOString().split("T")[0]);
     setFactNotes(f.notes||"");
+    setFactNoteClient(clients.find(c=>c.id===f.client_id)?.commentaire_facture || "");
     setFactNumero(genererNumeroFacture(new Date().toISOString().split("T")[0]));
     setSearchFactClient("");
     openWorkTab({id:"facture", type:"facture", label:"Nouvelle facture", page:"factures"});
@@ -4549,7 +4550,7 @@ function BossokApp({ session, onLogout }) {
                   .filter(c=>searchCmdClient.trim()===""||c.nom?.toLowerCase().includes(searchCmdClient.trim().toLowerCase()))
                   .sort((a,b)=>a.nom.localeCompare(b.nom))
                   .map(c=>(
-                  <div key={c.id} onMouseDown={()=>{setCmdClientId(c.id);setSearchCmdClient("");}}
+                  <div key={c.id} onMouseDown={()=>{setCmdClientId(c.id);setSearchCmdClient("");if(!editingCmd&&!cmdNotes)setCmdNotes(c.commentaire_bl||"");}}
                     style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#F0F9FF"}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -5495,7 +5496,7 @@ function BossokApp({ session, onLogout }) {
             </div>
           </div>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
-            <button onClick={()=>{openNewFactureTab();setFactClientId(selClient.id);}} style={S.btn()}>+ Facture</button>
+            <button onClick={()=>{openNewFactureTab();setFactClientId(selClient.id);setFactNoteClient(selClient.commentaire_facture||"");}} style={S.btn()}>+ Facture</button>
             <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);}} style={S.btn("#F1F5F9","#334155")}>✏️</button>
           </div>
         </div>
@@ -5747,7 +5748,7 @@ function BossokApp({ session, onLogout }) {
               {searchFactClient&&(
                 <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,.1)",zIndex:50,maxHeight:200,overflowY:"auto"}}>
                   {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchFactClient.toLowerCase())).slice(0,6).map(c=>(
-                    <div key={c.id} onClick={()=>{setFactClientId(c.id);setSearchFactClient("");setTimeout(()=>addCreditConsignes(c.id),100);}} style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9"}}
+                    <div key={c.id} onClick={()=>{setFactClientId(c.id);setSearchFactClient("");if(!editingFacture)setFactNoteClient(c.commentaire_facture||"");setTimeout(()=>addCreditConsignes(c.id),100);}} style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9"}}
                       onMouseEnter={e=>e.currentTarget.style.background="#F9FAFB"}
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                       {c.nom}
@@ -6083,6 +6084,17 @@ function BossokApp({ session, onLogout }) {
             </div>
           </div>
         </label>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Commentaire facture (par défaut)</label>
+            <textarea value={clientForm.commentaire_facture||""} onChange={e=>setClientForm(p=>({...p,commentaire_facture:e.target.value}))} placeholder="Affiché sous l'échéance sur les factures de ce client (modifiable à chaque facture)" style={{...S.input,minHeight:70,resize:"vertical",fontFamily:"inherit"}}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Commentaire BL (par défaut)</label>
+            <textarea value={clientForm.commentaire_bl||""} onChange={e=>setClientForm(p=>({...p,commentaire_bl:e.target.value}))} placeholder="Affiché sur les bons de livraison de ce client (modifiable à chaque BL)" style={{...S.input,minHeight:70,resize:"vertical",fontFamily:"inherit"}}/>
+          </div>
+        </div>
       </div>
       <div style={{display:"flex",gap:8,marginTop:16}}>
         <button onClick={()=>setShowClientForm(false)} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
