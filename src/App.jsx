@@ -2060,6 +2060,7 @@ function BossokApp({ session, onLogout }) {
         date: today, echeance: ech.toISOString().split("T")[0],
         lignes, statut: "Impayée", tva_pct: clientEstExonere(client) ? 0 : 3,
         notes: uneSeule ? `Commande #${cmdsAFacturer[0].id}` : "Facture groupée — " + cmdsAFacturer.map(c=>`Commande #${c.id}`).join(", "),
+        note_client: client.commentaire_facture || "",
         retours: []
       });
       await loadAll();
@@ -2776,6 +2777,7 @@ function BossokApp({ session, onLogout }) {
             client_tva: client?.tva||"",
             date: today, echeance: ech.toISOString().split("T")[0],
             lignes, statut: "Impayée", notes: `Commande #${newCmd.id}`, retours: [],
+            note_client: client?.commentaire_facture || "",
             tva_pct: clientEstExonere(client) ? 0 : 3,
           });
         }
