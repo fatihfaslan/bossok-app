@@ -2021,6 +2021,7 @@ function BossokApp({ session, onLogout }) {
   const [editProduit, setEditProduit] = useState(null);
   const [produitForm, setProduitForm] = useState({});
   const [produitFilterStatut, setProduitFilterStatut] = useState("Actif");
+  const [showReorderProduits, setShowReorderProduits] = useState(false);
   const showReceptionForm = activeWorkTab?.type==="reception";
   const [receptionLignes, setReceptionLignes] = useState([]); // [{produitId, nom, qte, prix}]
   const [receptionSearch, setReceptionSearch] = useState("");
@@ -2167,7 +2168,12 @@ function BossokApp({ session, onLogout }) {
       const stockMap = {};
       stk.forEach(s => { stockMap[s.produit_id] = s.quantite; });
       setStock(stockMap);
-      setProduits([...prods].sort((a,b) => (a.categorie+a.nom).localeCompare(b.categorie+b.nom)));
+      // Ordre d'affichage : d'abord l'ordre manuel (colonne "ordre", modifiable
+      // dans l'app via les flèches ▲▼), sinon on retombe sur categorie+nom pour
+      // les produits qui n'en auraient pas encore.
+      setProduits([...prods].sort((a,b) =>
+        (a.ordre!=null && b.ordre!=null) ? a.ordre-b.ordre : (a.categorie+a.nom).localeCompare(b.categorie+b.nom)
+      ));
       setReceptionsStock(receps);
       setPertesStock(pertes);
       setEvenements(evts);
@@ -2451,7 +2457,11 @@ function BossokApp({ session, onLogout }) {
         await db.update("produits", editProduit.id, payload);
       } else {
         const newId = genererIdProduit(categorieReelle);
-        await db.insert("produits", {...payload, id: newId, statut: "Actif"});
+        // Nouveau produit : apparaît en dernier dans sa catégorie (ordre d'affichage) ;
+        // se déplace ensuite avec les flèches ▲▼ dans Catalogue produits.
+        const ordresCategorie = produits.filter(p=>p.categorie===categorieReelle).map(p=>p.ordre).filter(o=>o!=null);
+        const ordreDefaut = ordresCategorie.length>0 ? Math.max(...ordresCategorie)+1 : (produits.length+1)*1000000;
+        await db.insert("produits", {...payload, id: newId, statut: "Actif", ordre: ordreDefaut});
       }
       await loadAll();
       closeWorkTab("produit");
@@ -2485,6 +2495,29 @@ function BossokApp({ session, onLogout }) {
     setSaving(true);
     try {
       await db.update("produits", produit.id, {statut: nouveauStatut});
+      await loadAll();
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  // Déplace un produit dans l'ordre d'affichage (colonne "ordre"), en l'échangeant
+  // avec son voisin immédiat DANS LA MÊME CATÉGORIE (canettes, bouteilles...).
+  // `produits` est déjà trié par "ordre" (voir loadAll), donc les voisins ici
+  // sont bien les voisins visuels — pas de déplacement possible entre catégories,
+  // qui restent dans l'ordre fixe canettes → bouteilles → eaux → verre → energy.
+  const deplacerProduit = async (id, direction) => {
+    const p = produits.find(x=>x.id===id);
+    if (!p) return;
+    const memeCategorie = produits.filter(x=>x.categorie===p.categorie);
+    const idx = memeCategorie.findIndex(x=>x.id===id);
+    const swapIdx = direction==="up" ? idx-1 : idx+1;
+    if (swapIdx<0 || swapIdx>=memeCategorie.length) return;
+    const autre = memeCategorie[swapIdx];
+    const ordreP = p.ordre, ordreAutre = autre.ordre;
+    setSaving(true);
+    try {
+      await db.update("produits", p.id, {ordre: ordreAutre});
+      await db.update("produits", autre.id, {ordre: ordreP});
       await loadAll();
     } catch(e) { logError(e); }
     finally { setSaving(false); }
@@ -4996,7 +5029,10 @@ function BossokApp({ session, onLogout }) {
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Produits * <span style={{color:"#9CA3AF"}}>(entrez les quantités — 🎁 = nombre offert gratuit sur la quantité)</span></label>
         
         {/* Grouped by category */}
-        {[...new Set(produits.filter(p=>p.statut!=="Passif").map(p=>p.categorie))].sort().map(cat=>{
+        {/* Catégories dans l'ordre défini par la colonne "ordre" des produits
+            (canettes, bouteilles, eaux... — réglable depuis Catalogue produits),
+            pas alphabétique. */}
+        {[...new Set(produits.filter(p=>p.statut!=="Passif").map(p=>p.categorie))].map(cat=>{
           const prods = produits.filter(p=>p.categorie===cat&&p.statut!=="Passif");
           return(
             <div key={cat} style={{marginBottom:8}}>
@@ -5869,6 +5905,34 @@ function BossokApp({ session, onLogout }) {
       ))}
     </div>
 
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+      <button onClick={()=>setShowReorderProduits(v=>!v)} style={S.btn(showReorderProduits?"#1D4ED8":"#F1F5F9",showReorderProduits?"#fff":"#374151")}>
+        {showReorderProduits ? "✓ Terminer la réorganisation" : "🔀 Réorganiser l'ordre d'affichage"}
+      </button>
+    </div>
+
+    {showReorderProduits ? (
+      <div style={S.card}>
+        <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
+          Cet ordre est utilisé partout où la liste des produits s'affiche (commandes, factures, catalogue). Les flèches ne déplacent un produit qu'à l'intérieur de sa catégorie — l'ordre des catégories elles-mêmes (canettes → bouteilles → eaux...) reste fixe.
+        </div>
+        {[...new Set(produits.map(p=>p.categorie))].map(cat=>{
+          const prods = produits.filter(p=>p.categorie===cat);
+          return (
+            <div key={cat} style={{marginBottom:18}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6,borderBottom:"1px solid #F1F5F9",paddingBottom:4}}>{cat}</div>
+              {prods.map((p,i)=>(
+                <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 4px",borderBottom:i<prods.length-1?"1px solid #F8FAFC":"none"}}>
+                  <span style={{flex:1,fontSize:13,color:p.statut==="Passif"?"#9CA3AF":"#111"}}>{p.nom}{p.statut==="Passif"&&" (désactivé)"}</span>
+                  <button onClick={()=>deplacerProduit(p.id,"up")} disabled={i===0||saving} style={{...S.btn("#F1F5F9","#374151"),padding:"3px 9px",fontSize:12,opacity:i===0?0.3:1}}>▲</button>
+                  <button onClick={()=>deplacerProduit(p.id,"down")} disabled={i===prods.length-1||saving} style={{...S.btn("#F1F5F9","#374151"),padding:"3px 9px",fontSize:12,opacity:i===prods.length-1?0.3:1}}>▼</button>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    ) : (
     <DataTable
       isMobile={isMobile}
       rows={produitsFiltres}
@@ -5876,7 +5940,6 @@ function BossokApp({ session, onLogout }) {
       onRowClick={openEditProduitTab}
       emptyIcon="🍺"
       emptyMessage="Aucun produit dans cette vue"
-      initialSort={{key:"nom",dir:"asc"}}
       columns={[
         {key:"nom", label:"Produit", mobilePrimary:true, sortValue:p=>p.nom||"", render:p=><span style={{fontWeight:600}}>{p.nom}</span>},
         {key:"categorie", label:"Cat.", mobileShow:true, sortValue:p=>p.categorie||"", render:p=><span style={{color:"#475569"}}>{p.categorie}</span>},
@@ -5907,6 +5970,7 @@ function BossokApp({ session, onLogout }) {
         )},
       ]}
     />
+    )}
   </div>
   );
 })()}
