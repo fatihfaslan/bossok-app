@@ -54,6 +54,7 @@ const ICON_PATHS = {
   chat: <><path d="M4 4.5h16v12H9l-4 3.5v-3.5H4Z"/></>,
   phone: <><path d="M6.5 3.5h3l1.5 4-2 1.5a11 11 0 0 0 5 5l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2Z"/></>,
   mail: <><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="m3 6.5 9 6.5 9-6.5"/></>,
+  diverses: <><path d="M6 2.5h9l3 3V21H6z"/><path d="M15 2.5v3h3M12 10.5v6M9 13.5h6"/></>,
 };
 const Icon = ({name, size=15, style}) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
@@ -188,7 +189,7 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
 // ═══════════════════════════════════════════════════════════════════
 // ROUTING (URL basée sur le hash, ex: #/clients/482)
 // ═══════════════════════════════════════════════════════════════════
-const PAGE_KEYS = ["calendrier","dashboard","caisse","clients","carte","factures","commandes","planning","stock","consignes","produits","zones"];
+const PAGE_KEYS = ["calendrier","dashboard","caisse","clients","carte","factures","diverses","commandes","planning","stock","consignes","produits","zones"];
 const parseHash = () => {
   const h = (window.location.hash || "").replace(/^#\/?/, "");
   const parts = h.split("/").filter(Boolean);
@@ -1139,6 +1140,138 @@ ${noteClientHTML}
   ouvrirEtImprimer(html, "Facture_" + facture.numero + ".html");
 };
 
+// Facture "diverse" : facture libre à un tiers non-client (ex : repreneur de
+// palettes). Même identité visuelle que les factures normales, mais sans
+// dépendance à clients/commandes/consignes — destinataire et lignes libres.
+const generatePDFDiverse = (fd) => {
+  const lignes = fd.lignes || [];
+  const sousTotal = lignes.reduce((s,l)=>s+l.qte*l.pu, 0);
+  const tvaPct = fd.tva_pct != null ? fd.tva_pct : 0;
+  const tvaVal = sousTotal * tvaPct / 100;
+  const total = sousTotal + tvaVal;
+
+  const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
+
+  const rows = lignes.map(l => `
+    <tr>
+      <td style="text-align:center;font-weight:600">${l.qte}</td>
+      <td>${l.description}</td>
+      <td style="text-align:right">${fmtEur(l.pu)}</td>
+      <td style="text-align:right;font-weight:600">${fmtEur(l.qte * l.pu)}</td>
+    </tr>
+  `).join("");
+
+  const emptyRows = Array(Math.max(0, 5 - lignes.length)).fill("").map(() => `
+    <tr><td>&nbsp;</td><td></td><td></td><td style="text-align:right;color:#ccc">—</td></tr>
+  `).join("");
+
+  const payeeStampHTML = fd.statut === "Payée" ? `
+    <div class="paid-stamp"><b>Payée</b>${fd.date_paiement ? " le " + fd.date_paiement : ""}${fd.mode_paiement ? " · " + fd.mode_paiement : ""}</div>
+  ` : "";
+
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Facture ${fd.numero}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:12mm 14mm; min-height:100vh; display:flex; flex-direction:column; }
+    .no-print { position:fixed; top:8px; right:8px; z-index:999; }
+    .no-print button { padding:8px 16px; background:#1D4ED8; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; }
+    h1 { font-size:12.5pt; font-weight:700; color:#1D4ED8; margin-bottom:2px; letter-spacing:-0.2px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+    .company p { font-size:8pt; line-height:1.5; color:#333; }
+    hr { border:none; border-top:1px solid #EAEAEA; margin:12px 0; }
+    .meta { display:flex; justify-content:space-between; margin:16px 0; font-size:8.5pt; }
+    .meta-left p { line-height:1.9; color:#555; }
+    .meta-left p strong { color:#111; }
+    .client-name { font-size:11pt; font-weight:600; color:#111; }
+    .paid-stamp { display:inline-block; margin-top:8px; padding:3px 8px; background:#F0F5FF; border-radius:4px; font-size:7.5pt; color:#1D4ED8; font-weight:600; }
+    table { width:100%; border-collapse:collapse; margin:16px 0; font-size:8.5pt; }
+    thead tr { border-bottom:1.5px solid #111; }
+    th { padding:0 6px 7px; text-align:left; font-size:7pt; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.4px; }
+    td { padding:7px 6px; border-bottom:1px solid #F0F0F0; color:#222; }
+    .bottom { display:flex; justify-content:flex-end; margin-top:16px; }
+    .totals-table { width:220px; font-size:8.5pt; }
+    .totals-table td { padding:4px 0; border:none; color:#666; }
+    .totals-table .total-row td { border-top:1.5px solid #1D4ED8; font-weight:700; font-size:11.5pt; padding-top:8px; color:#1D4ED8; }
+    .footer { margin-top:auto; padding-top:14px; border-top:1px solid #EAEAEA; font-size:7pt; color:#999; }
+    .note { margin:14px 0; padding:8px 0 8px 10px; border-left:2px solid #C7D6FB; font-size:8pt; color:#555; font-style:italic; }
+    @media print { .no-print { display:none; } body { padding:8mm 10mm; } }
+  </style>
+</head>
+<body>
+
+<div class="no-print"><button onclick="window.print()">🖨️ Imprimer</button></div>
+
+<div>
+<div class="header">
+  <div class="company">
+    <h1>BOSSOK DISTRIBUTION Sàrl</h1>
+    <p>71A Boulevard Robert Schuman · 8340 Olm<br/>Tél : 661-620-620 · TVA : LU35355446</p>
+  </div>
+</div>
+
+<hr/>
+
+<div class="meta">
+  <div class="meta-left">
+    <p><strong>Date :</strong> ${fd.date || ""}</p>
+    <p><strong>N° Facture :</strong> <strong>${fd.numero}</strong></p>
+    <p><strong>Échéance :</strong> ${fd.echeance || ""}</p>
+    ${payeeStampHTML}
+  </div>
+  <div style="text-align:right">
+    <p style="font-size:7.5pt;color:#555;margin-bottom:2px">Facturé à :</p>
+    <p class="client-name">${fd.destinataire_nom || ""}</p>
+    <p style="font-size:8pt;color:#333;line-height:1.6">
+      ${(fd.destinataire_adresse||"").replace(/\n/g,"<br/>")}
+      ${fd.destinataire_tva ? "<br/>TVA : "+fd.destinataire_tva : ""}
+    </p>
+  </div>
+</div>
+
+<hr/>
+
+${fd.notes ? `<div class="note">${fd.notes}</div>` : ""}
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:45px;text-align:center">Qté</th>
+      <th>Description</th>
+      <th style="width:80px;text-align:right">Prix unit.</th>
+      <th style="width:80px;text-align:right">Montant</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rows}
+    ${emptyRows}
+  </tbody>
+</table>
+
+<div class="bottom">
+  <table class="totals-table">
+    <tr><td>Sous-total HT</td><td style="text-align:right"><strong>${fmtEur(sousTotal)}</strong></td></tr>
+    <tr><td>TVA ${tvaPct}%</td><td style="text-align:right">${fmtEur(tvaVal)}</td></tr>
+    <tr class="total-row"><td>TOTAL TTC</td><td style="text-align:right">${fmtEur(total)}</td></tr>
+  </table>
+</div>
+</div>
+
+<div class="footer">
+  <p>Pour toute question : <strong>Bossok Distribution Sàrl</strong> · 661-620-620</p>
+  <p>BIC: BGLLLULL · LU14 0030 1895 5248 0000</p>
+  <p>Titulaire : BOSSOK DISTRIBUTION S.A.R.L</p>
+</div>
+
+</body>
+</html>`;
+
+  ouvrirEtImprimer(html, "Facture_" + fd.numero + ".html");
+};
+
 // Bon de livraison : document de preuve de livraison, distinct de la facture.
 // Pas de prix — juste les quantités livrées et une zone de signature.
 const generateBonLivraison = (commande, client) => {
@@ -1745,6 +1878,7 @@ function BossokApp({ session, onLogout }) {
   // Data
   const [clients, setClients] = useState([]);
   const [factures, setFactures] = useState([]);
+  const [facturesDiverses, setFacturesDiverses] = useState([]);
   const [commandes, setCommandes] = useState([]);
   const [stock, setStock] = useState({});
   const [produits, setProduits] = useState([]);
@@ -1917,6 +2051,9 @@ function BossokApp({ session, onLogout }) {
   const [openCmdMenu, setOpenCmdMenu] = useState(null);
   const [paiementFacture, setPaiementFacture] = useState(null);
   const [paiementForm, setPaiementForm] = useState({});
+  const [showPaiementDiverseForm, setShowPaiementDiverseForm] = useState(false);
+  const [paiementDiverse, setPaiementDiverse] = useState(null);
+  const [paiementDiverseForm, setPaiementDiverseForm] = useState({});
   const [caissePeriode, setCaissePeriode] = useState("semaine");
   const [caisseRef, setCaisseRef] = useState(()=>new Date().toISOString().split("T")[0]);
   const [editEvent, setEditEvent] = useState(null);
@@ -1939,6 +2076,26 @@ function BossokApp({ session, onLogout }) {
   const [factTransportMontant, setFactTransportMontant] = useState("");
   const [factNumero, setFactNumero] = useState("");
   const [factEcheance, setFactEcheance] = useState("");
+  // ── Factures diverses (factures libres à des tiers non-clients, ex : reprise
+  // de palettes par un repreneur externe — indépendant de clients/commandes) ──
+  const showDiverseForm = activeWorkTab?.type==="diverse";
+  const [fdFilterStatut, setFdFilterStatut] = useState("Tous");
+  const [fdFilterSearch, setFdFilterSearch] = useState("");
+  const [editingDiverse, setEditingDiverse] = useState(null);
+  const [fdNumero, setFdNumero] = useState("");
+  const [fdDate, setFdDate] = useState(new Date().toISOString().split("T")[0]);
+  const [fdEcheance, setFdEcheance] = useState("");
+  const [fdDestNom, setFdDestNom] = useState("");
+  const [fdDestAdresse, setFdDestAdresse] = useState("");
+  const [fdDestTva, setFdDestTva] = useState("");
+  const [fdLignes, setFdLignes] = useState([]);
+  const [fdLigneDesc, setFdLigneDesc] = useState("");
+  const [fdLigneQte, setFdLigneQte] = useState("1");
+  const [fdLignePu, setFdLignePu] = useState("");
+  const [fdTvaPct, setFdTvaPct] = useState(17);
+  const [fdNotes, setFdNotes] = useState("");
+  const [fdFichiers, setFdFichiers] = useState([]); // fichiers déjà uploadés : [{chemin, nom}]
+  const [fdFichierEnAttente, setFdFichierEnAttente] = useState(null); // File en cours d'upload
   const [searchFactClient, setSearchFactClient] = useState("");
   const [cmdClientId, setCmdClientId] = useState(null);
   const [cmdProduits, setCmdProduits] = useState([]);
@@ -1989,7 +2146,7 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -2001,9 +2158,11 @@ function BossokApp({ session, onLogout }) {
         db.get("note_partagee"),
         db.get("notes_personnelles"),
         db.get("consignes_manuelles"),
+        db.get("factures_diverses"),
       ]);
       setClients(cls);
       setFactures(facts);
+      setFacturesDiverses(factDiv);
       setCommandes(cmds);
       const stockMap = {};
       stk.forEach(s => { stockMap[s.produit_id] = s.quantite; });
@@ -2595,6 +2754,156 @@ function BossokApp({ session, onLogout }) {
     finally { setSaving(false); }
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // FACTURES DIVERSES — factures libres à des tiers non-clients (ex : reprise
+  // de palettes par un repreneur externe). Indépendant de clients/commandes :
+  // destinataire et lignes en texte libre, numérotation séparée (préfixe "D"),
+  // taux de TVA éditable par facture (pas de régime fixe comme les boissons).
+  // ═══════════════════════════════════════════════════════════════════
+  const totalFactDiverse = (lignes=[], tvaPct=0) => {
+    const sousTotal = lignes.reduce((s,l)=>s+l.qte*l.pu, 0);
+    const tva = sousTotal * (tvaPct||0) / 100;
+    return { sousTotal, tva, total: sousTotal + tva };
+  };
+
+  const genererNumeroFactureDiverse = (date) => {
+    const d = new Date(date);
+    const annee = d.getFullYear().toString().slice(-1);
+    const mois = (d.getMonth() + 1).toString();
+    const prefix = "D" + annee + mois;
+    const sameMonth = facturesDiverses
+      .map(f => f.numero)
+      .filter(n => n && n.toString().startsWith(prefix))
+      .map(n => parseInt(n.toString().slice(prefix.length)))
+      .filter(n => !isNaN(n));
+    const lastNum = sameMonth.length > 0 ? Math.max(...sameMonth) : 0;
+    const nextNum = String(lastNum + 1).padStart(3, "0");
+    return prefix + nextNum;
+  };
+
+  const openNewDiverseTab = () => {
+    const today = localDateStr();
+    setEditingDiverse(null);
+    setFdDestNom(""); setFdDestAdresse(""); setFdDestTva("");
+    setFdLignes([]);
+    setFdLigneDesc(""); setFdLigneQte("1"); setFdLignePu("");
+    setFdDate(today);
+    setFdNumero(genererNumeroFactureDiverse(today));
+    const echInit = new Date(today); echInit.setDate(echInit.getDate()+30);
+    setFdEcheance(echInit.toISOString().split("T")[0]);
+    setFdTvaPct(17);
+    setFdNotes("");
+    setFdFichiers([]);
+    setFdFichierEnAttente(null);
+    openWorkTab({id:"diverse", type:"diverse", label:"Nouvelle facture diverse", page:"diverses"});
+  };
+
+  const openEditDiverse = (f) => {
+    setEditingDiverse(f);
+    setFdDestNom(f.destinataire_nom||"");
+    setFdDestAdresse(f.destinataire_adresse||"");
+    setFdDestTva(f.destinataire_tva||"");
+    setFdLignes(f.lignes||[]);
+    setFdLigneDesc(""); setFdLigneQte("1"); setFdLignePu("");
+    setFdDate(f.date||localDateStr());
+    setFdEcheance(f.echeance||"");
+    setFdNumero(f.numero||"");
+    setFdTvaPct(f.tva_pct!=null?f.tva_pct:17);
+    setFdNotes(f.notes||"");
+    setFdFichiers(f.pieces_jointes||[]);
+    setFdFichierEnAttente(null);
+    openWorkTab({id:"diverse", type:"diverse", label:"Facture "+(f.numero||""), page:"diverses"});
+  };
+
+  const ajouterLigneDiverse = () => {
+    const qte = parseFloat(fdLigneQte)||0;
+    const pu = parseFloat(fdLignePu)||0;
+    if (!fdLigneDesc.trim() || !qte) return;
+    setFdLignes(prev=>[...prev, {description:fdLigneDesc.trim(), qte, pu}]);
+    setFdLigneDesc(""); setFdLigneQte("1"); setFdLignePu("");
+  };
+  const supprimerLigneDiverse = (i) => setFdLignes(prev=>prev.filter((_,idx)=>idx!==i));
+
+  const ajouterFichierDiverse = async (file) => {
+    if (!file) return;
+    setFdFichierEnAttente(file);
+    try {
+      const up = await uploadFichier(file, "factures-diverses");
+      setFdFichiers(prev=>[...prev, {chemin:up.chemin, nom:up.nom}]);
+    } catch(e) { logError(e); }
+    finally { setFdFichierEnAttente(null); }
+  };
+  const supprimerFichierDiverse = (i) => setFdFichiers(prev=>prev.filter((_,idx)=>idx!==i));
+  const consulterFichierDiverse = async (chemin) => {
+    try {
+      const url = await getUrlSigneeFichier(chemin);
+      window.open(url, "_blank");
+    } catch(e) { logError(e); }
+  };
+
+  const saveDiverse = async () => {
+    if (!fdDestNom.trim()) { notifyError("Indique le destinataire avant d'enregistrer."); return; }
+    if (fdLignes.length===0) { notifyError("Ajoute au moins une ligne à la facture avant d'enregistrer."); return; }
+    const num = fdNumero || "D-" + Date.now().toString().slice(-6);
+    setSaving(true);
+    try {
+      const payload = {
+        numero: num,
+        destinataire_nom: fdDestNom.trim(),
+        destinataire_adresse: fdDestAdresse.trim(),
+        destinataire_tva: fdDestTva.trim(),
+        date: fdDate, echeance: fdEcheance,
+        lignes: fdLignes, tva_pct: parseFloat(fdTvaPct)||0,
+        notes: fdNotes, pieces_jointes: fdFichiers,
+      };
+      if (editingDiverse) {
+        await db.update("factures_diverses", editingDiverse.id, payload);
+      } else {
+        await db.insert("factures_diverses", {...payload, statut:"Impayée"});
+      }
+      await loadAll();
+      setEditingDiverse(null); setFdNumero(""); closeWorkTab("diverse");
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  const saveModePaiementDiverse = async () => {
+    if (!paiementDiverse || !paiementDiverseForm.mode) return;
+    setSaving(true);
+    try {
+      await db.update("factures_diverses", paiementDiverse.id, {
+        statut: "Payée",
+        mode_paiement: paiementDiverseForm.mode,
+        date_paiement: paiementDiverseForm.date || localDateStr(),
+      });
+      await loadAll();
+      setShowPaiementDiverseForm(false);
+      setPaiementDiverse(null);
+      setPaiementDiverseForm({});
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  const marquerDiverseImpayee = async (id) => {
+    setSaving(true);
+    try {
+      await db.update("factures_diverses", id, {statut:"Impayée"});
+      setFacturesDiverses(prev=>prev.map(f=>f.id===id?{...f,statut:"Impayée"}:f));
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  const supprimerDiverse = (id, numero) => {
+    askConfirm(`Supprimer la facture ${numero} ? Cette action est irréversible.`, async () => {
+      setSaving(true);
+      try {
+        await db.delete("factures_diverses", id);
+        await loadAll();
+      } catch(e) { logError(e); }
+      finally { setSaving(false); }
+    }, {danger:true, confirmLabel:"Supprimer"});
+  };
+
   const supprimerFacture = async (id, numero) => {
     const facture = factures.find(f => f.id === id);
     // Retrouve les commandes liées, qu'elles soient référencées individuellement
@@ -2999,6 +3308,7 @@ function BossokApp({ session, onLogout }) {
     {k:"clients",icon:"clients",label:"Clients"},
     {k:"carte",icon:"carte",label:"Carte"},
     {k:"factures",icon:"factures",label:"Factures"},
+    {k:"diverses",icon:"diverses",label:"Factures diverses"},
     {k:"commandes",icon:"commandes",label:"Commandes"},
     {k:"planning",icon:"planning",label:"Planning"},
     {k:"stock",icon:"stock",label:"Stock"},
@@ -3007,7 +3317,7 @@ function BossokApp({ session, onLogout }) {
     {k:"zones",icon:"zones",label:"Zones"},
   ];
 
-  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
+  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",diverses:"Factures diverses",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8FAFC",fontFamily:"Inter,system-ui,sans-serif"}}>
@@ -3136,6 +3446,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
             {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewFactureTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
+            {page==="diverses" && !showDiverseForm && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewDiverseTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
             {page==="commandes" && (showCmdForm ? (
               <button style={{...S.btn("#fff","#1D4ED8"),opacity:saving?0.6:1}} onClick={saveCmd} disabled={saving}>{isMobile?"✅":"✅ Enregistrer"}</button>
             ) : (
@@ -6055,6 +6366,186 @@ function BossokApp({ session, onLogout }) {
   </div>
 )}
 
+{/* ══ FACTURES DIVERSES (liste) ═════════════════════════════════ */}
+{page==="diverses" && !showDiverseForm && (()=>{
+  const fd = facturesDiverses.filter(f=>{
+    const matchStatut = fdFilterStatut==="Tous" || f.statut===fdFilterStatut;
+    const matchSearch = !fdFilterSearch || f.destinataire_nom?.toLowerCase().includes(fdFilterSearch.toLowerCase()) || String(f.numero||"").toLowerCase().includes(fdFilterSearch.toLowerCase());
+    return matchStatut && matchSearch;
+  });
+  const totalImpaye = facturesDiverses.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFactDiverse(f.lignes,f.tva_pct).total,0);
+
+  return (
+  <div>
+    {workTabStrip()}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:10,marginBottom:14}}>
+      {[
+        {l:"Total",v:facturesDiverses.length,c:"#1D4ED8",s:"Tous"},
+        {l:"Impayées",v:facturesDiverses.filter(f=>f.statut==="Impayée").length,c:"#DC2626",s:"Impayée",sub:fmtFull(totalImpaye)},
+        {l:"Payées",v:facturesDiverses.filter(f=>f.statut==="Payée").length,c:"#059669",s:"Payée"},
+      ].map((k,i)=>(
+        <div key={i} style={{...S.kpi(k.c),cursor:"pointer",outline:fdFilterStatut===k.s?"2px solid "+k.c:"none"}} onClick={()=>setFdFilterStatut(k.s)}>
+          <div style={{fontSize:22,fontWeight:800,color:k.c}}>{k.v}</div>
+          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{k.l}</div>
+          {k.sub&&<div style={{fontSize:11,color:k.c,fontWeight:700}}>{k.sub}</div>}
+        </div>
+      ))}
+    </div>
+
+    <div style={{...S.card,marginBottom:12,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+      <input value={fdFilterSearch} onChange={e=>setFdFilterSearch(e.target.value)} placeholder="🔍 Rechercher destinataire ou N°..." style={{...S.input,flex:1,minWidth:180}}/>
+      <select value={fdFilterStatut} onChange={e=>setFdFilterStatut(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,background:"#F9FAFB"}}>
+        <option value="Tous">Tous les statuts</option>
+        <option value="Impayée">⚠ Impayées</option>
+        <option value="Payée">✓ Payées</option>
+      </select>
+    </div>
+
+    <DataTable
+      isMobile={isMobile}
+      rows={fd}
+      onRowClick={openEditDiverse}
+      pageSize={20}
+      emptyIcon="🧾"
+      emptyMessage="Aucune facture diverse"
+      initialSort={{key:"date",dir:"desc"}}
+      columns={[
+        {key:"numero", label:"N°", mobilePrimary:true, render:f=><strong>{f.numero}</strong>},
+        {key:"destinataire_nom", label:"Destinataire", mobileShow:true, sortValue:f=>f.destinataire_nom||""},
+        {key:"date", label:"Date", mobileShow:true},
+        {key:"montant", label:"Montant", align:"right", mobileShow:true, sortValue:f=>totalFactDiverse(f.lignes,f.tva_pct).total,
+          render:f=>fmtFull(totalFactDiverse(f.lignes,f.tva_pct).total)},
+        {key:"statut", label:"Statut", mobileShow:true, render:f=>(
+          <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2", f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
+        )},
+        {key:"pj", label:"📎", align:"center", sortable:false, render:f=>(f.pieces_jointes||[]).length||""},
+        {key:"actions", label:"", align:"right", sortable:false, render:f=>(
+          <>
+            <button title="Imprimer" onClick={e=>{e.stopPropagation();generatePDFDiverse(f);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11,marginRight:6}}>🖨️</button>
+            {f.statut==="Impayée" ? (
+              <button title="Marquer payée" onClick={e=>{e.stopPropagation();setPaiementDiverse(f);setPaiementDiverseForm({date:localDateStr()});setShowPaiementDiverseForm(true);}} style={{...S.btn("#DCFCE7","#166534"),padding:"2px 8px",fontSize:11,marginRight:6}}>💰</button>
+            ) : (
+              <button title="Marquer impayée" onClick={e=>{e.stopPropagation();marquerDiverseImpayee(f.id);}} style={{...S.btn("#FEE2E2","#DC2626"),padding:"2px 8px",fontSize:11,marginRight:6}}>↩</button>
+            )}
+            <button title="Supprimer" onClick={e=>{e.stopPropagation();supprimerDiverse(f.id,f.numero);}} style={{...S.btn("#FEE2E2","#DC2626"),padding:"2px 8px",fontSize:11}}>🗑️</button>
+          </>
+        )},
+      ]}
+    />
+  </div>
+  );
+})()}
+
+{/* ══ FACTURES DIVERSES (formulaire) ═════════════════════════════ */}
+{page==="diverses" && showDiverseForm&&(
+  <div className="page-transition">
+    {workTabStrip()}
+    <div style={{...S.card,maxWidth:680}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editingDiverse ? "Modifier la facture" : "Nouvelle facture diverse"}</h2>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>N° Facture</label>
+          <input value={fdNumero} onChange={e=>setFdNumero(e.target.value)} placeholder="Auto-généré selon la date" style={{...S.input, fontWeight:600, color:"#1D4ED8"}}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
+          <input type="date" value={fdDate} onChange={e=>{
+            const newDate = e.target.value;
+            setFdDate(newDate);
+            if(!editingDiverse && !fdNumero) setFdNumero(genererNumeroFactureDiverse(newDate));
+          }} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Échéance</label>
+          <input type="date" value={fdEcheance} onChange={e=>setFdEcheance(e.target.value)} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>TVA (%)</label>
+          <input type="number" min="0" max="100" step="0.1" value={fdTvaPct} onChange={e=>setFdTvaPct(e.target.value)} style={S.input}/>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Destinataire (nom / société) *</label>
+          <input value={fdDestNom} onChange={e=>setFdDestNom(e.target.value)} placeholder="Ex: Logico Sàrl" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>N° TVA (optionnel)</label>
+          <input value={fdDestTva} onChange={e=>setFdDestTva(e.target.value)} placeholder="Ex: LU12345678" style={S.input}/>
+        </div>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Adresse</label>
+        <input value={fdDestAdresse} onChange={e=>setFdDestAdresse(e.target.value)} placeholder="Adresse complète" style={S.input}/>
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:4}}>Lignes</label>
+        {fdLignes.length>0&&(
+          <div style={{border:"1px solid #E5E7EB",borderRadius:8,marginBottom:8,overflow:"hidden"}}>
+            {fdLignes.map((l,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderBottom:i<fdLignes.length-1?"1px solid #F1F5F9":"none",fontSize:13}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.description}</div>
+                  <div style={{color:"#6B7280",fontSize:11}}>{l.qte} × {fmtFull(l.pu)} = {fmtFull(l.qte*l.pu)}</div>
+                </div>
+                <button onClick={()=>supprimerLigneDiverse(i)} style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:4}}><Icon name="close" size={14}/></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr 1fr auto",gap:8}}>
+          <input value={fdLigneDesc} onChange={e=>setFdLigneDesc(e.target.value)} placeholder="Description (ex: Palette EUR qualité 1)" style={S.input}/>
+          <input type="number" min="0" step="0.01" value={fdLigneQte} onChange={e=>setFdLigneQte(e.target.value)} placeholder="Qté" style={S.input}/>
+          <input type="number" min="0" step="0.01" value={fdLignePu} onChange={e=>setFdLignePu(e.target.value)} placeholder="Prix unit." style={S.input}/>
+          <button onClick={ajouterLigneDiverse} disabled={!fdLigneDesc.trim()||!parseFloat(fdLigneQte)} style={{...S.btn("#EFF6FF","#1D4ED8"),opacity:(!fdLigneDesc.trim()||!parseFloat(fdLigneQte))?0.5:1}}>+ Ajouter</button>
+        </div>
+        {fdLignes.length>0&&(
+          <div style={{textAlign:"right",marginTop:8,fontSize:13,fontWeight:700,color:"#1D4ED8"}}>
+            Total TTC : {fmtFull(totalFactDiverse(fdLignes, fdTvaPct).total)}
+          </div>
+        )}
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes internes</label>
+        <input value={fdNotes} onChange={e=>setFdNotes(e.target.value)} placeholder="Notes optionnelles..." style={S.input}/>
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Documents joints</label>
+        {fdFichiers.length>0&&(
+          <div style={{marginBottom:8}}>
+            {fdFichiers.map((doc,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,fontSize:13,marginBottom:6}}>
+                <span onClick={()=>consulterFichierDiverse(doc.chemin)} style={{color:"#166534",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",flex:1}}>📎 {doc.nom}</span>
+                <button onClick={()=>supprimerFichierDiverse(i)} style={{background:"none",border:"none",color:"#166534",cursor:"pointer",flexShrink:0}}><Icon name="close" size={14}/></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <label style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",border:"1px dashed #CBD5E1",borderRadius:8,cursor:fdFichierEnAttente?"default":"pointer",fontSize:13,color:"#64748B",background:"#F8FAFC"}}>
+          <Icon name="produits" size={16} style={{color:"#94A3B8"}}/>
+          {fdFichierEnAttente ? "Envoi en cours..." : "Ajouter une photo ou un PDF (le document reçu, etc.)"}
+          <input type="file" accept="image/*,application/pdf" multiple style={{display:"none"}} disabled={!!fdFichierEnAttente}
+            onChange={e=>{ const files=[...(e.target.files||[])]; files.forEach(f=>ajouterFichierDiverse(f)); e.target.value=""; }}/>
+        </label>
+      </div>
+
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>{closeWorkTab("diverse");setEditingDiverse(null);setFdNumero("");}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveDiverse} disabled={saving} style={{...S.btn(),flex:2,opacity:saving?0.6:1}}>
+          {saving?"Sauvegarde...":editingDiverse?"Enregistrer les modifications":"Créer la facture"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
   {/* ══ MODAL RETOUR CONSIGNES ══════════════════════════════════════ */}
   {showRetour&&(
   <div style={S.modal} onClick={()=>setShowRetour(null)}>
@@ -6679,6 +7170,51 @@ function BossokApp({ session, onLogout }) {
         <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveModePaiement} disabled={saving||!paiementForm.mode}
           style={{...S.btn(),flex:2,opacity:(saving||!paiementForm.mode)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Confirmer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL PAIEMENT FACTURE DIVERSE ═══════════════════════════ */}
+  {showPaiementDiverseForm&&paiementDiverse&&(
+  <div style={S.modal} onClick={()=>{setShowPaiementDiverseForm(false);setPaiementDiverse(null);}}>
+    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>💰 Moyen de paiement</h2>
+        <button onClick={()=>{setShowPaiementDiverseForm(false);setPaiementDiverse(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>
+        Facture {paiementDiverse.numero} — {paiementDiverse.destinataire_nom}
+      </div>
+
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Payé par *</label>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+            {[["Espèces","💵"],["Carte","💳"],["Virement","🏦"]].map(([m,icon])=>(
+              <button key={m} onClick={()=>setPaiementDiverseForm(p=>({...p,mode:m}))}
+                style={{
+                  padding:"14px 8px",borderRadius:10,border:paiementDiverseForm.mode===m?"2px solid #1D4ED8":"2px solid #E5E7EB",
+                  background:paiementDiverseForm.mode===m?"#EFF6FF":"#fff",cursor:"pointer",textAlign:"center",
+                }}>
+                <div style={{fontSize:22,marginBottom:4}}>{icon}</div>
+                <div style={{fontSize:12,fontWeight:600,color:paiementDiverseForm.mode===m?"#1D4ED8":"#374151"}}>{m}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date d'encaissement</label>
+          <input type="date" value={paiementDiverseForm.date||""} onChange={e=>setPaiementDiverseForm(p=>({...p,date:e.target.value}))} style={S.input}/>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>{setShowPaiementDiverseForm(false);setPaiementDiverse(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveModePaiementDiverse} disabled={saving||!paiementDiverseForm.mode}
+          style={{...S.btn(),flex:2,opacity:(saving||!paiementDiverseForm.mode)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Confirmer"}
         </button>
       </div>
