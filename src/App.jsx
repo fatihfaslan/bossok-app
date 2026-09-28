@@ -848,27 +848,65 @@ const calcMargeFacture = (facture, produits, receptionsStock) => {
 // ═══════════════════════════════════════════════════════════════════
 // PDF GENERATOR
 // ═══════════════════════════════════════════════════════════════════
-// Ouvre un document HTML dans un nouvel onglet et déclenche directement la boîte
-// d'impression du navigateur (qui propose "Enregistrer en PDF" comme destination) —
-// au lieu de télécharger un fichier .html qu'il faudrait rouvrir manuellement.
-const ouvrirEtImprimer = (html, nomFichierSecours) => {
-  const fenetre = window.open("", "_blank");
-  if (!fenetre) {
-    // Pop-up bloquée par le navigateur : on retombe sur le téléchargement du fichier.
+// html2pdf.js (jsPDF + html2canvas) chargé une seule fois depuis un CDN — pas
+// de dépendance npm, cohérent avec Sentry/QRCode.js déjà chargés ainsi.
+let _html2pdfPromise = null;
+const chargerHtml2pdf = () => {
+  if (window.html2pdf) return Promise.resolve();
+  if (_html2pdfPromise) return _html2pdfPromise;
+  _html2pdfPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+    script.onload = resolve;
+    script.onerror = () => { _html2pdfPromise = null; reject(new Error("html2pdf indisponible")); };
+    document.head.appendChild(script);
+  });
+  return _html2pdfPromise;
+};
+
+// Génère un vrai fichier .pdf et le télécharge directement — au lieu d'ouvrir
+// la boîte d'impression du navigateur (qui obligeait à choisir "Enregistrer en
+// PDF" soi-même). Le document est rendu dans un iframe caché à partir du même
+// HTML que celui utilisé pour l'impression, donc identique visuellement.
+const ouvrirEtImprimer = async (html, nomFichierSecours) => {
+  let iframe = null;
+  try {
+    await chargerHtml2pdf();
+    iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:794px;height:1123px;border:none;";
+    document.body.appendChild(iframe);
+    await new Promise(resolve => {
+      iframe.onload = resolve;
+      iframe.srcdoc = html;
+    });
+    // Laisse le temps aux scripts inline (ex: génération du QR code SEPA) de s'exécuter.
+    await new Promise(r => setTimeout(r, 400));
+    const nomPdf = (nomFichierSecours || "document.html").replace(/\.html$/i, ".pdf");
+    await window.html2pdf()
+      .from(iframe.contentDocument.body)
+      .set({
+        margin: 0,
+        filename: nomPdf,
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "legacy"] },
+      })
+      .save();
+  } catch (e) {
+    // html2pdf indisponible, ou rendu impossible : on retombe sur le téléchargement
+    // du fichier HTML brut (ouvrable et imprimable à la main depuis le navigateur).
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = nomFichierSecours;
+    a.download = (nomFichierSecours || "document.html").replace(/\.pdf$/i, ".html");
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    return;
+  } finally {
+    if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
   }
-  fenetre.document.write(html);
-  fenetre.document.close();
-  fenetre.onload = () => { try { fenetre.print(); } catch(e) {} };
 };
 
 const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetail = []) => {
@@ -4949,7 +4987,7 @@ function BossokApp({ session, onLogout }) {
                   <button onClick={()=>{setOpenFactureMenu(null);dupliquerFacture(f);}}
                     className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
                   <button onClick={()=>{setOpenFactureMenu(null);const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde,soldeConsignes(f.client_id));}}
-                    className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer PDF</button>
+                    className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>⬇️ Télécharger PDF</button>
                   {(f.statut==="Impayée"||f.statut==="Payée")&&(
                     <button onClick={()=>{setOpenFactureMenu(null);creerAvoir(f);}}
                       className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#8B5CF6"}}>↩️ Créer un avoir</button>
@@ -5235,9 +5273,9 @@ function BossokApp({ session, onLogout }) {
                           className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#059669"}}>✓ Marquer livré</button>
                       )}
                       <button onClick={()=>{setOpenCmdMenu(null);imprimerFactureCommande(c);}}
-                        className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer facture</button>
+                        className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>⬇️ Télécharger facture (PDF)</button>
                       <button onClick={()=>{setOpenCmdMenu(null);imprimerBonLivraison(c);}}
-                        className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#7C3AED"}}>📦 Bon de livraison</button>
+                        className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#7C3AED"}}>📦 Bon de livraison (PDF)</button>
                       {c.statut!=="Livré"&&(
                         <button onClick={()=>{setOpenCmdMenu(null);openEditCmd(c);}}
                           className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
@@ -6099,7 +6137,7 @@ function BossokApp({ session, onLogout }) {
                   <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2",f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
                   {f.statut==="Impayée"&&<button title="Marquer comme Payée" onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:"",date:new Date().toISOString().split("T")[0]});setShowPaiementForm(true);}} style={{...S.btn("#059669"),padding:"2px 8px",fontSize:11}}>✓ Payée</button>}
                   {f.statut==="Payée"&&<button title="Remettre en Impayée" onClick={()=>marquerImpayee(f.id)} style={{...S.btn("#F59E0B"),padding:"2px 8px",fontSize:11}}>↺</button>}
-                  <button title="Imprimer" onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,selClient,imp,solde,soldeConsignes(f.client_id));}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>🖨️</button>
+                  <button title="Télécharger PDF" onClick={()=>{const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,selClient,imp,solde,soldeConsignes(f.client_id));}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11}}>⬇️</button>
                   <button title="Supprimer" onClick={()=>supprimerFacture(f.id,f.numero)} style={{...S.btn("#EF4444"),padding:"2px 8px",fontSize:11}}>🗑️</button>
                 </div>
               );
@@ -6485,7 +6523,7 @@ function BossokApp({ session, onLogout }) {
         {key:"pj", label:"📎", align:"center", sortable:false, render:f=>(f.pieces_jointes||[]).length||""},
         {key:"actions", label:"", align:"right", sortable:false, render:f=>(
           <>
-            <button title="Imprimer" onClick={e=>{e.stopPropagation();generatePDFDiverse(f);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11,marginRight:6}}>🖨️</button>
+            <button title="Télécharger PDF" onClick={e=>{e.stopPropagation();generatePDFDiverse(f);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11,marginRight:6}}>⬇️</button>
             {f.statut==="Impayée" ? (
               <button title="Marquer payée" onClick={e=>{e.stopPropagation();setPaiementDiverse(f);setPaiementDiverseForm({date:localDateStr()});setShowPaiementDiverseForm(true);}} style={{...S.btn("#DCFCE7","#166534"),padding:"2px 8px",fontSize:11,marginRight:6}}>💰</button>
             ) : (
@@ -6662,7 +6700,7 @@ function BossokApp({ session, onLogout }) {
           generatePDF(lastFacture.facture,lastFacture.client,imp,solde,soldeConsignes(lastFacture.facture.client_id));
           setLastFacture(null);
         }} style={{padding:"10px 20px",background:"#1D4ED8",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer"}}>
-          🖨️ Imprimer la facture
+          ⬇️ Télécharger la facture (PDF)
         </button>
         <button onClick={()=>setLastFacture(null)} style={{padding:"10px 20px",background:"#F3F4F6",color:"#374151",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer"}}>
           Plus tard
