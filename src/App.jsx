@@ -189,7 +189,7 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
 // ═══════════════════════════════════════════════════════════════════
 // ROUTING (URL basée sur le hash, ex: #/clients/482)
 // ═══════════════════════════════════════════════════════════════════
-const PAGE_KEYS = ["calendrier","dashboard","caisse","clients","carte","factures","diverses","commandes","planning","stock","consignes","produits","zones"];
+const PAGE_KEYS = ["calendrier","dashboard","controle","caisse","clients","carte","factures","diverses","commandes","planning","stock","consignes","produits","zones"];
 const parseHash = () => {
   const h = (window.location.hash || "").replace(/^#\/?/, "");
   const parts = h.split("/").filter(Boolean);
@@ -2127,6 +2127,14 @@ function BossokApp({ session, onLogout }) {
   const [dashProduit, setDashProduit] = useState("");
   const [dashStatut, setDashStatut] = useState("");
 
+  // Contrôle de gestion — filtres période (page dédiée, indépendante du Dashboard)
+  const [cgPeriod, setCgPeriod] = useState("mois");
+  const [cgDateFrom, setCgDateFrom] = useState(() => {
+    const now = new Date();
+    return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
+  });
+  const [cgDateTo, setCgDateTo] = useState(() => new Date().toISOString().split("T")[0]);
+
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now()+86400000).toISOString().split("T")[0];
 
@@ -3340,6 +3348,7 @@ function BossokApp({ session, onLogout }) {
   const NAV = [
     {k:"calendrier",icon:"calendrier",label:"Calendrier"},
     {k:"dashboard",icon:"dashboard",label:"Dashboard"},
+    {k:"controle",icon:"barChart2",label:"Contrôle de gestion"},
     {k:"caisse",icon:"caisse",label:"Caisse"},
     {k:"clients",icon:"clients",label:"Clients"},
     {k:"carte",icon:"carte",label:"Carte"},
@@ -3353,7 +3362,7 @@ function BossokApp({ session, onLogout }) {
     {k:"zones",icon:"zones",label:"Zones"},
   ];
 
-  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",diverses:"Factures diverses",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
+  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",controle:"Contrôle de gestion",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",diverses:"Factures diverses",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8FAFC",fontFamily:"Inter,system-ui,sans-serif"}}>
@@ -4642,6 +4651,291 @@ function BossokApp({ session, onLogout }) {
   );
 }
 )()}
+
+{/* ══ CONTRÔLE DE GESTION ══════════════════════════════════════ */}
+{page==="controle" && (()=>{
+
+  const getPeriodDatesCG = (p) => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    if (p==="mois") {
+      return [y+"-"+String(m+1).padStart(2,"0")+"-01", now.toISOString().split("T")[0]];
+    } else if (p==="mois_dernier") {
+      const dm = new Date(now); dm.setDate(0); // dernier jour du mois précédent
+      const dm1 = new Date(dm.getFullYear(), dm.getMonth(), 1);
+      return [dm1.toISOString().split("T")[0], dm.toISOString().split("T")[0]];
+    } else if (p==="trimestre") {
+      const d3 = new Date(now); d3.setMonth(d3.getMonth()-3); d3.setDate(1);
+      return [d3.toISOString().split("T")[0], now.toISOString().split("T")[0]];
+    } else if (p==="annee") {
+      return [y+"-01-01", y+"-12-31"];
+    } else if (p==="12mois") {
+      const dFrom = new Date(now); dFrom.setMonth(dFrom.getMonth()-12);
+      return [dFrom.toISOString().split("T")[0], now.toISOString().split("T")[0]];
+    }
+    return [cgDateFrom, cgDateTo];
+  };
+
+  const [cgFrom, cgTo] = cgPeriod==="custom" ? [cgDateFrom, cgDateTo] : getPeriodDatesCG(cgPeriod);
+
+  const applyPeriodCG = (p) => {
+    setCgPeriod(p);
+    if (p!=="custom") {
+      const [f,t] = getPeriodDatesCG(p);
+      setCgDateFrom(f);
+      setCgDateTo(t);
+    }
+  };
+
+  // Factures actives sur la période (hors avoirs/annulées — même logique que le Dashboard)
+  const cgFacts = factures.filter(f=>{
+    if (!f.date) return false;
+    if (cgFrom && f.date < cgFrom) return false;
+    if (cgTo && f.date > cgTo) return false;
+    return f.statut!=="Avoir" && f.statut!=="Annulée";
+  });
+
+  // ── Agrégations par dimension : type de client, client, produit, zone ──
+  // Marge calculée ligne par ligne via calcMargeLigne (coût moyen pondéré des
+  // réceptions de stock en priorité, sinon prix d'achat produit, sinon estimation).
+  const parType = {}, parClient = {}, parProduit = {}, parZone = {};
+  let caGlobal=0, margeGlobal=0, ligneReellesGlobal=0, ligneTotalGlobal=0;
+
+  cgFacts.forEach(f=>{
+    const cl = clients.find(c=>c.id===f.client_id);
+    const {total} = totalFact(f.lignes, f.tva_pct);
+    const mFact = calcMargeFacture(f, produits, receptionsStock);
+    caGlobal += total; margeGlobal += mFact.marge;
+    ligneReellesGlobal += mFact.ligneReelles; ligneTotalGlobal += mFact.ligneTotal;
+
+    const typeKey = cl?.type || "Autre";
+    if (!parType[typeKey]) parType[typeKey] = {type:typeKey, ca:0, marge:0, nb:0, clientsSet:new Set()};
+    parType[typeKey].ca += total; parType[typeKey].marge += mFact.marge; parType[typeKey].nb++;
+    if (f.client_id) parType[typeKey].clientsSet.add(f.client_id);
+
+    const cid = f.client_id;
+    if (!parClient[cid]) parClient[cid] = {id:cid, nom:f.client_nom, type:cl?.type||"", zone:cl?.region||"", ca:0, marge:0, nb:0};
+    parClient[cid].ca += total; parClient[cid].marge += mFact.marge; parClient[cid].nb++;
+
+    const zoneKey = cl?.region || "Inconnu";
+    if (!parZone[zoneKey]) parZone[zoneKey] = {zone:zoneKey, ca:0, marge:0, nb:0};
+    parZone[zoneKey].ca += total; parZone[zoneKey].marge += mFact.marge; parZone[zoneKey].nb++;
+
+    (f.lignes||[]).filter(l=>!l.isCredit && l.produitId!=="CREDIT_CONSIGNES").forEach(l=>{
+      const nomProd = (l.nom||"").replace(/\s*\(offert\)$/,"");
+      const produitRef = produits.find(p=>p.id===l.produitId);
+      if (!parProduit[nomProd]) parProduit[nomProd] = {nom:nomProd, categorie:produitRef?.categorie||"—", qte:0, ca:0, marge:0, reel:0, total:0};
+      const r = calcMargeLigne(l, produits, receptionsStock);
+      parProduit[nomProd].qte += l.qte; parProduit[nomProd].ca += l.qte*l.pu; parProduit[nomProd].marge += r.marge;
+      parProduit[nomProd].total++; if (r.reel) parProduit[nomProd].reel++;
+    });
+  });
+
+  const listeType = Object.values(parType).map(t=>({...t, nbClients:t.clientsSet.size, cogs:t.ca-t.marge, margePct: t.ca>0?t.marge/t.ca*100:0}));
+  const listeClient = Object.values(parClient).map(c=>({...c, cogs:c.ca-c.marge, margePct: c.ca>0?c.marge/c.ca*100:0}));
+  const listeProduit = Object.values(parProduit).map(p=>({...p, cogs:p.ca-p.marge, margePct: p.ca>0?p.marge/p.ca*100:0, fiabilite: p.total>0?p.reel/p.total*100:100}));
+  const listeZone = Object.values(parZone).map(z=>({...z, driver: ZONE_SCHEDULE[z.zone]?.driver || "?", cogs:z.ca-z.marge, margePct: z.ca>0?z.marge/z.ca*100:0}));
+
+  const caProduitsTotal = listeProduit.reduce((s,p)=>s+p.ca,0);
+  const margeProduitsTotal = listeProduit.reduce((s,p)=>s+p.marge,0);
+  const margePctGlobal = caGlobal>0 ? margeGlobal/caGlobal*100 : 0;
+  const fiabiliteGlobal = ligneTotalGlobal>0 ? ligneReellesGlobal/ligneTotalGlobal*100 : 100;
+  const cogsGlobal = caGlobal - margeGlobal;
+
+  return (
+  <div>
+    {/* ── Filtre période ── */}
+    <div style={{...S.card,marginBottom:14,padding:"12px 16px"}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        {[["mois","Mois"],["mois_dernier","Mois dernier"],["trimestre","Trimestre"],["annee","Année"],["12mois","12 mois"]].map(([k,l])=>(
+          <button key={k} onClick={()=>applyPeriodCG(k)}
+            style={{...S.btn(cgPeriod===k?"#1D4ED8":"#F1F5F9",cgPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:cgPeriod===k?700:400}}>
+            {l}
+          </button>
+        ))}
+        <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:8}}>
+          <input type="date" value={cgDateFrom} onChange={e=>{setCgDateFrom(e.target.value);setCgPeriod("custom");}}
+            style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
+          <span style={{color:"#9CA3AF",fontSize:12}}>→</span>
+          <input type="date" value={cgDateTo} onChange={e=>{setCgDateTo(e.target.value);setCgPeriod("custom");}}
+            style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
+        </div>
+      </div>
+    </div>
+
+    {/* ── KPIs globaux ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(5,1fr)",gap:10,marginBottom:8}}>
+      {[
+        {l:"Chiffre d'affaires",v:fmtFull(caGlobal),c:"#334155"},
+        {l:"COGS (coût produits)",v:fmtFull(cogsGlobal),c:"#334155"},
+        {l:"Marge brute",v:fmtFull(margeGlobal),c:"#059669"},
+        {l:"Marge %",v:Math.round(margePctGlobal)+"%",c:"#059669"},
+        {l:"Fiabilité du calcul",v:Math.round(fiabiliteGlobal)+"%",c:fiabiliteGlobal>=80?"#059669":"#D97706"},
+      ].map((k,i)=>(
+        <div key={i} style={S.kpi(k.c)}>
+          <div style={{fontSize:18,fontWeight:800,color:k.c}}>{k.v}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>{k.l}</div>
+        </div>
+      ))}
+    </div>
+    <div style={{fontSize:11,color:"#9CA3AF",marginBottom:16}}>
+      Marge = coût moyen pondéré des réceptions de stock en priorité, sinon prix d'achat produit, sinon estimation à {Math.round((1-COUT_RATIO_FALLBACK)*100)}% de marge par défaut si aucune donnée de coût n'existe pour ce produit. La "fiabilité" indique la part du chiffre d'affaires reposant sur un vrai coût plutôt que sur l'estimation par défaut — un chiffre bas signale des produits sans prix d'achat renseigné.
+    </div>
+
+    {/* ── Marge par type de client ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="barChart2" size={14} style={{color:"#5D6B82"}}/> Marge par type de client</div>
+      <DataTable
+        isMobile={isMobile}
+        rows={listeType}
+        pageSize={15}
+        emptyMessage="Aucune donnée sur cette période"
+        initialSort={{key:"marge",dir:"desc"}}
+        footer={isMobile ? (
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Total</span>
+            <span>{fmtFull(caGlobal)} · marge {fmtFull(margeGlobal)}</span>
+          </div>
+        ) : (
+          <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+            <td style={{padding:"8px 12px"}}>Total</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeType.reduce((s,t)=>s+t.nbClients,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeType.reduce((s,t)=>s+t.nb,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(cogsGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{Math.round(margePctGlobal)}%</td>
+          </tr>
+        )}
+        columns={[
+          {key:"type", label:"Type", mobilePrimary:true, sortValue:r=>r.type, render:r=>{const {bg,text}=tc(r.type); return <span style={S.badge(bg,text)}>{r.type}</span>;}},
+          {key:"nbClients", label:"Clients", align:"right", mobileShow:true, sortValue:r=>r.nbClients},
+          {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", mobileShow:true, sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+        ]}
+      />
+    </div>
+
+    {/* ── Marge par client ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Marge par client</div>
+      <DataTable
+        isMobile={isMobile}
+        rows={listeClient}
+        pageSize={20}
+        emptyMessage="Aucune donnée sur cette période"
+        initialSort={{key:"marge",dir:"desc"}}
+        footer={isMobile ? (
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Total ({listeClient.length} clients)</span>
+            <span>{fmtFull(caGlobal)} · marge {fmtFull(margeGlobal)}</span>
+          </div>
+        ) : (
+          <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+            <td style={{padding:"8px 12px"}}>Total ({listeClient.length} clients)</td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeClient.reduce((s,c)=>s+c.nb,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(cogsGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{Math.round(margePctGlobal)}%</td>
+          </tr>
+        )}
+        columns={[
+          {key:"nom", label:"Client", mobilePrimary:true, sortValue:r=>r.nom},
+          {key:"type", label:"Type", sortValue:r=>r.type},
+          {key:"zone", label:"Zone", mobileShow:true, sortValue:r=>r.zone},
+          {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", mobileShow:true, sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+        ]}
+      />
+    </div>
+
+    {/* ── Marge par produit ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="produits" size={14} style={{color:"#5D6B82"}}/> Marge par produit</div>
+      <DataTable
+        isMobile={isMobile}
+        rows={listeProduit}
+        pageSize={20}
+        emptyMessage="Aucune donnée sur cette période"
+        initialSort={{key:"marge",dir:"desc"}}
+        footer={isMobile ? (
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Total ({listeProduit.length} produits)</span>
+            <span>{fmtFull(caProduitsTotal)} · marge {fmtFull(margeProduitsTotal)}</span>
+          </div>
+        ) : (
+          <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+            <td style={{padding:"8px 12px"}}>Total ({listeProduit.length} produits)</td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeProduit.reduce((s,p)=>s+p.qte,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caProduitsTotal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caProduitsTotal-margeProduitsTotal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeProduitsTotal)}</td>
+            <td style={{padding:"8px 12px"}}></td>
+          </tr>
+        )}
+        columns={[
+          {key:"nom", label:"Produit", mobilePrimary:true, sortValue:r=>r.nom},
+          {key:"categorie", label:"Catégorie", sortValue:r=>r.categorie},
+          {key:"qte", label:"Qté vendue", align:"right", mobileShow:true, sortValue:r=>r.qte},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"fiabilite", label:"Fiabilité", align:"right", sortValue:r=>r.fiabilite, render:r=><span style={{color:r.fiabilite>=80?"#059669":"#D97706",fontSize:11}}>{Math.round(r.fiabilite)}%</span>},
+        ]}
+      />
+    </div>
+
+    {/* ── Marge par zone ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> Marge par zone</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:12}}>Sans coût de transport par tournée dans le système, les écarts entre zones reflètent surtout le mix produits/clients — pas encore un vrai coût de livraison.</div>
+      <DataTable
+        isMobile={isMobile}
+        rows={listeZone}
+        pageSize={15}
+        emptyMessage="Aucune donnée sur cette période"
+        initialSort={{key:"marge",dir:"desc"}}
+        footer={isMobile ? (
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Total</span>
+            <span>{fmtFull(caGlobal)} · marge {fmtFull(margeGlobal)}</span>
+          </div>
+        ) : (
+          <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+            <td style={{padding:"8px 12px"}}>Total</td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeZone.reduce((s,z)=>s+z.nb,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(cogsGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{Math.round(margePctGlobal)}%</td>
+          </tr>
+        )}
+        columns={[
+          {key:"zone", label:"Zone", mobilePrimary:true, sortValue:r=>r.zone},
+          {key:"driver", label:"Chauffeur", mobileShow:true, sortValue:r=>r.driver},
+          {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", mobileShow:true, sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+        ]}
+      />
+    </div>
+  </div>
+  );
+})()}
 
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && !selClient && (
