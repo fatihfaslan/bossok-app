@@ -4743,6 +4743,31 @@ function BossokApp({ session, onLogout }) {
   const fiabiliteGlobal = ligneTotalGlobal>0 ? ligneReellesGlobal/ligneTotalGlobal*100 : 100;
   const cogsGlobal = caGlobal - margeGlobal;
 
+  // Export CSV — s'ouvre directement dans Excel (point-virgule + BOM UTF-8 pour les accents),
+  // même principe que les exports déjà en place sur le Dashboard (Factures/Commandes/Stock).
+  const downloadCSV = (filename, rows) => {
+    const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\n");
+    const blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  const dateSuffix = () => cgFrom+"_a_"+cgTo;
+  const exportCGType = () => downloadCSV("controle_gestion_par_type_"+dateSuffix()+".csv",
+    [["Type","Clients","Factures","CA","COGS","Marge","Marge %"],
+     ...listeType.map(t=>[t.type,t.nbClients,t.nb,t.ca.toFixed(2),t.cogs.toFixed(2),t.marge.toFixed(2),Math.round(t.margePct)+"%"])]);
+  const exportCGClient = () => downloadCSV("controle_gestion_par_client_"+dateSuffix()+".csv",
+    [["Client","Type","Zone","Factures","CA","COGS","Marge","Marge %"],
+     ...listeClient.map(c=>[c.nom,c.type,c.zone,c.nb,c.ca.toFixed(2),c.cogs.toFixed(2),c.marge.toFixed(2),Math.round(c.margePct)+"%"])]);
+  const exportCGProduit = () => downloadCSV("controle_gestion_par_produit_"+dateSuffix()+".csv",
+    [["Produit","Catégorie","Qté vendue","CA","COGS","Marge","Fiabilité %"],
+     ...listeProduit.map(p=>[p.nom,p.categorie,p.qte,p.ca.toFixed(2),p.cogs.toFixed(2),p.marge.toFixed(2),Math.round(p.fiabilite)+"%"])]);
+  const exportCGZone = () => downloadCSV("controle_gestion_par_zone_"+dateSuffix()+".csv",
+    [["Zone","Chauffeur","Factures","CA","COGS","Marge","Marge %"],
+     ...listeZone.map(z=>[z.zone,z.driver,z.nb,z.ca.toFixed(2),z.cogs.toFixed(2),z.marge.toFixed(2),Math.round(z.margePct)+"%"])]);
+
   return (
   <div>
     {/* ── Filtre période ── */}
@@ -4761,6 +4786,13 @@ function BossokApp({ session, onLogout }) {
           <input type="date" value={cgDateTo} onChange={e=>{setCgDateTo(e.target.value);setCgPeriod("custom");}}
             style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
         </div>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",borderTop:"1px solid #F1F5F9",paddingTop:10,marginTop:10}}>
+        <span style={{fontSize:11,color:"#9CA3AF",fontWeight:600,marginRight:4}}>Exporter (Excel) :</span>
+        <button onClick={exportCGType} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="barChart2" size={12}/> Par type</button>
+        <button onClick={exportCGClient} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="clients" size={12}/> Par client</button>
+        <button onClick={exportCGProduit} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="produits" size={12}/> Par produit</button>
+        <button onClick={exportCGZone} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="carte" size={12}/> Par zone</button>
       </div>
     </div>
 
