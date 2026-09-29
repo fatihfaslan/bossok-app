@@ -3206,6 +3206,7 @@ function BossokApp({ session, onLogout }) {
     // Une commande "transport seul" (sans produit) est autorisée si un montant de transport est saisi.
     if (cmdProduits.length===0 && !(parseFloat(cmdTransport)>0)) { notifyError("Ajoute au moins un produit, ou un montant de transport, avant d'enregistrer."); return; }
     const client = clients.find(c=>c.id===cmdClientId);
+    const etaitEdition = !!editingCmd;
     setSaving(true);
     try {
       if (editingCmd) {
@@ -3313,6 +3314,7 @@ function BossokApp({ session, onLogout }) {
       setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setCmdTransport(""); setSearchCmdClient("");
       setManualConsigneLignesCmd([]);
       closeWorkTab("commande");
+      notifySuccess(etaitEdition ? "✅ Commande mise à jour — modifications enregistrées." : "✅ Commande enregistrée.");
     } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
@@ -5801,7 +5803,8 @@ function BossokApp({ session, onLogout }) {
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
         <div>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
-          <input value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} placeholder="Instructions spéciales..." style={S.input}/>
+          <textarea value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} placeholder="Instructions spéciales..." rows={3}
+            style={{...S.input,resize:"vertical",fontFamily:"inherit"}}/>
         </div>
         <div>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>🚚 Transport <span style={{color:"#9CA3AF"}}>(optionnel — TVA {TVA_TRANSPORT_PCT}%)</span></label>
