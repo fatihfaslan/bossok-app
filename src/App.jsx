@@ -6710,6 +6710,30 @@ function BossokApp({ session, onLogout }) {
             <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);}} style={S.btn("#F1F5F9","#334155")}>✏️</button>
           </div>
         </div>
+        {selClient.code_activation&&(
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:selClient.auth_user_id?"#F0FDF4":"#EFF6FF",border:"1px solid "+(selClient.auth_user_id?"#BBF7D0":"#BFDBFE"),borderRadius:10,padding:"9px 12px",marginBottom:14}}>
+            <span style={{fontSize:12,fontWeight:600,color:selClient.auth_user_id?"#166534":"#1D4ED8"}}>
+              {selClient.auth_user_id?"✅ Portail activé":"🔑 Code d'activation portail"}
+            </span>
+            {!selClient.auth_user_id&&(
+              <>
+                <span style={{fontFamily:"monospace",fontSize:14,fontWeight:700,letterSpacing:1,color:"#0F172A",background:"#fff",border:"1px solid #E3E7ED",borderRadius:6,padding:"2px 8px"}}>
+                  {selClient.code_activation}
+                </span>
+                <button
+                  onClick={async()=>{
+                    try{
+                      await navigator.clipboard.writeText(selClient.code_activation);
+                      notifySuccess("Code copié dans le presse-papiers.");
+                    }catch(e){logError(e);}
+                  }}
+                  style={S.btn("#F1F5F9","#334155")}
+                >📋 Copier</button>
+                <span style={{fontSize:11,color:"#64748B"}}>À communiquer au client pour qu'il active son compte sur hondro-distribution.com</span>
+              </>
+            )}
+          </div>
+        )}
         <div style={{display:"flex",gap:2}}>
           {[["info","Infos"],["factures","Factures"],["visites","Visites"],["consignes","Consignes"],["prix","Prix perso"]].map(([k,l])=>(
             <button key={k} style={S.tab(clientTab===k)} onClick={()=>setClientTab(k)}>{l}</button>
