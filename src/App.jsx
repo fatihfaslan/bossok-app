@@ -2967,6 +2967,11 @@ function BossokApp({ session, onLogout }) {
         carburant: fraisForm.carburant!==""&&fraisForm.carburant!=null ? Number(fraisForm.carburant) : null,
         assurance_vehicules: fraisForm.assurance_vehicules!==""&&fraisForm.assurance_vehicules!=null ? Number(fraisForm.assurance_vehicules) : null,
         entretien_vehicules: fraisForm.entretien_vehicules!==""&&fraisForm.entretien_vehicules!=null ? Number(fraisForm.entretien_vehicules) : null,
+        leasing_vehicule: fraisForm.leasing_vehicule!==""&&fraisForm.leasing_vehicule!=null ? Number(fraisForm.leasing_vehicule) : null,
+        frais_comptabilite: fraisForm.frais_comptabilite!==""&&fraisForm.frais_comptabilite!=null ? Number(fraisForm.frais_comptabilite) : null,
+        frais_bancaires: fraisForm.frais_bancaires!==""&&fraisForm.frais_bancaires!=null ? Number(fraisForm.frais_bancaires) : null,
+        telephone_mobile: fraisForm.telephone_mobile!==""&&fraisForm.telephone_mobile!=null ? Number(fraisForm.telephone_mobile) : null,
+        abonnement_box: fraisForm.abonnement_box!==""&&fraisForm.abonnement_box!=null ? Number(fraisForm.abonnement_box) : null,
         autres: fraisForm.autres!==""&&fraisForm.autres!=null ? Number(fraisForm.autres) : null,
         notes: fraisForm.notes || null,
       };
@@ -4930,8 +4935,13 @@ function BossokApp({ session, onLogout }) {
       const carburantTotal = sumChamp("carburant");
       const assuranceTotal = sumChamp("assurance_vehicules");
       const entretienTotal = sumChamp("entretien_vehicules");
+      const leasingTotal = sumChamp("leasing_vehicule");
+      const comptaTotal = sumChamp("frais_comptabilite");
+      const bancairesTotal = sumChamp("frais_bancaires");
+      const telephoneTotal = sumChamp("telephone_mobile");
+      const boxTotal = sumChamp("abonnement_box");
       const autresTotal = sumChamp("autres");
-      const totalCharges = masseSalariale+loyerTotal+carburantTotal+assuranceTotal+entretienTotal+autresTotal;
+      const totalCharges = masseSalariale+loyerTotal+carburantTotal+assuranceTotal+entretienTotal+leasingTotal+comptaTotal+bancairesTotal+telephoneTotal+boxTotal+autresTotal;
       const resultatNet = margeGlobal - totalCharges;
       const resultatNetPct = caGlobal>0 ? resultatNet/caGlobal*100 : 0;
       const moisSansMasse = fraisPeriode.filter(f=>f.masse_salariale==null).length;
@@ -4948,7 +4958,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:12}}>
             {[
               {l:"Masse salariale",v:fmtFull(masseSalariale),c:"#334155"},
-              {l:"Loyer + véhicules + autres",v:fmtFull(loyerTotal+assuranceTotal+entretienTotal+autresTotal),c:"#334155"},
+              {l:"Loyer + véhicules + autres",v:fmtFull(loyerTotal+assuranceTotal+entretienTotal+leasingTotal+comptaTotal+bancairesTotal+telephoneTotal+boxTotal+autresTotal),c:"#334155"},
               {l:"Carburant",v:fmtFull(carburantTotal),c:"#334155"},
               {l:"Total charges",v:fmtFull(totalCharges),c:"#334155"},
             ].map((k,i)=>(
@@ -4964,7 +4974,7 @@ function BossokApp({ session, onLogout }) {
           </div>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5,marginBottom:8}}>
             <thead><tr style={{borderBottom:"1px solid #E5E7EB"}}>
-              {["Mois","Masse salariale","Loyer","Carburant","Assurance","Entretien","Autres",""].map(h=>(
+              {["Mois","Masse salariale","Loyer","Carburant","Assurance","Entretien","Charges fixes",""].map(h=>(
                 <th key={h} style={{padding:"5px 8px",textAlign:h==="Mois"?"left":"right",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
               ))}
             </tr></thead>
@@ -4977,7 +4987,11 @@ function BossokApp({ session, onLogout }) {
                   <td style={{padding:"5px 8px",textAlign:"right"}}>{f.carburant!=null?fmtFull(f.carburant):"—"}</td>
                   <td style={{padding:"5px 8px",textAlign:"right"}}>{f.assurance_vehicules!=null?fmtFull(f.assurance_vehicules):"—"}</td>
                   <td style={{padding:"5px 8px",textAlign:"right"}}>{f.entretien_vehicules!=null?fmtFull(f.entretien_vehicules):"—"}</td>
-                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.autres!=null?fmtFull(f.autres):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{(()=>{
+                    const vals=[f.leasing_vehicule,f.frais_comptabilite,f.frais_bancaires,f.telephone_mobile,f.abonnement_box,f.autres];
+                    const some=vals.some(v=>v!=null);
+                    return some ? fmtFull(vals.reduce((s,v)=>s+(Number(v)||0),0)) : "—";
+                  })()}</td>
                   <td style={{padding:"5px 8px",textAlign:"right",color:"#9CA3AF"}}>✎</td>
                 </tr>
               ))}
@@ -7821,6 +7835,11 @@ function BossokApp({ session, onLogout }) {
           ["carburant","Carburant"],
           ["assurance_vehicules","Assurance véhicules"],
           ["entretien_vehicules","Entretien véhicules"],
+          ["leasing_vehicule","Leasing véhicule"],
+          ["frais_comptabilite","Frais comptabilité"],
+          ["frais_bancaires","Frais bancaires (Revolut+BGL+TPE)"],
+          ["telephone_mobile","Téléphone mobile"],
+          ["abonnement_box","Abonnement box"],
           ["autres","Autres charges"],
         ].map(([champ,label])=>(
           <div key={champ}>
