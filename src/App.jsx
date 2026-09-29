@@ -3252,7 +3252,8 @@ function BossokApp({ session, onLogout }) {
             lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: l.label || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
           });
           if (transportMontant > 0) lignes.push({ produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportMontant, consigne:0 });
-          await db.update("factures", facture.id, { lignes });
+          const noteClientMaj = [client?.commentaire_facture, cmdNotes].filter(Boolean).join(" — ");
+          await db.update("factures", facture.id, { lignes, note_client: noteClientMaj });
         }
         setEditingCmd(null);
       } else {
@@ -3305,7 +3306,7 @@ function BossokApp({ session, onLogout }) {
             client_tva: client?.tva||"",
             date: today, echeance: ech.toISOString().split("T")[0],
             lignes, statut: "Impayée", notes: `Commande #${newCmd.id}`, retours: [],
-            note_client: client?.commentaire_facture || "",
+            note_client: [client?.commentaire_facture, cmdNotes].filter(Boolean).join(" — "),
             tva_pct: clientEstExonere(client) ? 0 : 3,
           });
         }
