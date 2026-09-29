@@ -2436,6 +2436,28 @@ function BossokApp({ session, onLogout }) {
     finally { setSaving(false); }
   };
 
+  // Demandes de compte portail (clients.statut_compte === "en_attente")
+  // — inscriptions faites depuis hondro-distribution.com, à vérifier avant activation.
+  const activerDemandeCompte = (client) => {
+    askConfirm(`Activer le compte de "${client.nom}" ? Le client pourra se connecter et passer commande sur le portail.`, async () => {
+      try {
+        await db.update("clients", client.id, { statut_compte: "actif" });
+        await loadAll();
+        notifySuccess(`✅ Compte activé pour ${client.nom}.`);
+      } catch(e) { logError(e); }
+    });
+  };
+
+  const refuserDemandeCompte = (client) => {
+    askConfirm(`Refuser la demande de compte de "${client.nom}" ? Le client ne pourra pas se connecter au portail.`, async () => {
+      try {
+        await db.update("clients", client.id, { statut_compte: "refuse" });
+        await loadAll();
+        notifySuccess(`Demande de ${client.nom} refusée.`);
+      } catch(e) { logError(e); }
+    }, {danger:true});
+  };
+
   const geocoderClientsExistants = async () => {
     const aGeocoder = clients.filter(c => c.adresse && (!c.lat || !c.lng));
     if (aGeocoder.length === 0) { notifySuccess("Tous les clients avec une adresse sont déjà géolocalisés."); return; }
@@ -5295,6 +5317,31 @@ function BossokApp({ session, onLogout }) {
 {page==="clients" && !selClient && (
   <div>
     {workTabStrip()}
+    {clients.filter(c=>c.statut_compte==="en_attente").length>0 && (
+      <div style={{...S.card,marginBottom:14,border:"1px solid #FDE68A",background:"#FFFBEB"}}>
+        <div style={{fontWeight:700,fontSize:14,color:"#92400E",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+          🌐 Demandes de compte portail — {clients.filter(c=>c.statut_compte==="en_attente").length} en attente
+        </div>
+        <div style={{display:"grid",gap:8}}>
+          {clients.filter(c=>c.statut_compte==="en_attente").map(c=>(
+            <div key={c.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",background:"#fff",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 12px"}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:13}}>{c.nom}</div>
+                <div style={{fontSize:11,color:"#6B7280"}}>
+                  {c.type||"—"} · {c.adresse||"adresse non renseignée"}
+                  {c.tva ? ` · TVA ${c.tva}` : ""}{c.rcs ? ` · RCS ${c.rcs}` : ""}
+                </div>
+                <div style={{fontSize:11,color:"#6B7280"}}>{c.contact||""} {c.email?`· ${c.email}`:""} {c.telephone?`· ${c.telephone}`:""}</div>
+              </div>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>activerDemandeCompte(c)} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>✓ Activer</button>
+                <button onClick={()=>refuserDemandeCompte(c)} style={{...S.btn("#FEE2E2","#DC2626"),padding:"6px 12px",fontSize:12}}>✕ Refuser</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:clients.length,c:"#334155"},
@@ -5828,6 +5875,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
       {[["attente","⏳ En attente",commandes.filter(c=>c.statut==="En attente").length],
         ["livrees","✅ Livrées",commandes.filter(c=>c.statut==="Livré").length],
+        ["web","🌐 Commandes en ligne",commandes.filter(c=>c.source==="web").length],
         ["toutes","📋 Toutes",commandes.length]
       ].map(([k,l,n])=>(
         <button key={k} onClick={()=>setCmdView(k)}
@@ -5841,6 +5889,8 @@ function BossokApp({ session, onLogout }) {
         ? commandes.filter(c=>c.statut==="En attente")
         : cmdView==="livrees"
         ? [...commandes].filter(c=>c.statut==="Livré")
+        : cmdView==="web"
+        ? commandes.filter(c=>c.source==="web")
         : [...commandes];
       return (
         <DataTable
@@ -5854,7 +5904,12 @@ function BossokApp({ session, onLogout }) {
           columns={[
             {key:"client", label:"Client", mobilePrimary:true, sortValue:c=>c.client_nom||"", render:c=>(
               <div>
-                <div style={{fontWeight:600}}>{c.client_nom}</div>
+                <div style={{fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                  {c.client_nom}
+                  {c.source==="web"&&(
+                    <span title="Commande passée depuis le portail client" style={{background:"#EFF6FF",color:"#1D4ED8",fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99,flexShrink:0}}>🌐 Web</span>
+                  )}
+                </div>
                 <div style={{fontSize:11,color:"#94A3B8"}}>{c.client_adresse}</div>
               </div>
             )},
