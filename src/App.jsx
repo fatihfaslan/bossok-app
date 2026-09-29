@@ -2083,6 +2083,9 @@ function BossokApp({ session, onLogout }) {
   const [fraisForm, setFraisForm] = useState({});
   const [showPrixConcForm, setShowPrixConcForm] = useState(false);
   const [prixConcForm, setPrixConcForm] = useState({});
+  const [caHistoriquePreApp, setCaHistoriquePreApp] = useState([]);
+  const [calcDistancesLoading, setCalcDistancesLoading] = useState(false);
+  const [calcDistancesMsg, setCalcDistancesMsg] = useState("");
   const [editEvent, setEditEvent] = useState(null);
   const [eventForm, setEventForm] = useState({});
   const [calMonth, setCalMonth] = useState(()=>{const d=new Date();return {year:d.getFullYear(),month:d.getMonth()};});
@@ -2181,7 +2184,7 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv, frais, prixConc] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv, frais, prixConc, caHistPre] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -2196,6 +2199,7 @@ function BossokApp({ session, onLogout }) {
         db.get("factures_diverses"),
         db.get("frais_generaux_mensuels"),
         db.get("prix_concurrents"),
+        db.get("ca_historique_pre_app"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -2219,6 +2223,7 @@ function BossokApp({ session, onLogout }) {
       setConsignesManuelles(consMan);
       setFraisGeneraux(frais);
       setPrixConcurrents(prixConc);
+      setCaHistoriquePreApp(caHistPre);
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
@@ -3006,6 +3011,36 @@ function BossokApp({ session, onLogout }) {
       pushToast("Prix concurrent enregistré", "success");
     } catch(e) { logError(e); }
     finally { setSaving(false); }
+  };
+
+  // Contrôle de gestion — distance réelle (trajet routier) dépôt → client, via l'API
+  // publique OSRM (gratuite, pas de clé). Appelée manuellement (pas à chaque chargement)
+  // et met en cache le résultat dans clients.distance_route_km pour ne pas re-calculer
+  // à chaque fois. Se rabat sur la distance à vol d'oiseau si l'appel échoue.
+  const calculerDistancesReelles = async (forcerTout=false) => {
+    const aTraiter = clients.filter(c=>c.lat!=null && c.lng!=null && (forcerTout || c.distance_route_km==null));
+    if (aTraiter.length===0) { setCalcDistancesMsg("Toutes les distances sont déjà calculées."); return; }
+    setCalcDistancesLoading(true);
+    setCalcDistancesMsg("Calcul en cours : 0 / "+aTraiter.length);
+    let ok=0, fail=0;
+    for (let i=0;i<aTraiter.length;i++) {
+      const c = aTraiter[i];
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${DEPOT_LNG},${DEPOT_LAT};${Number(c.lng)},${Number(c.lat)}?overview=false`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const distM = data?.routes?.[0]?.distance;
+        if (distM!=null) {
+          await db.update("clients", c.id, {distance_route_km: Math.round(distM/100)/10, distance_route_updated_at: new Date().toISOString()});
+          ok++;
+        } else fail++;
+      } catch(e) { fail++; }
+      setCalcDistancesMsg("Calcul en cours : "+(i+1)+" / "+aTraiter.length);
+      await new Promise(r=>setTimeout(r,300)); // ménage l'API publique gratuite
+    }
+    await loadAll();
+    setCalcDistancesMsg(ok+" distance(s) calculée(s)"+(fail>0?", "+fail+" échec(s) (gardent l'estimation à vol d'oiseau)":""));
+    setCalcDistancesLoading(false);
   };
 
   const marquerDiverseImpayee = async (id) => {
@@ -4795,8 +4830,10 @@ function BossokApp({ session, onLogout }) {
     if (f.client_id) parType[typeKey].clientsSet.add(f.client_id);
 
     const cid = f.client_id;
-    if (!parClient[cid]) parClient[cid] = {id:cid, nom:f.client_nom, type:cl?.type||"", zone:cl?.region||"", ca:0, marge:0, nb:0};
+    if (!parClient[cid]) parClient[cid] = {id:cid, nom:f.client_nom, type:cl?.type||"", zone:cl?.region||"", ca:0, marge:0, nb:0, dateMin:f.date, dateMax:f.date};
     parClient[cid].ca += total; parClient[cid].marge += mFact.marge; parClient[cid].nb++;
+    if (f.date < parClient[cid].dateMin) parClient[cid].dateMin = f.date;
+    if (f.date > parClient[cid].dateMax) parClient[cid].dateMax = f.date;
 
     const zoneKey = cl?.region || "Inconnu";
     if (!parZone[zoneKey]) parZone[zoneKey] = {zone:zoneKey, ca:0, marge:0, nb:0};
@@ -4813,7 +4850,11 @@ function BossokApp({ session, onLogout }) {
   });
 
   const listeType = Object.values(parType).map(t=>({...t, nbClients:t.clientsSet.size, cogs:t.ca-t.marge, margePct: t.ca>0?t.marge/t.ca*100:0}));
-  const listeClient = Object.values(parClient).map(c=>({...c, cogs:c.ca-c.marge, margePct: c.ca>0?c.marge/c.ca*100:0}));
+  const listeClient = Object.values(parClient).map(c=>{
+    const spanJours = (new Date(c.dateMax)-new Date(c.dateMin))/86400000;
+    const freqJours = c.nb>1 ? spanJours/(c.nb-1) : null; // jours moyens entre 2 commandes
+    return {...c, cogs:c.ca-c.marge, margePct: c.ca>0?c.marge/c.ca*100:0, freqJours};
+  });
 
   // Prix concurrent le plus récent par produit (plusieurs relevés possibles dans le temps)
   const prixConcMap = {};
@@ -4829,19 +4870,26 @@ function BossokApp({ session, onLogout }) {
       prixVente, prixConcurrent: conc?.prix ?? null, concurrentNom: conc?.concurrent || null, ecartPct};
   });
 
-  // Distance moyenne au dépôt par zone (vol d'oiseau) — proxy pour le coût de livraison
+  // Distance moyenne au dépôt par zone — distance réelle de trajet (routing OSRM) quand
+  // elle a été calculée pour le client (clients.distance_route_km), sinon vol d'oiseau en
+  // repli (proxy). nbReel/nbTotal permet d'afficher la fiabilité de la moyenne par zone.
   const distanceParZone = {};
+  const nbClientsAvecDistanceReelle = clients.filter(c=>c.distance_route_km!=null).length;
+  const nbClientsAvecCoords = clients.filter(c=>c.lat!=null && c.lng!=null).length;
   clients.forEach(c=>{
     const z = c.region || "Inconnu";
-    const d = distanceKm(DEPOT_LAT, DEPOT_LNG, Number(c.lat), Number(c.lng));
+    const reelle = c.distance_route_km!=null ? Number(c.distance_route_km) : null;
+    const d = reelle!=null ? reelle : distanceKm(DEPOT_LAT, DEPOT_LNG, Number(c.lat), Number(c.lng));
     if (d==null) return;
-    if (!distanceParZone[z]) distanceParZone[z] = {sum:0, n:0};
+    if (!distanceParZone[z]) distanceParZone[z] = {sum:0, n:0, nReel:0};
     distanceParZone[z].sum += d; distanceParZone[z].n++;
+    if (reelle!=null) distanceParZone[z].nReel++;
   });
   const listeZone = Object.values(parZone).map(z=>{
     const dz = distanceParZone[z.zone];
     return {...z, driver: ZONE_SCHEDULE[z.zone]?.driver || "?", cogs:z.ca-z.marge, margePct: z.ca>0?z.marge/z.ca*100:0,
-      distanceMoyenne: dz ? dz.sum/dz.n : null};
+      distanceMoyenne: dz ? dz.sum/dz.n : null,
+      distanceSource: dz && dz.n>0 ? (dz.nReel===dz.n ? "route" : dz.nReel>0 ? "mixte" : "vol") : null};
   });
 
   const caProduitsTotal = listeProduit.reduce((s,p)=>s+p.ca,0);
@@ -4849,6 +4897,26 @@ function BossokApp({ session, onLogout }) {
   const margePctGlobal = caGlobal>0 ? margeGlobal/caGlobal*100 : 0;
   const fiabiliteGlobal = ligneTotalGlobal>0 ? ligneReellesGlobal/ligneTotalGlobal*100 : 100;
   const cogsGlobal = caGlobal - margeGlobal;
+
+  // Nouveaux clients par mois (basé sur clients.created_at), sur la période sélectionnée —
+  // indicateur d'acquisition, séparé de la marge (un nouveau client n'a pas encore forcément facturé).
+  const nouveauxClientsParMois = {};
+  clients.forEach(c=>{
+    if (!c.created_at) return;
+    const m = c.created_at.slice(0,7);
+    if (cgFrom && m < cgFrom.slice(0,7)) return;
+    if (cgTo && m > cgTo.slice(0,7)) return;
+    nouveauxClientsParMois[m] = (nouveauxClientsParMois[m]||0)+1;
+  });
+  const listeNouveauxClients = Object.entries(nouveauxClientsParMois).sort((a,b)=>a[0].localeCompare(b[0]));
+  const totalNouveauxClients = listeNouveauxClients.reduce((s,[,n])=>s+n,0);
+
+  // CA historique pré-app — référence uniquement (montant global, sans marge ni détail
+  // client/produit disponibles), pour les mois antérieurs à la mise en service du système (10/09/2026).
+  const caHistPreAppPeriode = caHistoriquePreApp.filter(h=>{
+    const m = (h.mois||"").slice(0,7);
+    return m && (!cgFrom || m>=cgFrom.slice(0,7)) && (!cgTo || m<=cgTo.slice(0,7));
+  }).sort((a,b)=>(a.mois||"").localeCompare(b.mois||""));
 
   // Export CSV — s'ouvre directement dans Excel (point-virgule + BOM UTF-8 pour les accents),
   // même principe que les exports déjà en place sur le Dashboard (Factures/Commandes/Stock).
@@ -4866,8 +4934,8 @@ function BossokApp({ session, onLogout }) {
     [["Type","Clients","Factures","CA","COGS","Marge","Marge %"],
      ...listeType.map(t=>[t.type,t.nbClients,t.nb,t.ca.toFixed(2),t.cogs.toFixed(2),t.marge.toFixed(2),Math.round(t.margePct)+"%"])]);
   const exportCGClient = () => downloadCSV("controle_gestion_par_client_"+dateSuffix()+".csv",
-    [["Client","Type","Zone","Factures","CA","COGS","Marge","Marge %"],
-     ...listeClient.map(c=>[c.nom,c.type,c.zone,c.nb,c.ca.toFixed(2),c.cogs.toFixed(2),c.marge.toFixed(2),Math.round(c.margePct)+"%"])]);
+    [["Client","Type","Zone","Factures","Fréquence (j)","CA","COGS","Marge","Marge %"],
+     ...listeClient.map(c=>[c.nom,c.type,c.zone,c.nb,c.freqJours!=null?Math.round(c.freqJours):"",c.ca.toFixed(2),c.cogs.toFixed(2),c.marge.toFixed(2),Math.round(c.margePct)+"%"])]);
   const exportCGProduit = () => downloadCSV("controle_gestion_par_produit_"+dateSuffix()+".csv",
     [["Produit","Catégorie","Qté vendue","CA","COGS","Marge","Fiabilité %"],
      ...listeProduit.map(p=>[p.nom,p.categorie,p.qte,p.ca.toFixed(2),p.cogs.toFixed(2),p.marge.toFixed(2),Math.round(p.fiabilite)+"%"])]);
@@ -4920,6 +4988,47 @@ function BossokApp({ session, onLogout }) {
     </div>
     <div style={{fontSize:11,color:"#9CA3AF",marginBottom:16}}>
       Marge = coût moyen pondéré des réceptions de stock en priorité, sinon prix d'achat produit, sinon estimation à {Math.round((1-COUT_RATIO_FALLBACK)*100)}% de marge par défaut si aucune donnée de coût n'existe pour ce produit. La "fiabilité" indique la part du chiffre d'affaires reposant sur un vrai coût plutôt que sur l'estimation par défaut — un chiffre bas signale des produits sans prix d'achat renseigné.
+    </div>
+
+    {/* ── Acquisition clients & CA historique pré-app ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Nouveaux clients par mois</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Basé sur la date de création de la fiche client — {totalNouveauxClients} nouveau(x) client(s) sur la période.</div>
+        {listeNouveauxClients.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucun nouveau client sur cette période.</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {listeNouveauxClients.map(([m,n])=>(
+                <tr key={m} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{m}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right"}}>{n} nouveau{n>1?"x":""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> CA historique (pré-app)</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Montant global uniquement (pas de détail client/produit, pas de marge calculable) — mois antérieurs à la mise en service du système le 10/09/2026. Référence, non inclus dans les totaux ci-dessus.</div>
+        {caHistPreAppPeriode.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucune donnée pré-app sur cette période.</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {caHistPreAppPeriode.map(h=>(
+                <tr key={h.mois} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{h.mois}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(h.ca_total)}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{h.nb_commandes?h.nb_commandes+" cmd":""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
 
     {/* ── Charges de structure & résultat net ── */}
@@ -5072,12 +5181,14 @@ function BossokApp({ session, onLogout }) {
           {key:"type", label:"Type", sortValue:r=>r.type},
           {key:"zone", label:"Zone", mobileShow:true, sortValue:r=>r.zone},
           {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
+          {key:"freqJours", label:"Fréquence", align:"right", sortValue:r=>r.freqJours??999999, render:r=>r.freqJours!=null?"~"+Math.round(r.freqJours)+"j":<span style={{color:"#CBD5E1"}}>—</span>},
           {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
           {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
           {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
           {key:"margePct", label:"Marge %", align:"right", mobileShow:true, sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
         ]}
       />
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Fréquence = nombre moyen de jours entre deux commandes sur la période (nécessite au moins 2 factures) — un chiffre bas signale un client régulier, un chiffre élevé ou "—" un client occasionnel ou ponctuel.</div>
     </div>
 
     {/* ── Marge par produit ── */}
@@ -5127,8 +5238,16 @@ function BossokApp({ session, onLogout }) {
 
     {/* ── Marge par zone ── */}
     <div style={{...S.card,marginBottom:16}}>
-      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> Marge par zone</div>
-      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:12}}>Distance à vol d'oiseau depuis le dépôt (Aspelt), pas un trajet réel — un proxy relatif pour comparer les zones, pas une distance de tournée.</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:4}}>
+        <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> Marge par zone</div>
+        <button onClick={()=>calculerDistancesReelles(false)} disabled={calcDistancesLoading} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 10px",fontSize:11,whiteSpace:"nowrap",opacity:calcDistancesLoading?0.5:1}}>
+          {calcDistancesLoading?"Calcul...":"📍 Calculer distances réelles"}
+        </button>
+      </div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:4}}>
+        Distance = trajet routier réel (dépôt → client) quand il a été calculé ({nbClientsAvecDistanceReelle}/{nbClientsAvecCoords} clients géolocalisés), sinon distance à vol d'oiseau par défaut (proxy, pas un vrai trajet). Clique sur "Calculer distances réelles" pour compléter les clients manquants (calcul via un service de routage public, peut prendre quelques minutes selon le nombre de clients).
+      </div>
+      {calcDistancesMsg && <div style={{fontSize:11,color:"#1D4ED8",marginBottom:8}}>{calcDistancesMsg}</div>}
       <DataTable
         isMobile={isMobile}
         rows={listeZone}
@@ -5154,7 +5273,9 @@ function BossokApp({ session, onLogout }) {
         columns={[
           {key:"zone", label:"Zone", mobilePrimary:true, sortValue:r=>r.zone},
           {key:"driver", label:"Chauffeur", mobileShow:true, sortValue:r=>r.driver},
-          {key:"distanceMoyenne", label:"Distance moy.", align:"right", mobileShow:true, sortValue:r=>r.distanceMoyenne??-1, render:r=>r.distanceMoyenne!=null?Math.round(r.distanceMoyenne)+" km":<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"distanceMoyenne", label:"Distance moy.", align:"right", mobileShow:true, sortValue:r=>r.distanceMoyenne??-1, render:r=>r.distanceMoyenne!=null?
+            <span>{Math.round(r.distanceMoyenne)} km {r.distanceSource==="route"?<span title="Trajet réel" style={{color:"#059669"}}>●</span>:r.distanceSource==="mixte"?<span title="Partiellement réel" style={{color:"#D97706"}}>●</span>:<span title="Vol d'oiseau (estimé)" style={{color:"#CBD5E1"}}>●</span>}</span>
+            :<span style={{color:"#CBD5E1"}}>—</span>},
           {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
           {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
           {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
