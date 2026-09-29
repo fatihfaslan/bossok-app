@@ -493,6 +493,20 @@ const ZONE_SCHEDULE = {
   "Hollande":     {days:["Jeudi"],                        driver:"Mikail"},
 };
 
+// Dépôt BOSSOK — 61 Péiter vun Uespelt-Strooss, L-5710 Aspelt (Frisange).
+// Coordonnées au niveau de la rue (géoportail.lu) — suffisant pour une distance
+// à vol d'oiseau utilisée comme proxy relatif entre zones, pas un calcul d'itinéraire réel.
+const DEPOT_LAT = 49.52917;
+const DEPOT_LNG = 6.22479;
+const distanceKm = (lat1, lng1, lat2, lng2) => {
+  if (lat1==null || lng1==null || lat2==null || lng2==null) return null;
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+};
+
 const generateOnePager = (clients) => {
   const actifs = clients.filter(c => c.statut === "Actif");
   
@@ -1886,6 +1900,8 @@ function BossokApp({ session, onLogout }) {
   const [stock, setStock] = useState({});
   const [produits, setProduits] = useState([]);
   const [receptionsStock, setReceptionsStock] = useState([]);
+  const [fraisGeneraux, setFraisGeneraux] = useState([]);
+  const [prixConcurrents, setPrixConcurrents] = useState([]);
   const [pertesStock, setPertesStock] = useState([]);
   const [evenements, setEvenements] = useState([]);
   const [stickyNote, setStickyNote] = useState("");
@@ -2060,6 +2076,13 @@ function BossokApp({ session, onLogout }) {
   const [paiementDiverseForm, setPaiementDiverseForm] = useState({});
   const [caissePeriode, setCaissePeriode] = useState("semaine");
   const [caisseRef, setCaisseRef] = useState(()=>new Date().toISOString().split("T")[0]);
+
+  // Contrôle de gestion — charges de structure & prix concurrents (formulaires)
+  const [showFraisForm, setShowFraisForm] = useState(false);
+  const [editFrais, setEditFrais] = useState(null);
+  const [fraisForm, setFraisForm] = useState({});
+  const [showPrixConcForm, setShowPrixConcForm] = useState(false);
+  const [prixConcForm, setPrixConcForm] = useState({});
   const [editEvent, setEditEvent] = useState(null);
   const [eventForm, setEventForm] = useState({});
   const [calMonth, setCalMonth] = useState(()=>{const d=new Date();return {year:d.getFullYear(),month:d.getMonth()};});
@@ -2158,7 +2181,7 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv, frais, prixConc] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -2171,6 +2194,8 @@ function BossokApp({ session, onLogout }) {
         db.get("notes_personnelles"),
         db.get("consignes_manuelles"),
         db.get("factures_diverses"),
+        db.get("frais_generaux_mensuels"),
+        db.get("prix_concurrents"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -2192,6 +2217,8 @@ function BossokApp({ session, onLogout }) {
       setNotesPersonnelles(mesNotes);
       setMyNote(mesNotes.find(n=>n.user_email===session?.user?.email)?.contenu || "");
       setConsignesManuelles(consMan);
+      setFraisGeneraux(frais);
+      setPrixConcurrents(prixConc);
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
@@ -2924,6 +2951,54 @@ function BossokApp({ session, onLogout }) {
       setShowPaiementDiverseForm(false);
       setPaiementDiverse(null);
       setPaiementDiverseForm({});
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  // Contrôle de gestion — charges de structure mensuelles
+  const saveFrais = async () => {
+    if (!fraisForm.mois) return;
+    setSaving(true);
+    try {
+      const payload = {
+        mois: fraisForm.mois,
+        masse_salariale: fraisForm.masse_salariale!==""&&fraisForm.masse_salariale!=null ? Number(fraisForm.masse_salariale) : null,
+        loyer: fraisForm.loyer!==""&&fraisForm.loyer!=null ? Number(fraisForm.loyer) : null,
+        carburant: fraisForm.carburant!==""&&fraisForm.carburant!=null ? Number(fraisForm.carburant) : null,
+        assurance_vehicules: fraisForm.assurance_vehicules!==""&&fraisForm.assurance_vehicules!=null ? Number(fraisForm.assurance_vehicules) : null,
+        entretien_vehicules: fraisForm.entretien_vehicules!==""&&fraisForm.entretien_vehicules!=null ? Number(fraisForm.entretien_vehicules) : null,
+        autres: fraisForm.autres!==""&&fraisForm.autres!=null ? Number(fraisForm.autres) : null,
+        notes: fraisForm.notes || null,
+      };
+      if (editFrais) await db.update("frais_generaux_mensuels", editFrais.id, payload);
+      else await db.insert("frais_generaux_mensuels", payload);
+      await loadAll();
+      setShowFraisForm(false); setEditFrais(null); setFraisForm({});
+      pushToast("Charges du mois enregistrées", "success");
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+  const openFraisForm = (row) => {
+    setEditFrais(row||null);
+    setFraisForm(row ? {...row} : {mois: new Date().toISOString().slice(0,7)+"-01"});
+    setShowFraisForm(true);
+  };
+
+  // Contrôle de gestion — prix relevés chez la concurrence
+  const savePrixConc = async () => {
+    if (!prixConcForm.produit_id || !prixConcForm.prix) return;
+    setSaving(true);
+    try {
+      await db.insert("prix_concurrents", {
+        produit_id: prixConcForm.produit_id,
+        concurrent: prixConcForm.concurrent || "Freshy",
+        prix: Number(prixConcForm.prix),
+        date_releve: prixConcForm.date_releve || localDateStr(),
+        notes: prixConcForm.notes || null,
+      });
+      await loadAll();
+      setShowPrixConcForm(false); setPrixConcForm({});
+      pushToast("Prix concurrent enregistré", "success");
     } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
@@ -4725,7 +4800,7 @@ function BossokApp({ session, onLogout }) {
     (f.lignes||[]).filter(l=>!l.isCredit && l.produitId!=="CREDIT_CONSIGNES").forEach(l=>{
       const nomProd = (l.nom||"").replace(/\s*\(offert\)$/,"");
       const produitRef = produits.find(p=>p.id===l.produitId);
-      if (!parProduit[nomProd]) parProduit[nomProd] = {nom:nomProd, categorie:produitRef?.categorie||"—", qte:0, ca:0, marge:0, reel:0, total:0};
+      if (!parProduit[nomProd]) parProduit[nomProd] = {nom:nomProd, produitId:l.produitId, categorie:produitRef?.categorie||"—", qte:0, ca:0, marge:0, reel:0, total:0};
       const r = calcMargeLigne(l, produits, receptionsStock);
       parProduit[nomProd].qte += l.qte; parProduit[nomProd].ca += l.qte*l.pu; parProduit[nomProd].marge += r.marge;
       parProduit[nomProd].total++; if (r.reel) parProduit[nomProd].reel++;
@@ -4734,8 +4809,35 @@ function BossokApp({ session, onLogout }) {
 
   const listeType = Object.values(parType).map(t=>({...t, nbClients:t.clientsSet.size, cogs:t.ca-t.marge, margePct: t.ca>0?t.marge/t.ca*100:0}));
   const listeClient = Object.values(parClient).map(c=>({...c, cogs:c.ca-c.marge, margePct: c.ca>0?c.marge/c.ca*100:0}));
-  const listeProduit = Object.values(parProduit).map(p=>({...p, cogs:p.ca-p.marge, margePct: p.ca>0?p.marge/p.ca*100:0, fiabilite: p.total>0?p.reel/p.total*100:100}));
-  const listeZone = Object.values(parZone).map(z=>({...z, driver: ZONE_SCHEDULE[z.zone]?.driver || "?", cogs:z.ca-z.marge, margePct: z.ca>0?z.marge/z.ca*100:0}));
+
+  // Prix concurrent le plus récent par produit (plusieurs relevés possibles dans le temps)
+  const prixConcMap = {};
+  prixConcurrents.forEach(pc=>{
+    const cur = prixConcMap[pc.produit_id];
+    if (!cur || (pc.date_releve||"") > (cur.date_releve||"")) prixConcMap[pc.produit_id] = pc;
+  });
+  const listeProduit = Object.values(parProduit).map(p=>{
+    const prixVente = p.qte>0 ? p.ca/p.qte : 0;
+    const conc = prixConcMap[p.produitId];
+    const ecartPct = (conc && prixVente>0) ? (prixVente-conc.prix)/conc.prix*100 : null;
+    return {...p, cogs:p.ca-p.marge, margePct: p.ca>0?p.marge/p.ca*100:0, fiabilite: p.total>0?p.reel/p.total*100:100,
+      prixVente, prixConcurrent: conc?.prix ?? null, concurrentNom: conc?.concurrent || null, ecartPct};
+  });
+
+  // Distance moyenne au dépôt par zone (vol d'oiseau) — proxy pour le coût de livraison
+  const distanceParZone = {};
+  clients.forEach(c=>{
+    const z = c.region || "Inconnu";
+    const d = distanceKm(DEPOT_LAT, DEPOT_LNG, Number(c.lat), Number(c.lng));
+    if (d==null) return;
+    if (!distanceParZone[z]) distanceParZone[z] = {sum:0, n:0};
+    distanceParZone[z].sum += d; distanceParZone[z].n++;
+  });
+  const listeZone = Object.values(parZone).map(z=>{
+    const dz = distanceParZone[z.zone];
+    return {...z, driver: ZONE_SCHEDULE[z.zone]?.driver || "?", cogs:z.ca-z.marge, margePct: z.ca>0?z.marge/z.ca*100:0,
+      distanceMoyenne: dz ? dz.sum/dz.n : null};
+  });
 
   const caProduitsTotal = listeProduit.reduce((s,p)=>s+p.ca,0);
   const margeProduitsTotal = listeProduit.reduce((s,p)=>s+p.marge,0);
@@ -4814,6 +4916,79 @@ function BossokApp({ session, onLogout }) {
     <div style={{fontSize:11,color:"#9CA3AF",marginBottom:16}}>
       Marge = coût moyen pondéré des réceptions de stock en priorité, sinon prix d'achat produit, sinon estimation à {Math.round((1-COUT_RATIO_FALLBACK)*100)}% de marge par défaut si aucune donnée de coût n'existe pour ce produit. La "fiabilité" indique la part du chiffre d'affaires reposant sur un vrai coût plutôt que sur l'estimation par défaut — un chiffre bas signale des produits sans prix d'achat renseigné.
     </div>
+
+    {/* ── Charges de structure & résultat net ── */}
+    {(()=>{
+      const moisFrom = (cgFrom||"").slice(0,7), moisTo = (cgTo||"").slice(0,7);
+      const fraisPeriode = fraisGeneraux.filter(fg=>{
+        const m = (fg.mois||"").slice(0,7);
+        return m && (!moisFrom || m>=moisFrom) && (!moisTo || m<=moisTo);
+      }).sort((a,b)=>(a.mois||"").localeCompare(b.mois||""));
+      const sumChamp = (champ) => fraisPeriode.reduce((s,f)=>s+(Number(f[champ])||0),0);
+      const masseSalariale = sumChamp("masse_salariale");
+      const loyerTotal = sumChamp("loyer");
+      const carburantTotal = sumChamp("carburant");
+      const assuranceTotal = sumChamp("assurance_vehicules");
+      const entretienTotal = sumChamp("entretien_vehicules");
+      const autresTotal = sumChamp("autres");
+      const totalCharges = masseSalariale+loyerTotal+carburantTotal+assuranceTotal+entretienTotal+autresTotal;
+      const resultatNet = margeGlobal - totalCharges;
+      const resultatNetPct = caGlobal>0 ? resultatNet/caGlobal*100 : 0;
+      const moisSansMasse = fraisPeriode.filter(f=>f.masse_salariale==null).length;
+      return (
+      <div style={{...S.card,marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> Charges de structure & résultat net</div>
+          <button onClick={()=>openFraisForm(null)} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 10px",fontSize:11,whiteSpace:"nowrap"}}>+ Charges d'un mois</button>
+        </div>
+        {fraisPeriode.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"16px 0",fontSize:12}}>Aucune charge renseignée sur cette période — clique sur "+ Charges d'un mois" pour en ajouter.</div>
+        ) : (
+        <>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:12}}>
+            {[
+              {l:"Masse salariale",v:fmtFull(masseSalariale),c:"#334155"},
+              {l:"Loyer + véhicules + autres",v:fmtFull(loyerTotal+assuranceTotal+entretienTotal+autresTotal),c:"#334155"},
+              {l:"Carburant",v:fmtFull(carburantTotal),c:"#334155"},
+              {l:"Total charges",v:fmtFull(totalCharges),c:"#334155"},
+            ].map((k,i)=>(
+              <div key={i} style={S.kpi(k.c)}>
+                <div style={{fontSize:16,fontWeight:800,color:k.c}}>{k.v}</div>
+                <div style={{fontSize:11,color:"#6B7280"}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{...S.kpi(resultatNet>=0?"#059669":"#DC2626"),marginBottom:10}}>
+            <div style={{fontSize:20,fontWeight:800,color:resultatNet>=0?"#059669":"#DC2626"}}>{fmtFull(resultatNet)} <span style={{fontSize:13,fontWeight:600}}>({Math.round(resultatNetPct)}%)</span></div>
+            <div style={{fontSize:11,color:"#6B7280"}}>Résultat net estimé de la période (marge brute − charges de structure)</div>
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5,marginBottom:8}}>
+            <thead><tr style={{borderBottom:"1px solid #E5E7EB"}}>
+              {["Mois","Masse salariale","Loyer","Carburant","Assurance","Entretien","Autres",""].map(h=>(
+                <th key={h} style={{padding:"5px 8px",textAlign:h==="Mois"?"left":"right",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {fraisPeriode.map(f=>(
+                <tr key={f.id} style={{borderBottom:"1px solid #F9FAFB",cursor:"pointer"}} onClick={()=>openFraisForm(f)}>
+                  <td style={{padding:"5px 8px",fontWeight:600}}>{f.mois}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.masse_salariale!=null?fmtFull(f.masse_salariale):<span style={{color:"#D97706"}}>?</span>}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.loyer!=null?fmtFull(f.loyer):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.carburant!=null?fmtFull(f.carburant):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.assurance_vehicules!=null?fmtFull(f.assurance_vehicules):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.entretien_vehicules!=null?fmtFull(f.entretien_vehicules):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.autres!=null?fmtFull(f.autres):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",color:"#9CA3AF"}}>✎</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {moisSansMasse>0 && <div style={{fontSize:11,color:"#D97706"}}>⚠ {moisSansMasse} mois de la période sans masse salariale renseignée — le résultat net est sous-estimé en charges (donc surestimé) pour ces mois.</div>}
+        </>
+        )}
+      </div>
+      );
+    })()}
 
     {/* ── Marge par type de client ── */}
     <div style={{...S.card,marginBottom:16}}>
@@ -4923,15 +5098,23 @@ function BossokApp({ session, onLogout }) {
           {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
           {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
           {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"prixConcurrent", label:"Prix Freshy", align:"right", sortValue:r=>r.prixConcurrent??-1, render:r=>r.prixConcurrent!=null?fmtFull(r.prixConcurrent):<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"ecartPct", label:"Écart", align:"right", sortValue:r=>r.ecartPct??-999, render:r=>r.ecartPct==null?<span style={{color:"#CBD5E1"}}>—</span>:
+            <span style={{color:r.ecartPct>0?"#DC2626":"#059669",fontWeight:600}}>{r.ecartPct>0?"+":""}{Math.round(r.ecartPct)}%</span>},
           {key:"fiabilite", label:"Fiabilité", align:"right", sortValue:r=>r.fiabilite, render:r=><span style={{color:r.fiabilite>=80?"#059669":"#D97706",fontSize:11}}>{Math.round(r.fiabilite)}%</span>},
         ]}
       />
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+        <div style={{fontSize:11,color:"#9CA3AF"}}>Prix Freshy relevé manuellement — {prixConcurrents.length} prix enregistrés. Écart = (prix moyen vendu − prix Freshy) / prix Freshy.</div>
+        <button onClick={()=>{setPrixConcForm({produit_id:"",concurrent:"Freshy",prix:"",date_releve:localDateStr()});setShowPrixConcForm(true);}}
+          style={{...S.btn("#F1F5F9","#374151"),padding:"5px 10px",fontSize:11,whiteSpace:"nowrap"}}>+ Prix concurrent</button>
+      </div>
     </div>
 
     {/* ── Marge par zone ── */}
     <div style={{...S.card,marginBottom:16}}>
       <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> Marge par zone</div>
-      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:12}}>Sans coût de transport par tournée dans le système, les écarts entre zones reflètent surtout le mix produits/clients — pas encore un vrai coût de livraison.</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:12}}>Distance à vol d'oiseau depuis le dépôt (Aspelt), pas un trajet réel — un proxy relatif pour comparer les zones, pas une distance de tournée.</div>
       <DataTable
         isMobile={isMobile}
         rows={listeZone}
@@ -4957,6 +5140,7 @@ function BossokApp({ session, onLogout }) {
         columns={[
           {key:"zone", label:"Zone", mobilePrimary:true, sortValue:r=>r.zone},
           {key:"driver", label:"Chauffeur", mobileShow:true, sortValue:r=>r.driver},
+          {key:"distanceMoyenne", label:"Distance moy.", align:"right", mobileShow:true, sortValue:r=>r.distanceMoyenne??-1, render:r=>r.distanceMoyenne!=null?Math.round(r.distanceMoyenne)+" km":<span style={{color:"#CBD5E1"}}>—</span>},
           {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
           {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
           {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
@@ -7609,6 +7793,89 @@ function BossokApp({ session, onLogout }) {
         <button onClick={saveModePaiementDiverse} disabled={saving||!paiementDiverseForm.mode}
           style={{...S.btn(),flex:2,opacity:(saving||!paiementDiverseForm.mode)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Confirmer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL CHARGES DE STRUCTURE (CONTRÔLE DE GESTION) ══════════ */}
+  {showFraisForm&&(
+  <div style={S.modal} onClick={()=>{setShowFraisForm(false);setEditFrais(null);}}>
+    <div style={{...S.modalBox,maxWidth:440}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>📊 Charges du mois</h2>
+        <button onClick={()=>{setShowFraisForm(false);setEditFrais(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
+        Ces chiffres alimentent le résultat net de l'onglet Contrôle de gestion. Laisse un champ vide si tu ne l'as pas encore — il sera marqué "?" plutôt que compté comme zéro.
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Mois *</label>
+          <input type="month" value={(fraisForm.mois||"").slice(0,7)} onChange={e=>setFraisForm(p=>({...p,mois:e.target.value+"-01"}))} style={S.input}/>
+        </div>
+        {[
+          ["masse_salariale","Masse salariale (coût total employeur)"],
+          ["loyer","Loyer entrepôt"],
+          ["carburant","Carburant"],
+          ["assurance_vehicules","Assurance véhicules"],
+          ["entretien_vehicules","Entretien véhicules"],
+          ["autres","Autres charges"],
+        ].map(([champ,label])=>(
+          <div key={champ}>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{label}</label>
+            <input type="number" step="0.01" value={fraisForm[champ]??""} onChange={e=>setFraisForm(p=>({...p,[champ]:e.target.value}))} placeholder="€" style={S.input}/>
+          </div>
+        ))}
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={fraisForm.notes||""} onChange={e=>setFraisForm(p=>({...p,notes:e.target.value}))} placeholder="Ex: estimation, chiffre partiel..." style={S.input}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>{setShowFraisForm(false);setEditFrais(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveFrais} disabled={saving||!fraisForm.mois} style={{...S.btn(),flex:2,opacity:(saving||!fraisForm.mois)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL PRIX CONCURRENT (CONTRÔLE DE GESTION) ═══════════════ */}
+  {showPrixConcForm&&(
+  <div style={S.modal} onClick={()=>setShowPrixConcForm(false)}>
+    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🏷️ Prix concurrent</h2>
+        <button onClick={()=>setShowPrixConcForm(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit *</label>
+          <select value={prixConcForm.produit_id||""} onChange={e=>setPrixConcForm(p=>({...p,produit_id:e.target.value}))} style={S.input}>
+            <option value="">— Choisir —</option>
+            {produits.map(p=><option key={p.id} value={p.id}>{p.nom}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Concurrent</label>
+          <input value={prixConcForm.concurrent||"Freshy"} onChange={e=>setPrixConcForm(p=>({...p,concurrent:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Prix relevé (€) *</label>
+          <input type="number" step="0.01" value={prixConcForm.prix||""} onChange={e=>setPrixConcForm(p=>({...p,prix:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date du relevé</label>
+          <input type="date" value={prixConcForm.date_releve||localDateStr()} onChange={e=>setPrixConcForm(p=>({...p,date_releve:e.target.value}))} style={S.input}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>setShowPrixConcForm(false)} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={savePrixConc} disabled={saving||!prixConcForm.produit_id||!prixConcForm.prix} style={{...S.btn(),flex:2,opacity:(saving||!prixConcForm.produit_id||!prixConcForm.prix)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer"}
         </button>
       </div>
     </div>
