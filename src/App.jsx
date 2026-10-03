@@ -1901,6 +1901,7 @@ function BossokApp({ session, onLogout }) {
   const [produits, setProduits] = useState([]);
   const [receptionsStock, setReceptionsStock] = useState([]);
   const [fraisGeneraux, setFraisGeneraux] = useState([]);
+  const [relevesChauffeurs, setRelevesChauffeurs] = useState([]);
   const [prixConcurrents, setPrixConcurrents] = useState([]);
   const [pertesStock, setPertesStock] = useState([]);
   const [evenements, setEvenements] = useState([]);
@@ -2184,7 +2185,7 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv, frais, prixConc, caHistPre] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv, frais, prixConc, caHistPre, relevesChf] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -2200,6 +2201,7 @@ function BossokApp({ session, onLogout }) {
         db.get("frais_generaux_mensuels"),
         db.get("prix_concurrents"),
         db.get("ca_historique_pre_app"),
+        db.get("releves_chauffeurs_mensuels"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -2222,6 +2224,7 @@ function BossokApp({ session, onLogout }) {
       setMyNote(mesNotes.find(n=>n.user_email===session?.user?.email)?.contenu || "");
       setConsignesManuelles(consMan);
       setFraisGeneraux(frais);
+      setRelevesChauffeurs(relevesChf);
       setPrixConcurrents(prixConc);
       setCaHistoriquePreApp(caHistPre);
       setError(null);
@@ -3000,6 +3003,9 @@ function BossokApp({ session, onLogout }) {
         telephone_mobile: fraisForm.telephone_mobile!==""&&fraisForm.telephone_mobile!=null ? Number(fraisForm.telephone_mobile) : null,
         abonnement_box: fraisForm.abonnement_box!==""&&fraisForm.abonnement_box!=null ? Number(fraisForm.abonnement_box) : null,
         autres: fraisForm.autres!==""&&fraisForm.autres!=null ? Number(fraisForm.autres) : null,
+        cout_horaire_chauffeur: fraisForm.cout_horaire_chauffeur!==""&&fraisForm.cout_horaire_chauffeur!=null ? Number(fraisForm.cout_horaire_chauffeur) : null,
+        prix_diesel_litre: fraisForm.prix_diesel_litre!==""&&fraisForm.prix_diesel_litre!=null ? Number(fraisForm.prix_diesel_litre) : null,
+        consommation_l_100km: fraisForm.consommation_l_100km!==""&&fraisForm.consommation_l_100km!=null ? Number(fraisForm.consommation_l_100km) : null,
         notes: fraisForm.notes || null,
       };
       if (editFrais) await db.update("frais_generaux_mensuels", editFrais.id, payload);
@@ -3012,8 +3018,39 @@ function BossokApp({ session, onLogout }) {
   };
   const openFraisForm = (row) => {
     setEditFrais(row||null);
-    setFraisForm(row ? {...row} : {mois: new Date().toISOString().slice(0,7)+"-01"});
+    setFraisForm(row ? {...row} : {mois: new Date().toISOString().slice(0,7)+"-01",
+      cout_horaire_chauffeur: 27.64, prix_diesel_litre: 2.057, consommation_l_100km: 30.5});
     setShowFraisForm(true);
+  };
+
+  // Contrôle de gestion — relevés mensuels chauffeurs (TrackFleet : km, heures de conduite)
+  const [showRelevChfForm, setShowRelevChfForm] = useState(false);
+  const [editRelevChf, setEditRelevChf] = useState(null);
+  const [relevChfForm, setRelevChfForm] = useState({});
+  const saveRelevChf = async () => {
+    if (!relevChfForm.mois || !relevChfForm.chauffeur) return;
+    setSaving(true);
+    try {
+      const payload = {
+        mois: relevChfForm.mois,
+        chauffeur: relevChfForm.chauffeur,
+        km: relevChfForm.km!==""&&relevChfForm.km!=null ? Number(relevChfForm.km) : null,
+        heures_conduite: relevChfForm.heures_conduite!==""&&relevChfForm.heures_conduite!=null ? Number(relevChfForm.heures_conduite) : null,
+        trajets: relevChfForm.trajets!==""&&relevChfForm.trajets!=null ? Number(relevChfForm.trajets) : null,
+        notes: relevChfForm.notes || null,
+      };
+      if (editRelevChf) await db.update("releves_chauffeurs_mensuels", editRelevChf.id, payload);
+      else await db.insert("releves_chauffeurs_mensuels", payload);
+      await loadAll();
+      setShowRelevChfForm(false); setEditRelevChf(null); setRelevChfForm({});
+      pushToast("Relevé chauffeur enregistré", "success");
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+  const openRelevChfForm = (row) => {
+    setEditRelevChf(row||null);
+    setRelevChfForm(row ? {...row} : {mois: new Date().toISOString().slice(0,7)+"-01", chauffeur:"Sefa"});
+    setShowRelevChfForm(true);
   };
 
   // Contrôle de gestion — prix relevés chez la concurrence
@@ -4917,6 +4954,63 @@ function BossokApp({ session, onLogout }) {
       distanceSource: dz && dz.n>0 ? (dz.nReel===dz.n ? "route" : dz.nReel>0 ? "mixte" : "vol") : null};
   });
 
+  // ── Coût de livraison réel (TrackFleet) : km + heures de conduite par chauffeur,
+  // relevés manuellement chaque mois, convertis en coût réel (carburant + temps
+  // chauffeur chargé) via les paramètres de "Charges du mois", puis alloués par zone
+  // au prorata d'une distance estimée (distance moyenne × 2 aller-retour × nb factures)
+  // au sein des zones d'un même chauffeur. Cette allocation sert à obtenir une marge
+  // NETTE par zone/client — elle ne vient PAS en déduction supplémentaire du "Résultat
+  // net" global ci-dessous, qui soustrait déjà masse_salariale et carburant au niveau
+  // de toute l'entreprise (double-compter serait faux).
+  const moisListCG = [];
+  { const d0 = new Date((cgFrom||"2000-01-01").slice(0,7)+"-01"), d1 = new Date((cgTo||cgFrom||"2000-01-01").slice(0,7)+"-01");
+    for (let d=new Date(d0); d<=d1; d.setMonth(d.getMonth()+1)) moisListCG.push(d.toISOString().slice(0,7)); }
+  const coutLivraisonParChauffeur = {}; // {Sefa:{cout,km,heures,moisRenseignes}, Mikail:{...}}
+  moisListCG.forEach(m=>{
+    const fg = fraisGeneraux.find(f=>(f.mois||"").slice(0,7)===m);
+    const prixDiesel = fg?.prix_diesel_litre!=null ? Number(fg.prix_diesel_litre) : 2.057;
+    const consoL100 = fg?.consommation_l_100km!=null ? Number(fg.consommation_l_100km) : 30.5;
+    const coutHoraire = fg?.cout_horaire_chauffeur!=null ? Number(fg.cout_horaire_chauffeur) : 27.64;
+    relevesChauffeurs.filter(r=>(r.mois||"").slice(0,7)===m).forEach(r=>{
+      const ch = r.chauffeur;
+      if (!coutLivraisonParChauffeur[ch]) coutLivraisonParChauffeur[ch] = {cout:0, km:0, heures:0, moisRenseignes:0};
+      const km = Number(r.km)||0, heures = Number(r.heures_conduite)||0;
+      coutLivraisonParChauffeur[ch].cout += km*(consoL100/100)*prixDiesel + heures*coutHoraire;
+      coutLivraisonParChauffeur[ch].km += km;
+      coutLivraisonParChauffeur[ch].heures += heures;
+      coutLivraisonParChauffeur[ch].moisRenseignes++;
+    });
+  });
+  const estKmParChauffeur = {};
+  listeZone.forEach(z=>{
+    if (z.driver==="?" || z.distanceMoyenne==null) return;
+    estKmParChauffeur[z.driver] = (estKmParChauffeur[z.driver]||0) + z.distanceMoyenne*2*z.nb;
+  });
+  const coutLivraisonParZone = {};
+  listeZone.forEach(z=>{
+    const cd = coutLivraisonParChauffeur[z.driver];
+    if (!cd || z.driver==="?" || z.distanceMoyenne==null) { coutLivraisonParZone[z.zone]=null; return; }
+    const totalEstKm = estKmParChauffeur[z.driver]||0;
+    coutLivraisonParZone[z.zone] = totalEstKm>0 ? (z.distanceMoyenne*2*z.nb/totalEstKm)*cd.cout : 0;
+  });
+  const listeZoneNette = listeZone.map(z=>{
+    const coutLivraison = coutLivraisonParZone[z.zone];
+    const margeNette = coutLivraison!=null ? z.marge-coutLivraison : null;
+    return {...z, coutLivraison, margeNette, margeNettePct: (margeNette!=null && z.ca>0) ? margeNette/z.ca*100 : null};
+  });
+  const coutLivraisonTotal = Object.values(coutLivraisonParChauffeur).reduce((s,c)=>s+c.cout,0);
+  const nbChauffeursRenseignes = Object.keys(coutLivraisonParChauffeur).length;
+  // Marge nette par client : coût de livraison de la zone du client réparti au prorata
+  // de son CA au sein de cette zone (un client qui pèse 20% du CA d'une zone porte
+  // ~20% du coût réel de livraison relevé pour cette zone).
+  const listeClientNette = listeClient.map(c=>{
+    const z = listeZoneNette.find(zz=>zz.zone===(c.zone||"Inconnu"));
+    if (!z || z.coutLivraison==null || z.ca<=0) return {...c, coutLivraison:null, margeNette:null, margeNettePct:null};
+    const coutLivraison = (c.ca/z.ca)*z.coutLivraison;
+    const margeNette = c.marge-coutLivraison;
+    return {...c, coutLivraison, margeNette, margeNettePct: c.ca>0 ? margeNette/c.ca*100 : null};
+  });
+
   const caProduitsTotal = listeProduit.reduce((s,p)=>s+p.ca,0);
   const margeProduitsTotal = listeProduit.reduce((s,p)=>s+p.marge,0);
   const margePctGlobal = caGlobal>0 ? margeGlobal/caGlobal*100 : 0;
@@ -4959,14 +5053,14 @@ function BossokApp({ session, onLogout }) {
     [["Type","Clients","Factures","CA","COGS","Marge","Marge %"],
      ...listeType.map(t=>[t.type,t.nbClients,t.nb,t.ca.toFixed(2),t.cogs.toFixed(2),t.marge.toFixed(2),Math.round(t.margePct)+"%"])]);
   const exportCGClient = () => downloadCSV("controle_gestion_par_client_"+dateSuffix()+".csv",
-    [["Client","Type","Zone","Factures","Fréquence (j)","CA","COGS","Marge","Marge %"],
-     ...listeClient.map(c=>[c.nom,c.type,c.zone,c.nb,c.freqJours!=null?Math.round(c.freqJours):"",c.ca.toFixed(2),c.cogs.toFixed(2),c.marge.toFixed(2),Math.round(c.margePct)+"%"])]);
+    [["Client","Type","Zone","Factures","Fréquence (j)","CA","COGS","Marge","Marge %","Coût livraison réel","Marge nette","Marge nette %"],
+     ...listeClientNette.map(c=>[c.nom,c.type,c.zone,c.nb,c.freqJours!=null?Math.round(c.freqJours):"",c.ca.toFixed(2),c.cogs.toFixed(2),c.marge.toFixed(2),Math.round(c.margePct)+"%",c.coutLivraison!=null?c.coutLivraison.toFixed(2):"",c.margeNette!=null?c.margeNette.toFixed(2):"",c.margeNettePct!=null?Math.round(c.margeNettePct)+"%":""])]);
   const exportCGProduit = () => downloadCSV("controle_gestion_par_produit_"+dateSuffix()+".csv",
     [["Produit","Catégorie","Qté vendue","CA","COGS","Marge","Fiabilité %"],
      ...listeProduit.map(p=>[p.nom,p.categorie,p.qte,p.ca.toFixed(2),p.cogs.toFixed(2),p.marge.toFixed(2),Math.round(p.fiabilite)+"%"])]);
   const exportCGZone = () => downloadCSV("controle_gestion_par_zone_"+dateSuffix()+".csv",
-    [["Zone","Chauffeur","Factures","CA","COGS","Marge","Marge %"],
-     ...listeZone.map(z=>[z.zone,z.driver,z.nb,z.ca.toFixed(2),z.cogs.toFixed(2),z.marge.toFixed(2),Math.round(z.margePct)+"%"])]);
+    [["Zone","Chauffeur","Factures","CA","COGS","Marge","Marge %","Coût livraison réel","Marge nette","Marge nette %"],
+     ...listeZoneNette.map(z=>[z.zone,z.driver,z.nb,z.ca.toFixed(2),z.cogs.toFixed(2),z.marge.toFixed(2),Math.round(z.margePct)+"%",z.coutLivraison!=null?z.coutLivraison.toFixed(2):"",z.margeNette!=null?z.margeNette.toFixed(2):"",z.margeNettePct!=null?Math.round(z.margeNettePct)+"%":""])]);
 
   return (
   <div>
@@ -5180,25 +5274,29 @@ function BossokApp({ session, onLogout }) {
       <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Marge par client</div>
       <DataTable
         isMobile={isMobile}
-        rows={listeClient}
+        rows={listeClientNette}
         pageSize={20}
         emptyMessage="Aucune donnée sur cette période"
         initialSort={{key:"marge",dir:"desc"}}
         footer={isMobile ? (
           <div style={{display:"flex",justifyContent:"space-between"}}>
-            <span>Total ({listeClient.length} clients)</span>
+            <span>Total ({listeClientNette.length} clients)</span>
             <span>{fmtFull(caGlobal)} · marge {fmtFull(margeGlobal)}</span>
           </div>
         ) : (
           <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
-            <td style={{padding:"8px 12px"}}>Total ({listeClient.length} clients)</td>
+            <td style={{padding:"8px 12px"}}>Total ({listeClientNette.length} clients)</td>
             <td style={{padding:"8px 12px"}}></td>
             <td style={{padding:"8px 12px"}}></td>
-            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeClient.reduce((s,c)=>s+c.nb,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeClientNette.reduce((s,c)=>s+c.nb,0)}</td>
+            <td style={{padding:"8px 12px"}}></td>
             <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caGlobal)}</td>
             <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(cogsGlobal)}</td>
             <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeGlobal)}</td>
             <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{Math.round(margePctGlobal)}%</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{coutLivraisonTotal>0?fmtFull(coutLivraisonTotal):"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{margeNetteGlobaleCalc!=null?fmtFull(margeNetteGlobaleCalc):"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{(margeNetteGlobaleCalc!=null&&caGlobal>0)?Math.round(margeNetteGlobaleCalc/caGlobal*100)+"%":"—"}</td>
           </tr>
         )}
         columns={[
@@ -5209,11 +5307,14 @@ function BossokApp({ session, onLogout }) {
           {key:"freqJours", label:"Fréquence", align:"right", sortValue:r=>r.freqJours??999999, render:r=>r.freqJours!=null?"~"+Math.round(r.freqJours)+"j":<span style={{color:"#CBD5E1"}}>—</span>},
           {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
           {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
-          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
-          {key:"margePct", label:"Marge %", align:"right", mobileShow:true, sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+          {key:"marge", label:"Marge", align:"right", sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+          {key:"coutLivraison", label:"Coût livraison réel", align:"right", sortValue:r=>r.coutLivraison??-1, render:r=>r.coutLivraison!=null?fmtFull(r.coutLivraison):<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"margeNette", label:"Marge nette", align:"right", mobileShow:true, sortValue:r=>r.margeNette??-Infinity, render:r=>r.margeNette!=null?<span style={{color:r.margeNette>=0?"#059669":"#DC2626",fontWeight:600}}>{fmtFull(r.margeNette)}</span>:<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"margeNettePct", label:"Marge nette %", align:"right", sortValue:r=>r.margeNettePct??-Infinity, render:r=>r.margeNettePct!=null?<span style={{color:r.margeNettePct>=0?"#059669":"#DC2626",fontWeight:600}}>{Math.round(r.margeNettePct)}%</span>:<span style={{color:"#CBD5E1"}}>—</span>},
         ]}
       />
-      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Fréquence = nombre moyen de jours entre deux commandes sur la période (nécessite au moins 2 factures) — un chiffre bas signale un client régulier, un chiffre élevé ou "—" un client occasionnel ou ponctuel.</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Fréquence = nombre moyen de jours entre deux commandes sur la période (nécessite au moins 2 factures) — un chiffre bas signale un client régulier, un chiffre élevé ou "—" un client occasionnel ou ponctuel. Marge nette = marge − coût de livraison réel alloué (voir bloc "Coût de livraison réel" ci-dessous) ; "—" quand le chauffeur de la zone n'a pas de relevé TrackFleet sur la période.</div>
     </div>
 
     {/* ── Marge par produit ── */}
@@ -5275,7 +5376,7 @@ function BossokApp({ session, onLogout }) {
       {calcDistancesMsg && <div style={{fontSize:11,color:"#1D4ED8",marginBottom:8}}>{calcDistancesMsg}</div>}
       <DataTable
         isMobile={isMobile}
-        rows={listeZone}
+        rows={listeZoneNette}
         pageSize={15}
         emptyMessage="Aucune donnée sur cette période"
         initialSort={{key:"marge",dir:"desc"}}
@@ -5288,26 +5389,79 @@ function BossokApp({ session, onLogout }) {
           <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
             <td style={{padding:"8px 12px"}}>Total</td>
             <td style={{padding:"8px 12px"}}></td>
-            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeZone.reduce((s,z)=>s+z.nb,0)}</td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeZoneNette.reduce((s,z)=>s+z.nb,0)}</td>
             <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caGlobal)}</td>
             <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(cogsGlobal)}</td>
             <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeGlobal)}</td>
             <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{Math.round(margePctGlobal)}%</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{coutLivraisonTotal>0?fmtFull(coutLivraisonTotal):"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{margeNetteGlobaleCalc!=null?fmtFull(margeNetteGlobaleCalc):"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{(margeNetteGlobaleCalc!=null&&caGlobal>0)?Math.round(margeNetteGlobaleCalc/caGlobal*100)+"%":"—"}</td>
           </tr>
         )}
         columns={[
           {key:"zone", label:"Zone", mobilePrimary:true, sortValue:r=>r.zone},
           {key:"driver", label:"Chauffeur", mobileShow:true, sortValue:r=>r.driver},
-          {key:"distanceMoyenne", label:"Distance moy.", align:"right", mobileShow:true, sortValue:r=>r.distanceMoyenne??-1, render:r=>r.distanceMoyenne!=null?
+          {key:"distanceMoyenne", label:"Distance moy.", align:"right", sortValue:r=>r.distanceMoyenne??-1, render:r=>r.distanceMoyenne!=null?
             <span>{Math.round(r.distanceMoyenne)} km {r.distanceSource==="route"?<span title="Trajet réel" style={{color:"#059669"}}>●</span>:r.distanceSource==="mixte"?<span title="Partiellement réel" style={{color:"#D97706"}}>●</span>:<span title="Vol d'oiseau (estimé)" style={{color:"#CBD5E1"}}>●</span>}</span>
             :<span style={{color:"#CBD5E1"}}>—</span>},
           {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
           {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
           {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
-          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
-          {key:"margePct", label:"Marge %", align:"right", mobileShow:true, sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+          {key:"marge", label:"Marge", align:"right", sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+          {key:"coutLivraison", label:"Coût livraison réel", align:"right", mobileShow:true, sortValue:r=>r.coutLivraison??-1, render:r=>r.coutLivraison!=null?fmtFull(r.coutLivraison):<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"margeNette", label:"Marge nette", align:"right", mobileShow:true, sortValue:r=>r.margeNette??-Infinity, render:r=>r.margeNette!=null?<span style={{color:r.margeNette>=0?"#059669":"#DC2626",fontWeight:600}}>{fmtFull(r.margeNette)}</span>:<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"margeNettePct", label:"Marge nette %", align:"right", sortValue:r=>r.margeNettePct??-Infinity, render:r=>r.margeNettePct!=null?<span style={{color:r.margeNettePct>=0?"#059669":"#DC2626",fontWeight:600}}>{Math.round(r.margeNettePct)}%</span>:<span style={{color:"#CBD5E1"}}>—</span>},
         ]}
       />
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Coût livraison réel = carburant + temps chauffeur chargé, calculé à partir des relevés TrackFleet (km, heures de conduite) du/des chauffeur(s) de la zone, réparti entre zones au prorata d'une distance estimée. "—" = pas de relevé TrackFleet sur la période pour ce chauffeur.</div>
+    </div>
+
+    {/* ── Coût de livraison réel (TrackFleet) ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+        <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> Coût de livraison réel — relevés chauffeurs (TrackFleet)</div>
+        <button onClick={()=>openRelevChfForm(null)} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 10px",fontSize:11,whiteSpace:"nowrap"}}>+ Relevé chauffeur</button>
+      </div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>
+        Un relevé par chauffeur et par mois (km parcourus + heures de conduite, depuis le rapport "Résumé" TrackFleet), converti en coût réel via les paramètres définis dans "+ Charges d'un mois" (coût horaire chauffeur, prix diesel, consommation). Sert à calculer la marge nette par zone/client ci-dessus.
+      </div>
+      {["Sefa","Mikail"].map(ch=>{
+        const cd = coutLivraisonParChauffeur[ch];
+        return (
+          <div key={ch} style={{...S.kpi(cd?"#334155":"#D97706"),display:"inline-block",marginRight:10,marginBottom:10,minWidth:150}}>
+            <div style={{fontSize:16,fontWeight:800,color:cd?"#334155":"#D97706"}}>{cd?fmtFull(cd.cout):"? aucun relevé"}</div>
+            <div style={{fontSize:11,color:"#6B7280"}}>{ch} {cd?`· ${Math.round(cd.km)} km · ${cd.heures.toFixed(1)}h`:""}</div>
+          </div>
+        );
+      })}
+      {nbChauffeursRenseignes===0 && moisListCG.length>0 && (
+        <div style={{fontSize:11,color:"#D97706",marginBottom:8}}>⚠ Aucun relevé chauffeur sur la période — ajoute les relevés du rapport TrackFleet pour activer la marge nette par zone/client.</div>
+      )}
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
+        <thead><tr style={{borderBottom:"1px solid #E5E7EB"}}>
+          {["Mois","Chauffeur","Km","Heures conduite","Trajets",""].map(h=>(
+            <th key={h} style={{padding:"5px 8px",textAlign:h==="Mois"||h==="Chauffeur"?"left":"right",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
+          ))}
+        </tr></thead>
+        <tbody>
+          {relevesChauffeurs.filter(r=>moisListCG.includes((r.mois||"").slice(0,7))).sort((a,b)=>(b.mois||"").localeCompare(a.mois||"")||(a.chauffeur||"").localeCompare(b.chauffeur||"")).map(r=>(
+            <tr key={r.id} style={{borderBottom:"1px solid #F9FAFB",cursor:"pointer"}} onClick={()=>openRelevChfForm(r)}>
+              <td style={{padding:"5px 8px",fontWeight:600}}>{(r.mois||"").slice(0,7)}</td>
+              <td style={{padding:"5px 8px"}}>{r.chauffeur}</td>
+              <td style={{padding:"5px 8px",textAlign:"right"}}>{r.km!=null?Math.round(r.km)+" km":"—"}</td>
+              <td style={{padding:"5px 8px",textAlign:"right"}}>{r.heures_conduite!=null?r.heures_conduite+"h":"—"}</td>
+              <td style={{padding:"5px 8px",textAlign:"right"}}>{r.trajets??"—"}</td>
+              <td style={{padding:"5px 8px",textAlign:"right",color:"#9CA3AF"}}>✎</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {relevesChauffeurs.filter(r=>moisListCG.includes((r.mois||"").slice(0,7))).length===0 && (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"16px 0",fontSize:12}}>Aucun relevé chauffeur sur cette période — clique sur "+ Relevé chauffeur" pour en ajouter.</div>
+      )}
     </div>
   </div>
   );
@@ -8051,6 +8205,20 @@ function BossokApp({ session, onLogout }) {
             <input type="number" step="0.01" value={fraisForm[champ]??""} onChange={e=>setFraisForm(p=>({...p,[champ]:e.target.value}))} placeholder="€" style={S.input}/>
           </div>
         ))}
+        <div style={{borderTop:"1px solid #F1F5F9",paddingTop:10,marginTop:4}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:2}}>Paramètres coût de livraison réel</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:8}}>Utilisés pour convertir les relevés chauffeurs (km, heures) en coût réel — préremplis, à ajuster si le prix du diesel ou le coût chauffeur changent.</div>
+        </div>
+        {[
+          ["cout_horaire_chauffeur","Coût horaire chauffeur chargé (€/h)"],
+          ["prix_diesel_litre","Prix diesel (€/L)"],
+          ["consommation_l_100km","Consommation véhicule (L/100km)"],
+        ].map(([champ,label])=>(
+          <div key={champ}>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{label}</label>
+            <input type="number" step="0.01" value={fraisForm[champ]??""} onChange={e=>setFraisForm(p=>({...p,[champ]:e.target.value}))} style={S.input}/>
+          </div>
+        ))}
         <div>
           <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
           <input value={fraisForm.notes||""} onChange={e=>setFraisForm(p=>({...p,notes:e.target.value}))} placeholder="Ex: estimation, chiffre partiel..." style={S.input}/>
@@ -8059,6 +8227,60 @@ function BossokApp({ session, onLogout }) {
       <div style={{display:"flex",gap:8,marginTop:18}}>
         <button onClick={()=>{setShowFraisForm(false);setEditFrais(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveFrais} disabled={saving||!fraisForm.mois} style={{...S.btn(),flex:2,opacity:(saving||!fraisForm.mois)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL RELEVÉ CHAUFFEUR (CONTRÔLE DE GESTION — coût livraison réel) ══ */}
+  {showRelevChfForm&&(
+  <div style={S.modal} onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}}>
+    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🚚 Relevé chauffeur (TrackFleet)</h2>
+        <button onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
+        À reporter chaque mois depuis le rapport "Résumé" de TrackFleet (export Excel), un relevé par chauffeur.
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Mois *</label>
+          <input type="month" value={(relevChfForm.mois||"").slice(0,7)} onChange={e=>setRelevChfForm(p=>({...p,mois:e.target.value+"-01"}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Chauffeur *</label>
+          <div style={{display:"flex",gap:6}}>
+            {["Sefa","Mikail"].map(ch=>(
+              <button key={ch} onClick={()=>setRelevChfForm(p=>({...p,chauffeur:ch}))}
+                style={{...S.btn(relevChfForm.chauffeur===ch?"#1D4ED8":"#F1F5F9",relevChfForm.chauffeur===ch?"#fff":"#374151"),flex:1,padding:"8px 0",fontSize:13}}>
+                {ch}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Distance totale (km)</label>
+          <input type="number" step="0.01" value={relevChfForm.km??""} onChange={e=>setRelevChfForm(p=>({...p,km:e.target.value}))} placeholder="Ex: 1002.48" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Temps de conduite (heures)</label>
+          <input type="number" step="0.01" value={relevChfForm.heures_conduite??""} onChange={e=>setRelevChfForm(p=>({...p,heures_conduite:e.target.value}))} placeholder="Ex: 25.63 (= 25h38)" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Trajets (nombre, optionnel)</label>
+          <input type="number" value={relevChfForm.trajets??""} onChange={e=>setRelevChfForm(p=>({...p,trajets:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={relevChfForm.notes||""} onChange={e=>setRelevChfForm(p=>({...p,notes:e.target.value}))} style={S.input}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveRelevChf} disabled={saving||!relevChfForm.mois||!relevChfForm.chauffeur} style={{...S.btn(),flex:2,opacity:(saving||!relevChfForm.mois||!relevChfForm.chauffeur)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Enregistrer"}
         </button>
       </div>
