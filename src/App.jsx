@@ -1902,6 +1902,7 @@ function BossokApp({ session, onLogout }) {
   const [receptionsStock, setReceptionsStock] = useState([]);
   const [fraisGeneraux, setFraisGeneraux] = useState([]);
   const [relevesChauffeurs, setRelevesChauffeurs] = useState([]);
+  const [creancesSnapshot, setCreancesSnapshot] = useState([]);
   const [prixConcurrents, setPrixConcurrents] = useState([]);
   const [pertesStock, setPertesStock] = useState([]);
   const [evenements, setEvenements] = useState([]);
@@ -2161,6 +2162,7 @@ function BossokApp({ session, onLogout }) {
     return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
   });
   const [cgDateTo, setCgDateTo] = useState(() => new Date().toISOString().split("T")[0]);
+  const [seuilPackOffert, setSeuilPackOffert] = useState(150);
 
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now()+86400000).toISOString().split("T")[0];
@@ -2185,7 +2187,7 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv, frais, prixConc, caHistPre, relevesChf] = await Promise.all([
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv, frais, prixConc, caHistPre, relevesChf, creancesSnap] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -2202,6 +2204,7 @@ function BossokApp({ session, onLogout }) {
         db.get("prix_concurrents"),
         db.get("ca_historique_pre_app"),
         db.get("releves_chauffeurs_mensuels"),
+        db.get("creances_clients_snapshot"),
       ]);
       setClients(cls);
       setFactures(facts);
@@ -2225,6 +2228,7 @@ function BossokApp({ session, onLogout }) {
       setConsignesManuelles(consMan);
       setFraisGeneraux(frais);
       setRelevesChauffeurs(relevesChf);
+      setCreancesSnapshot(creancesSnap);
       setPrixConcurrents(prixConc);
       setCaHistoriquePreApp(caHistPre);
       setError(null);
@@ -3019,7 +3023,7 @@ function BossokApp({ session, onLogout }) {
   const openFraisForm = (row) => {
     setEditFrais(row||null);
     setFraisForm(row ? {...row} : {mois: new Date().toISOString().slice(0,7)+"-01",
-      cout_horaire_chauffeur: 27.64, prix_diesel_litre: 2.057, consommation_l_100km: 30.5});
+      cout_horaire_chauffeur: 27.64, prix_diesel_litre: 2.057, consommation_l_100km: 11});
     setShowFraisForm(true);
   };
 
@@ -4969,7 +4973,7 @@ function BossokApp({ session, onLogout }) {
   moisListCG.forEach(m=>{
     const fg = fraisGeneraux.find(f=>(f.mois||"").slice(0,7)===m);
     const prixDiesel = fg?.prix_diesel_litre!=null ? Number(fg.prix_diesel_litre) : 2.057;
-    const consoL100 = fg?.consommation_l_100km!=null ? Number(fg.consommation_l_100km) : 30.5;
+    const consoL100 = fg?.consommation_l_100km!=null ? Number(fg.consommation_l_100km) : 11;
     const coutHoraire = fg?.cout_horaire_chauffeur!=null ? Number(fg.cout_horaire_chauffeur) : 27.64;
     relevesChauffeurs.filter(r=>(r.mois||"").slice(0,7)===m).forEach(r=>{
       const ch = r.chauffeur;
@@ -5030,10 +5034,60 @@ function BossokApp({ session, onLogout }) {
     const m = c.created_at.slice(0,7);
     if (cgFrom && m < cgFrom.slice(0,7)) return;
     if (cgTo && m > cgTo.slice(0,7)) return;
-    nouveauxClientsParMois[m] = (nouveauxClientsParMois[m]||0)+1;
+    if (!nouveauxClientsParMois[m]) nouveauxClientsParMois[m] = {nb:0, noms:[]};
+    nouveauxClientsParMois[m].nb++;
+    nouveauxClientsParMois[m].noms.push(c.nom);
   });
   const listeNouveauxClients = Object.entries(nouveauxClientsParMois).sort((a,b)=>a[0].localeCompare(b[0]));
-  const totalNouveauxClients = listeNouveauxClients.reduce((s,[,n])=>s+n,0);
+  const totalNouveauxClients = listeNouveauxClients.reduce((s,[,v])=>s+v.nb,0);
+
+  // ── Clients inactifs (30+ jours sans commande) ──────────────────────────
+  // Indicateur "live", indépendant du filtre de période ci-dessus : on regarde
+  // la vraie dernière facture de chaque client actif, sur TOUTE la base.
+  const AUJOURD_HUI_CG = localDateStr();
+  const derniereFactureParClient = {};
+  factures.forEach(f=>{
+    if (!f.client_id || !f.date) return;
+    if (f.statut==="Avoir" || f.statut==="Annulée") return;
+    if (!derniereFactureParClient[f.client_id] || f.date > derniereFactureParClient[f.client_id]) derniereFactureParClient[f.client_id] = f.date;
+  });
+  const clientsInactifs30j = clients.filter(c=>c.statut==="Actif").map(c=>{
+    const derniereDate = derniereFactureParClient[c.id] || null;
+    const joursDepuis = derniereDate ? Math.round((new Date(AUJOURD_HUI_CG)-new Date(derniereDate))/86400000) : null;
+    return {id:c.id, nom:c.nom, zone:c.region, derniereDate, joursDepuis};
+  }).filter(c=>c.joursDepuis==null || c.joursDepuis>30)
+    .sort((a,b)=>(b.joursDepuis??999999)-(a.joursDepuis??999999));
+
+  // ── Vieillissement des créances ─────────────────────────────────────────
+  // Référence externe (import ponctuel), pas recalculée en live — on affiche
+  // le dernier relevé (date_snapshot la plus récente).
+  const dateSnapshotRecente = creancesSnapshot.reduce((max,r)=>(!max||(r.date_snapshot||"")>max)?r.date_snapshot:max, null);
+  const creancesRecentes = creancesSnapshot.filter(r=>r.date_snapshot===dateSnapshotRecente);
+  const TRANCHES_CREANCES = ["0-30","30-60","60-90","90+"];
+  const vieillissementCreances = TRANCHES_CREANCES.map(tr=>{
+    const lignes = creancesRecentes.filter(r=>r.tranche_anciennete===tr);
+    return {tranche:tr, nb:lignes.length, montant:lignes.reduce((s,r)=>s+(Number(r.montant)||0),0)};
+  });
+  const totalCreances = vieillissementCreances.reduce((s,t)=>s+t.montant,0);
+
+  // ── Factures impayées à traiter (action quotidienne) ────────────────────
+  const facturesImpayeesCG = factures.filter(f=>f.statut==="Impayée").sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+
+  // ── Marge par facture ────────────────────────────────────────────────────
+  const margeParFacture = cgFacts.map(f=>{
+    const cl = clients.find(c=>c.id===f.client_id);
+    const {total} = totalFact(f.lignes, f.tva_pct);
+    const mFact = calcMargeFacture(f, produits, receptionsStock);
+    return {id:f.id, numero:f.numero, date:f.date, client:f.client_nom||cl?.nom||"", ca:total, marge:mFact.marge, margePct: total>0?mFact.marge/total*100:0};
+  }).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+
+  // ── Éligibilité "pack offert" ────────────────────────────────────────────
+  // Dès que la marge brute cumulée d'un client sur la période sélectionnée
+  // atteint le seuil (réglable, 150€ par défaut), on considère qu'on peut lui
+  // offrir une caisse. Logique simple : marge cumulée sur la période affichée,
+  // pas de suivi de "déjà offert / reset" pour l'instant — à affiner avec Fatih
+  // si besoin d'un suivi plus fin dans le temps.
+  const clientsEligiblesPack = listeClientNette.filter(c=>c.marge>=seuilPackOffert).sort((a,b)=>b.marge-a.marge);
 
   // CA historique pré-app — référence uniquement (montant global, sans marge ni détail
   // client/produit disponibles), pour les mois antérieurs à la mise en service du système (10/09/2026).
@@ -5114,6 +5168,96 @@ function BossokApp({ session, onLogout }) {
       Marge = coût moyen pondéré des réceptions de stock en priorité, sinon prix d'achat produit, sinon estimation à {Math.round((1-COUT_RATIO_FALLBACK)*100)}% de marge par défaut si aucune donnée de coût n'existe pour ce produit. La "fiabilité" indique la part du chiffre d'affaires reposant sur un vrai coût plutôt que sur l'estimation par défaut — un chiffre bas signale des produits sans prix d'achat renseigné.
     </div>
 
+    {/* ── Factures impayées à traiter (action quotidienne) ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+        <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="warning" size={14} style={{color:"#DC2626"}}/> Factures impayées à traiter ({facturesImpayeesCG.length})</div>
+      </div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Toutes les factures au statut "Impayée", tous clients confondus, triées de la plus ancienne à la plus récente — indépendant du filtre de période ci-dessus.</div>
+      {facturesImpayeesCG.length===0 ? (
+        <div style={{textAlign:"center",color:"#059669",padding:"12px 0",fontSize:12,fontWeight:600}}>Aucune facture impayée. 👍</div>
+      ) : (
+        <div style={{maxHeight:320,overflowY:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+              <th style={{padding:"4px"}}>N°</th><th style={{padding:"4px"}}>Date</th><th style={{padding:"4px"}}>Client</th>
+              <th style={{padding:"4px",textAlign:"right"}}>Montant</th><th style={{padding:"4px",textAlign:"right"}}>Jours</th><th style={{padding:"4px"}}></th>
+            </tr></thead>
+            <tbody>
+              {facturesImpayeesCG.map(f=>{
+                const {total} = totalFact(f.lignes, f.tva_pct);
+                const jours = f.date ? Math.round((new Date(AUJOURD_HUI_CG)-new Date(f.date))/86400000) : null;
+                return (
+                  <tr key={f.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                    <td style={{padding:"5px 4px",fontWeight:600}}>{f.numero}</td>
+                    <td style={{padding:"5px 4px"}}>{f.date}</td>
+                    <td style={{padding:"5px 4px"}}>{f.client_nom}</td>
+                    <td style={{padding:"5px 4px",textAlign:"right",fontWeight:600}}>{fmtFull(total)}</td>
+                    <td style={{padding:"5px 4px",textAlign:"right",color:jours>60?"#DC2626":jours>30?"#D97706":"#9CA3AF"}}>{jours!=null?jours+"j":"—"}</td>
+                    <td style={{padding:"5px 4px",textAlign:"right"}}>
+                      <button onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:"",date:today});setShowPaiementForm(true);}}
+                        style={{...S.btn("#ECFDF5","#059669"),padding:"4px 10px",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>✓ Marquer payée</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+    {/* ── Vieillissement des créances & clients inactifs ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> Vieillissement des créances</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>
+          {dateSnapshotRecente ? "Dernier relevé : "+dateSnapshotRecente+" — référence externe, non recalculée en direct." : "Aucun relevé de créances importé."}
+        </div>
+        {vieillissementCreances.every(t=>t.nb===0) ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Pas de données.</div>
+        ) : (
+        <>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {vieillissementCreances.map(t=>(
+                <tr key={t.tranche} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600,color:t.tranche==="90+"?"#DC2626":t.tranche==="60-90"?"#D97706":"#374151"}}>{t.tranche} jours</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{t.nb} facture{t.nb>1?"s":""}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",fontWeight:600}}>{fmtFull(t.montant)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{textAlign:"right",fontWeight:800,fontSize:13,marginTop:6,paddingTop:6,borderTop:"1px solid #F1F5F9"}}>Total : {fmtFull(totalCreances)}</div>
+        </>
+        )}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Clients inactifs (+30 jours sans commande)</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{clientsInactifs30j.length} client(s) actif(s) sans facture depuis plus de 30 jours (ou jamais facturés) — toute la base, indépendant du filtre de période.</div>
+        {clientsInactifs30j.length===0 ? (
+          <div style={{textAlign:"center",color:"#059669",padding:"12px 0",fontSize:12,fontWeight:600}}>Tous les clients actifs ont commandé récemment. 👍</div>
+        ) : (
+          <div style={{maxHeight:260,overflowY:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <tbody>
+                {clientsInactifs30j.map(c=>(
+                  <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                    <td style={{padding:"5px 4px",fontWeight:600}}>{c.nom}</td>
+                    <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{c.zone}</td>
+                    <td style={{padding:"5px 4px",textAlign:"right",color:c.joursDepuis==null?"#9CA3AF":c.joursDepuis>90?"#DC2626":"#D97706"}}>
+                      {c.joursDepuis==null ? "Jamais facturé" : c.joursDepuis+"j"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+
     {/* ── Acquisition clients & CA historique pré-app ── */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
       <div style={S.card}>
@@ -5124,10 +5268,13 @@ function BossokApp({ session, onLogout }) {
         ) : (
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <tbody>
-              {listeNouveauxClients.map(([m,n])=>(
+              {listeNouveauxClients.map(([m,v])=>(
                 <tr key={m} style={{borderBottom:"1px solid #F9FAFB"}}>
-                  <td style={{padding:"5px 4px",fontWeight:600}}>{m}</td>
-                  <td style={{padding:"5px 4px",textAlign:"right"}}>{n} nouveau{n>1?"x":""}</td>
+                  <td style={{padding:"5px 4px",fontWeight:600,verticalAlign:"top",whiteSpace:"nowrap"}}>{m}</td>
+                  <td style={{padding:"5px 4px"}}>
+                    <div style={{textAlign:"right",marginBottom:2}}>{v.nb} nouveau{v.nb>1?"x":""}</div>
+                    <div style={{color:"#6B7280",fontSize:11}}>{v.noms.join(", ")}</div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -5302,6 +5449,7 @@ function BossokApp({ session, onLogout }) {
             <td style={{padding:"8px 12px",textAlign:"right"}}>{coutLivraisonTotal>0?fmtFull(coutLivraisonTotal):"—"}</td>
             <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{margeNetteGlobaleCalc!=null?fmtFull(margeNetteGlobaleCalc):"—"}</td>
             <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{(margeNetteGlobaleCalc!=null&&caGlobal>0)?Math.round(margeNetteGlobaleCalc/caGlobal*100)+"%":"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{clientsEligiblesPack.length}</td>
           </tr>
         )}
         columns={[
@@ -5317,9 +5465,59 @@ function BossokApp({ session, onLogout }) {
           {key:"coutLivraison", label:"Coût livraison réel", align:"right", sortValue:r=>r.coutLivraison??-1, render:r=>r.coutLivraison!=null?fmtFull(r.coutLivraison):<span style={{color:"#CBD5E1"}}>—</span>},
           {key:"margeNette", label:"Marge nette", align:"right", mobileShow:true, sortValue:r=>r.margeNette??-Infinity, render:r=>r.margeNette!=null?<span style={{color:r.margeNette>=0?"#059669":"#DC2626",fontWeight:600}}>{fmtFull(r.margeNette)}</span>:<span style={{color:"#CBD5E1"}}>—</span>},
           {key:"margeNettePct", label:"Marge nette %", align:"right", sortValue:r=>r.margeNettePct??-Infinity, render:r=>r.margeNettePct!=null?<span style={{color:r.margeNettePct>=0?"#059669":"#DC2626",fontWeight:600}}>{Math.round(r.margeNettePct)}%</span>:<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"pack", label:"🎁 Pack offert", align:"right", sortValue:r=>r.marge>=seuilPackOffert?1:0, render:r=>r.marge>=seuilPackOffert?<span style={{color:"#059669",fontWeight:700}}>🎁 Éligible</span>:<span style={{color:"#CBD5E1"}}>—</span>},
         ]}
       />
-      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Fréquence = nombre moyen de jours entre deux commandes sur la période (nécessite au moins 2 factures) — un chiffre bas signale un client régulier, un chiffre élevé ou "—" un client occasionnel ou ponctuel. Marge nette = marge − coût de livraison réel alloué (voir bloc "Coût de livraison réel" ci-dessous) ; "—" quand le chauffeur de la zone n'a pas de relevé TrackFleet sur la période.</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Fréquence = nombre moyen de jours entre deux commandes sur la période (nécessite au moins 2 factures) — un chiffre bas signale un client régulier, un chiffre élevé ou "—" un client occasionnel ou ponctuel. Marge nette = marge − coût de livraison réel alloué (voir bloc "Coût de livraison réel" ci-dessous) ; "—" quand le chauffeur de la zone n'a pas de relevé TrackFleet sur la période. "Pack offert" = marge brute cumulée sur la période ≥ seuil réglable ci-dessous.</div>
+    </div>
+
+    {/* ── Clients éligibles à un pack offert ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:4}}>
+        <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="trophy" size={14} style={{color:"#D97706"}}/> Clients éligibles à un pack offert</div>
+        <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+          <span style={{color:"#6B7280"}}>Seuil de marge brute (sur la période) :</span>
+          <input type="number" value={seuilPackOffert} onChange={e=>setSeuilPackOffert(Number(e.target.value)||0)}
+            style={{width:80,padding:"4px 8px",border:"1px solid #E5E7EB",borderRadius:6,fontSize:12}}/>
+          <span style={{color:"#6B7280"}}>€</span>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Dès que la marge brute cumulée d'un client sur la période sélectionnée atteint ce seuil, on peut lui offrir une caisse (ex. un pack de Coca). Basé sur la période du filtre en haut de page — pas de suivi "déjà offert" pour l'instant.</div>
+      {clientsEligiblesPack.length===0 ? (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucun client n'atteint le seuil sur cette période.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <tbody>
+            {clientsEligiblesPack.map(c=>(
+              <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>🎁 {c.nom}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{c.zone}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",fontWeight:700,color:"#059669"}}>{fmtFull(c.marge)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+
+    {/* ── Marge par facture ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="factures" size={14} style={{color:"#5D6B82"}}/> Marge par facture</div>
+      <DataTable
+        isMobile={isMobile}
+        rows={margeParFacture}
+        pageSize={20}
+        emptyMessage="Aucune facture sur cette période"
+        initialSort={{key:"date",dir:"desc"}}
+        columns={[
+          {key:"numero", label:"N°", mobilePrimary:true, sortValue:r=>r.numero},
+          {key:"date", label:"Date", mobileShow:true, sortValue:r=>r.date},
+          {key:"client", label:"Client", mobileShow:true, sortValue:r=>r.client},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+        ]}
+      />
     </div>
 
     {/* ── Marge par produit ── */}
