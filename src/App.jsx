@@ -5187,6 +5187,21 @@ function BossokApp({ session, onLogout }) {
     return {mois:m, parChauffeur};
   });
 
+  // ── Priorités d'action — regroupe en listes concrètes les signaux déjà calculés ──
+  // Relance prioritaire : client inactif 30j+ ET avec une créance en souffrance (60j+)
+  // — on traite la commande et le paiement en même temps plutôt que séparément.
+  const clientsIdAvecCreanceEnSouffrance = new Set(
+    facturesImpayeesCG.filter(f=>f.date && Math.round((new Date(AUJOURD_HUI_CG)-new Date(f.date))/86400000)>60 && f.client_id).map(f=>f.client_id)
+  );
+  const clientsRelancePrioritaire = clientsInactifs30j.filter(c=>clientsIdAvecCreanceEnSouffrance.has(c.id));
+  // Zones à marge nette négative (coût de livraison réel > marge brute de la zone).
+  const zonesMargeNetteNegative = listeZoneNette.filter(z=>z.margeNette!=null && z.margeNette<0).sort((a,b)=>a.margeNette-b.margeNette);
+  // Produits sans vrai prix d'achat renseigné (marge affichée = estimation par défaut).
+  const produitsFaibleFiabilite = listeProduit.filter(p=>p.fiabilite<80).sort((a,b)=>a.fiabilite-b.fiabilite);
+  // Produits vendus nettement moins cher que la concurrence (Freshy) — marge potentiellement
+  // sacrifiée sans raison, à vérifier au cas par cas.
+  const produitsEcartPrixNegatif = listeProduit.filter(p=>p.ecartPct!=null && p.ecartPct<-10).sort((a,b)=>a.ecartPct-b.ecartPct);
+
   // CA historique pré-app — référence uniquement (montant global, sans marge ni détail
   // client/produit disponibles), pour les mois antérieurs à la mise en service du système (10/09/2026).
   const caHistPreAppPeriode = caHistoriquePreApp.filter(h=>{
@@ -5712,6 +5727,80 @@ function BossokApp({ session, onLogout }) {
                   const cd = m.parChauffeur[ch];
                   return <td key={ch} style={{padding:"5px 4px",textAlign:"right"}}>{cd ? fmtFull(cd.cout)+" ("+Math.round(cd.km)+"km)" : <span style={{color:"#CBD5E1"}}>—</span>}</td>;
                 })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+
+    {/* ── Priorités d'action ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="bulb" size={14} style={{color:"#D97706"}}/> Priorités d'action</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:12}}>Croisement des indicateurs ci-dessus en listes concrètes à traiter.</div>
+
+      <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>📞 Relance prioritaire ({clientsRelancePrioritaire.length}) — inactif 30j+ ET créance 60j+</div>
+      {clientsRelancePrioritaire.length===0 ? (
+        <div style={{color:"#9CA3AF",fontSize:12,marginBottom:14}}>Aucun client dans ce cas actuellement.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
+          <tbody>
+            {clientsRelancePrioritaire.map(c=>(
+              <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{c.nom}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{c.zone}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#DC2626"}}>{c.joursDepuis==null?"Jamais facturé":c.joursDepuis+"j sans commande"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>📉 Zones à marge nette négative ({zonesMargeNetteNegative.length})</div>
+      {zonesMargeNetteNegative.length===0 ? (
+        <div style={{color:"#9CA3AF",fontSize:12,marginBottom:14}}>Aucune zone en marge nette négative sur la période.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
+          <tbody>
+            {zonesMargeNetteNegative.map(z=>(
+              <tr key={z.zone} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{z.zone}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{z.driver}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#DC2626",fontWeight:700}}>{fmtFull(z.margeNette)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>❓ Produits sans prix d'achat fiable ({produitsFaibleFiabilite.length})</div>
+      {produitsFaibleFiabilite.length===0 ? (
+        <div style={{color:"#9CA3AF",fontSize:12,marginBottom:14}}>Tous les produits ont une marge fiable (≥80%).</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
+          <tbody>
+            {produitsFaibleFiabilite.slice(0,10).map(p=>(
+              <tr key={p.nom} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{p.nom}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{p.categorie}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#D97706",fontWeight:700}}>{Math.round(p.fiabilite)}% fiable</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>💸 Produits vendus bien moins cher que Freshy ({produitsEcartPrixNegatif.length})</div>
+      {produitsEcartPrixNegatif.length===0 ? (
+        <div style={{color:"#9CA3AF",fontSize:12}}>Aucun écart de prix négatif important détecté.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <tbody>
+            {produitsEcartPrixNegatif.map(p=>(
+              <tr key={p.nom} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{p.nom}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{fmtFull(p.prixVente)} vs {fmtFull(p.prixConcurrent)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#DC2626",fontWeight:700}}>{Math.round(p.ecartPct)}%</td>
               </tr>
             ))}
           </tbody>
@@ -8600,4 +8689,245 @@ function BossokApp({ session, onLogout }) {
     <div style={{...S.modalBox,maxWidth:440}} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>📊 Charges du mois</h2>
-        <button onClick={()=>{setShowFraisForm(fals
+        <button onClick={()=>{setShowFraisForm(false);setEditFrais(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
+        Ces chiffres alimentent le résultat net de l'onglet Contrôle de gestion. Laisse un champ vide si tu ne l'as pas encore — il sera marqué "?" plutôt que compté comme zéro.
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Mois *</label>
+          <input type="month" value={(fraisForm.mois||"").slice(0,7)} onChange={e=>setFraisForm(p=>({...p,mois:e.target.value+"-01"}))} style={S.input}/>
+        </div>
+        {[
+          ["masse_salariale","Masse salariale (coût total employeur)"],
+          ["loyer","Loyer entrepôt"],
+          ["carburant","Carburant"],
+          ["assurance_vehicules","Assurance véhicules"],
+          ["entretien_vehicules","Entretien véhicules"],
+          ["leasing_vehicule","Leasing véhicule"],
+          ["frais_comptabilite","Frais comptabilité"],
+          ["frais_bancaires","Frais bancaires (Revolut+BGL+TPE)"],
+          ["telephone_mobile","Téléphone mobile"],
+          ["abonnement_box","Abonnement box"],
+          ["autres","Autres charges"],
+        ].map(([champ,label])=>(
+          <div key={champ}>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{label}</label>
+            <input type="number" step="0.01" value={fraisForm[champ]??""} onChange={e=>setFraisForm(p=>({...p,[champ]:e.target.value}))} placeholder="€" style={S.input}/>
+          </div>
+        ))}
+        <div style={{borderTop:"1px solid #F1F5F9",paddingTop:10,marginTop:4}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:2}}>Paramètres coût de livraison réel</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:8}}>Utilisés pour convertir les relevés chauffeurs (km, heures) en coût réel — préremplis, à ajuster si le prix du diesel ou le coût chauffeur changent.</div>
+        </div>
+        {[
+          ["cout_horaire_chauffeur","Coût horaire chauffeur chargé (€/h)"],
+          ["prix_diesel_litre","Prix diesel (€/L)"],
+          ["consommation_l_100km","Consommation véhicule (L/100km)"],
+        ].map(([champ,label])=>(
+          <div key={champ}>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{label}</label>
+            <input type="number" step="0.01" value={fraisForm[champ]??""} onChange={e=>setFraisForm(p=>({...p,[champ]:e.target.value}))} style={S.input}/>
+          </div>
+        ))}
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={fraisForm.notes||""} onChange={e=>setFraisForm(p=>({...p,notes:e.target.value}))} placeholder="Ex: estimation, chiffre partiel..." style={S.input}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>{setShowFraisForm(false);setEditFrais(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveFrais} disabled={saving||!fraisForm.mois} style={{...S.btn(),flex:2,opacity:(saving||!fraisForm.mois)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL RELEVÉ CHAUFFEUR (CONTRÔLE DE GESTION — coût livraison réel) ══ */}
+  {showRelevChfForm&&(
+  <div style={S.modal} onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}}>
+    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🚚 Relevé chauffeur (TrackFleet)</h2>
+        <button onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
+        À reporter chaque mois depuis le rapport "Résumé" de TrackFleet (export Excel), un relevé par chauffeur.
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Mois *</label>
+          <input type="month" value={(relevChfForm.mois||"").slice(0,7)} onChange={e=>setRelevChfForm(p=>({...p,mois:e.target.value+"-01"}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Chauffeur *</label>
+          <div style={{display:"flex",gap:6}}>
+            {["Sefa","Mikail"].map(ch=>(
+              <button key={ch} onClick={()=>setRelevChfForm(p=>({...p,chauffeur:ch}))}
+                style={{...S.btn(relevChfForm.chauffeur===ch?"#1D4ED8":"#F1F5F9",relevChfForm.chauffeur===ch?"#fff":"#374151"),flex:1,padding:"8px 0",fontSize:13}}>
+                {ch}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Distance totale (km)</label>
+          <input type="number" step="0.01" value={relevChfForm.km??""} onChange={e=>setRelevChfForm(p=>({...p,km:e.target.value}))} placeholder="Ex: 1002.48" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Temps de conduite (heures)</label>
+          <input type="number" step="0.01" value={relevChfForm.heures_conduite??""} onChange={e=>setRelevChfForm(p=>({...p,heures_conduite:e.target.value}))} placeholder="Ex: 25.63 (= 25h38)" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Trajets (nombre, optionnel)</label>
+          <input type="number" value={relevChfForm.trajets??""} onChange={e=>setRelevChfForm(p=>({...p,trajets:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={relevChfForm.notes||""} onChange={e=>setRelevChfForm(p=>({...p,notes:e.target.value}))} style={S.input}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveRelevChf} disabled={saving||!relevChfForm.mois||!relevChfForm.chauffeur} style={{...S.btn(),flex:2,opacity:(saving||!relevChfForm.mois||!relevChfForm.chauffeur)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL PRIX CONCURRENT (CONTRÔLE DE GESTION) ═══════════════ */}
+  {showPrixConcForm&&(
+  <div style={S.modal} onClick={()=>setShowPrixConcForm(false)}>
+    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🏷️ Prix concurrent</h2>
+        <button onClick={()=>setShowPrixConcForm(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit *</label>
+          <select value={prixConcForm.produit_id||""} onChange={e=>setPrixConcForm(p=>({...p,produit_id:e.target.value}))} style={S.input}>
+            <option value="">— Choisir —</option>
+            {produits.map(p=><option key={p.id} value={p.id}>{p.nom}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Concurrent</label>
+          <input value={prixConcForm.concurrent||"Freshy"} onChange={e=>setPrixConcForm(p=>({...p,concurrent:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Prix relevé (€) *</label>
+          <input type="number" step="0.01" value={prixConcForm.prix||""} onChange={e=>setPrixConcForm(p=>({...p,prix:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date du relevé</label>
+          <input type="date" value={prixConcForm.date_releve||localDateStr()} onChange={e=>setPrixConcForm(p=>({...p,date_releve:e.target.value}))} style={S.input}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>setShowPrixConcForm(false)} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={savePrixConc} disabled={saving||!prixConcForm.produit_id||!prixConcForm.prix} style={{...S.btn(),flex:2,opacity:(saving||!prixConcForm.produit_id||!prixConcForm.prix)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+{/* ══ PAGE RETOUR CONSIGNE MANUEL ═══════════════════════════════ */}
+{showConsigneForm&&(
+  <div className="page-transition">
+    {workTabStrip()}
+    <div style={{...S.card,maxWidth:440}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>♻️ Déclarer un retour de consignes</h2>
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Client *</label>
+          <select value={consigneClientId||""} onChange={e=>setConsigneClientId(e.target.value?parseInt(e.target.value):null)} style={S.input}>
+            <option value="">— Choisir —</option>
+            {[...clientsActifs].sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=>(
+              <option key={c.id} value={c.id}>{c.nom}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Consignes à déclarer *</label>
+          <div style={{display:"grid",gap:8}}>
+            {consigneLignes.map((l,i)=>(
+              <div key={i} style={{background:"#F8FAFC",border:"1px solid #E3E7ED",borderRadius:8,padding:10}}>
+                <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr auto",gap:6,marginBottom:6}}>
+                  <input value={l.produitNom} onChange={e=>setConsigneLignes(prev=>prev.map((x,xi)=>xi===i?{...x,produitNom:e.target.value}:x))}
+                    placeholder="Produit (optionnel) — ex: Coca VC 24x20cl" style={{...S.input,padding:"7px 9px",fontSize:13}}/>
+                  {consigneLignes.length>1 && (
+                    <button onClick={()=>setConsigneLignes(prev=>prev.filter((_,xi)=>xi!==i))}
+                      style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:"4px 8px",display:"flex",alignItems:"center",justifySelf:isMobile?"end":"auto"}}>
+                      <Icon name="close" size={14}/>
+                    </button>
+                  )}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <input type="number" min="0" value={l.qte} placeholder="Quantité (caisses)"
+                    onChange={e=>setConsigneLignes(prev=>prev.map((x,xi)=>xi===i?{...x,qte:e.target.value}:x))}
+                    style={{...S.input,padding:"7px 9px",fontSize:13}}/>
+                  <select value={l.consigneUnitaire} onChange={e=>setConsigneLignes(prev=>prev.map((x,xi)=>xi===i?{...x,consigneUnitaire:e.target.value}:x))}
+                    style={{...S.input,padding:"7px 9px",fontSize:13}}>
+                    <option value="">— Taille —</option>
+                    {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
+                      <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
+                    ))}
+                  </select>
+                </div>
+                {l.qte>0 && l.consigneUnitaire && (
+                  <div style={{fontSize:11,color:"#059669",fontWeight:600,marginTop:5}}>
+                    Crédit : {fmtFull(l.qte*l.consigneUnitaire)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <button onClick={()=>setConsigneLignes(prev=>[...prev,{produitNom:"",qte:"",consigneUnitaire:""}])}
+            style={{...S.btn("#F5F3FF","#7C3AED"),marginTop:8,width:"100%",padding:"8px",fontSize:12,fontWeight:600}}>
+            + Ajouter une autre consigne
+          </button>
+        </div>
+
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
+          <input type="date" value={consigneForm.date||""} onChange={e=>setConsigneForm(p=>({...p,date:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={consigneForm.notes||""} onChange={e=>setConsigneForm(p=>({...p,notes:e.target.value}))} placeholder="Optionnel" style={S.input}/>
+        </div>
+        {(() => {
+          const total = consigneLignes.filter(l=>l.qte>0&&l.consigneUnitaire).reduce((s,l)=>s+l.qte*l.consigneUnitaire,0);
+          return total>0 ? (
+            <div style={{background:"#ECFDF5",borderRadius:8,padding:10,fontSize:13,fontWeight:700,color:"#059669"}}>
+              Crédit total : {fmtFull(total)}
+            </div>
+          ) : null;
+        })()}
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        <button onClick={()=>{closeWorkTab("consigne");setConsigneClientId(null);setConsigneLignes([]);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveConsigneManuelle} disabled={saving}
+          style={{...S.btn(),flex:2,opacity:saving?0.6:1}}>
+          {saving?"Enregistrement...":"Enregistrer le retour"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+  </div>
+      </div>
+    </div>
+  );
+}
