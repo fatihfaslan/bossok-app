@@ -5012,12 +5012,36 @@ function BossokApp({ session, onLogout }) {
   // Marge nette par client : coût de livraison de la zone du client réparti au prorata
   // de son CA au sein de cette zone (un client qui pèse 20% du CA d'une zone porte
   // ~20% du coût réel de livraison relevé pour cette zone).
+  // Panier moyen & évolution : comparaison avec la période précédente de même durée
+  // (ex. "mois" compare au mois d'avant), pour repérer un client qui réduit doucement
+  // ses commandes avant de devenir inactif.
+  const dureeJoursCG = (cgFrom && cgTo) ? Math.round((new Date(cgTo)-new Date(cgFrom))/86400000)+1 : null;
+  let cgFromPrec=null, cgToPrec=null;
+  if (dureeJoursCG) {
+    const toPrec = new Date(cgFrom); toPrec.setDate(toPrec.getDate()-1);
+    const fromPrec = new Date(toPrec); fromPrec.setDate(fromPrec.getDate()-dureeJoursCG+1);
+    cgToPrec = toPrec.toISOString().split("T")[0];
+    cgFromPrec = fromPrec.toISOString().split("T")[0];
+  }
+  const factsPrecCG = (cgFromPrec && cgToPrec) ? factures.filter(f=>f.date && f.date>=cgFromPrec && f.date<=cgToPrec && f.statut!=="Avoir" && f.statut!=="Annulée") : [];
+  const panierPrecParClient = {};
+  factsPrecCG.forEach(f=>{
+    if (!f.client_id) return;
+    const {total} = totalFact(f.lignes, f.tva_pct);
+    if (!panierPrecParClient[f.client_id]) panierPrecParClient[f.client_id] = {ca:0, nb:0};
+    panierPrecParClient[f.client_id].ca += total;
+    panierPrecParClient[f.client_id].nb++;
+  });
   const listeClientNette = listeClient.map(c=>{
     const z = listeZoneNette.find(zz=>zz.zone===(c.zone||"Inconnu"));
-    if (!z || z.coutLivraison==null || z.ca<=0) return {...c, coutLivraison:null, margeNette:null, margeNettePct:null};
+    const panierMoyen = c.nb>0 ? c.ca/c.nb : 0;
+    const prec = panierPrecParClient[c.id];
+    const panierMoyenPrec = (prec && prec.nb>0) ? prec.ca/prec.nb : null;
+    const panierEvolutionPct = (panierMoyenPrec!=null && panierMoyenPrec>0) ? (panierMoyen-panierMoyenPrec)/panierMoyenPrec*100 : null;
+    if (!z || z.coutLivraison==null || z.ca<=0) return {...c, coutLivraison:null, margeNette:null, margeNettePct:null, panierMoyen, panierMoyenPrec, panierEvolutionPct};
     const coutLivraison = (c.ca/z.ca)*z.coutLivraison;
     const margeNette = c.marge-coutLivraison;
-    return {...c, coutLivraison, margeNette, margeNettePct: c.ca>0 ? margeNette/c.ca*100 : null};
+    return {...c, coutLivraison, margeNette, margeNettePct: c.ca>0 ? margeNette/c.ca*100 : null, panierMoyen, panierMoyenPrec, panierEvolutionPct};
   });
 
   const caProduitsTotal = listeProduit.reduce((s,p)=>s+p.ca,0);
@@ -5088,6 +5112,80 @@ function BossokApp({ session, onLogout }) {
   // pas de suivi de "déjà offert / reset" pour l'instant — à affiner avec Fatih
   // si besoin d'un suivi plus fin dans le temps.
   const clientsEligiblesPack = listeClientNette.filter(c=>c.marge>=seuilPackOffert).sort((a,b)=>b.marge-a.marge);
+
+  // ── Taux de rétention mensuel ────────────────────────────────────────────
+  // % de clients actifs un mois donné qui recommandent le mois calendaire suivant.
+  // Calculé sur tout l'historique (indépendant du filtre période) pour avoir une
+  // vraie série dans le temps ; affiché sur les 12 derniers mois disponibles.
+  const moisActifsClients = {};
+  factures.forEach(f=>{
+    if (!f.client_id || !f.date) return;
+    if (f.statut==="Avoir" || f.statut==="Annulée") return;
+    const m = f.date.slice(0,7);
+    if (!moisActifsClients[m]) moisActifsClients[m] = new Set();
+    moisActifsClients[m].add(f.client_id);
+  });
+  const moisTriesRetention = Object.keys(moisActifsClients).sort();
+  const retentionMensuelle = [];
+  for (let i=0;i<moisTriesRetention.length-1;i++) {
+    const m0 = moisTriesRetention[i], m1 = moisTriesRetention[i+1];
+    const d0 = new Date(m0+"-01"); d0.setMonth(d0.getMonth()+1);
+    if (d0.toISOString().slice(0,7)!==m1) continue; // ignore les mois non consécutifs (trou de données)
+    const clientsM0 = moisActifsClients[m0], clientsM1 = moisActifsClients[m1];
+    const nbRecommande = [...clientsM0].filter(id=>clientsM1.has(id)).length;
+    retentionMensuelle.push({mois:m0, moisSuivant:m1, nbActifs:clientsM0.size, nbRecommande, taux: clientsM0.size>0?nbRecommande/clientsM0.size*100:0});
+  }
+  const retentionAffichee = retentionMensuelle.slice(-12);
+
+  // ── Concentration du CA (règle 80/20) ────────────────────────────────────
+  const clientsParCaDesc = [...listeClientNette].sort((a,b)=>b.ca-a.ca);
+  let cumulCaConcentration = 0;
+  const clientsAvec80PctCa = [];
+  for (const c of clientsParCaDesc) {
+    if (caGlobal>0 && cumulCaConcentration/caGlobal >= 0.8) break;
+    cumulCaConcentration += c.ca;
+    clientsAvec80PctCa.push(c);
+  }
+  const nbClientsTop20Pct = Math.max(1, Math.round(clientsParCaDesc.length*0.2));
+  const caTop20Pct = clientsParCaDesc.slice(0, nbClientsTop20Pct).reduce((s,c)=>s+c.ca,0);
+  const pctCaTop20Pct = caGlobal>0 ? caTop20Pct/caGlobal*100 : 0;
+
+  // ── DSO — délai moyen de paiement ────────────────────────────────────────
+  // Sur les factures payées de la période, nombre moyen de jours entre la date
+  // de facture et la date de paiement effective. Par client, pour repérer ceux
+  // qui glissent progressivement vers des paiements plus tardifs.
+  const facturesPayeesCG = cgFacts.filter(f=>f.statut==="Payée" && f.date_paiement);
+  const delaisPaiement = facturesPayeesCG.map(f=>Math.round((new Date(f.date_paiement)-new Date(f.date))/86400000)).filter(d=>d>=0);
+  const dsoGlobal = delaisPaiement.length>0 ? delaisPaiement.reduce((s,d)=>s+d,0)/delaisPaiement.length : null;
+  const dsoParClient = {};
+  facturesPayeesCG.forEach(f=>{
+    const d = Math.round((new Date(f.date_paiement)-new Date(f.date))/86400000);
+    if (d<0 || !f.client_id) return;
+    if (!dsoParClient[f.client_id]) dsoParClient[f.client_id] = {nom:f.client_nom, somme:0, nb:0};
+    dsoParClient[f.client_id].somme += d; dsoParClient[f.client_id].nb++;
+  });
+  const listeDsoParClient = Object.values(dsoParClient).map(d=>({nom:d.nom, nb:d.nb, dsoMoyen:d.somme/d.nb})).filter(d=>d.nb>=2).sort((a,b)=>b.dsoMoyen-a.dsoMoyen);
+
+  // ── Coût de livraison par chauffeur, mois par mois ───────────────────────
+  // Même logique que coutLivraisonParChauffeur ci-dessus, mais détaillée mois
+  // par mois (plutôt qu'agrégée sur toute la période) pour suivre la tendance
+  // (hausse carburant, dégradation d'une zone...).
+  const coutLivraisonParChauffeurParMois = moisListCG.map(m=>{
+    const fg = fraisGeneraux.find(f=>(f.mois||"").slice(0,7)===m);
+    const prixDiesel = fg?.prix_diesel_litre!=null ? Number(fg.prix_diesel_litre) : 2.057;
+    const consoL100 = fg?.consommation_l_100km!=null ? Number(fg.consommation_l_100km) : 11;
+    const coutHoraire = fg?.cout_horaire_chauffeur!=null ? Number(fg.cout_horaire_chauffeur) : 27.64;
+    const parChauffeur = {};
+    relevesChauffeurs.filter(r=>(r.mois||"").slice(0,7)===m).forEach(r=>{
+      const ch = r.chauffeur;
+      if (!parChauffeur[ch]) parChauffeur[ch] = {cout:0, km:0, heures:0};
+      const km = Number(r.km)||0, heures = Number(r.heures_conduite)||0;
+      parChauffeur[ch].cout += km*(consoL100/100)*prixDiesel + heures*coutHoraire;
+      parChauffeur[ch].km += km;
+      parChauffeur[ch].heures += heures;
+    });
+    return {mois:m, parChauffeur};
+  });
 
   // CA historique pré-app — référence uniquement (montant global, sans marge ni détail
   // client/produit disponibles), pour les mois antérieurs à la mise en service du système (10/09/2026).
@@ -5449,6 +5547,7 @@ function BossokApp({ session, onLogout }) {
             <td style={{padding:"8px 12px",textAlign:"right"}}>{coutLivraisonTotal>0?fmtFull(coutLivraisonTotal):"—"}</td>
             <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{margeNetteGlobaleCalc!=null?fmtFull(margeNetteGlobaleCalc):"—"}</td>
             <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{(margeNetteGlobaleCalc!=null&&caGlobal>0)?Math.round(margeNetteGlobaleCalc/caGlobal*100)+"%":"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeClientNette.reduce((s,c)=>s+c.nb,0)>0?fmtFull(caGlobal/listeClientNette.reduce((s,c)=>s+c.nb,0)):"—"}</td>
             <td style={{padding:"8px 12px",textAlign:"right"}}>{clientsEligiblesPack.length}</td>
           </tr>
         )}
@@ -5465,10 +5564,15 @@ function BossokApp({ session, onLogout }) {
           {key:"coutLivraison", label:"Coût livraison réel", align:"right", sortValue:r=>r.coutLivraison??-1, render:r=>r.coutLivraison!=null?fmtFull(r.coutLivraison):<span style={{color:"#CBD5E1"}}>—</span>},
           {key:"margeNette", label:"Marge nette", align:"right", mobileShow:true, sortValue:r=>r.margeNette??-Infinity, render:r=>r.margeNette!=null?<span style={{color:r.margeNette>=0?"#059669":"#DC2626",fontWeight:600}}>{fmtFull(r.margeNette)}</span>:<span style={{color:"#CBD5E1"}}>—</span>},
           {key:"margeNettePct", label:"Marge nette %", align:"right", sortValue:r=>r.margeNettePct??-Infinity, render:r=>r.margeNettePct!=null?<span style={{color:r.margeNettePct>=0?"#059669":"#DC2626",fontWeight:600}}>{Math.round(r.margeNettePct)}%</span>:<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"panierMoyen", label:"Panier moyen", align:"right", sortValue:r=>r.panierMoyen, render:r=>(
+            <span>{fmtFull(r.panierMoyen)}{r.panierEvolutionPct!=null && (
+              <span style={{marginLeft:5,fontSize:11,fontWeight:700,color:r.panierEvolutionPct>=0?"#059669":"#DC2626"}}>{r.panierEvolutionPct>=0?"▲":"▼"}{Math.abs(Math.round(r.panierEvolutionPct))}%</span>
+            )}</span>
+          )},
           {key:"pack", label:"🎁 Pack offert", align:"right", sortValue:r=>r.marge>=seuilPackOffert?1:0, render:r=>r.marge>=seuilPackOffert?<span style={{color:"#059669",fontWeight:700}}>🎁 Éligible</span>:<span style={{color:"#CBD5E1"}}>—</span>},
         ]}
       />
-      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Fréquence = nombre moyen de jours entre deux commandes sur la période (nécessite au moins 2 factures) — un chiffre bas signale un client régulier, un chiffre élevé ou "—" un client occasionnel ou ponctuel. Marge nette = marge − coût de livraison réel alloué (voir bloc "Coût de livraison réel" ci-dessous) ; "—" quand le chauffeur de la zone n'a pas de relevé TrackFleet sur la période. "Pack offert" = marge brute cumulée sur la période ≥ seuil réglable ci-dessous.</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Fréquence = nombre moyen de jours entre deux commandes sur la période (nécessite au moins 2 factures) — un chiffre bas signale un client régulier, un chiffre élevé ou "—" un client occasionnel ou ponctuel. Marge nette = marge − coût de livraison réel alloué (voir bloc "Coût de livraison réel" ci-dessous) ; "—" quand le chauffeur de la zone n'a pas de relevé TrackFleet sur la période. "Pack offert" = marge brute cumulée sur la période ≥ seuil réglable ci-dessous. "Panier moyen" = CA / nb factures sur la période, avec l'évolution ▲▼ vs la période précédente de même durée (— si pas de données sur la période précédente).</div>
     </div>
 
     {/* ── Clients éligibles à un pack offert ── */}
@@ -5500,6 +5604,121 @@ function BossokApp({ session, onLogout }) {
       )}
     </div>
 
+    {/* ── Taux de rétention mensuel & Concentration du CA ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="trendingUp" size={14} style={{color:"#5D6B82"}}/> Taux de rétention mensuel</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>% des clients actifs un mois qui recommandent le mois suivant — calculé sur tout l'historique, indépendant du filtre de période.</div>
+        {retentionAffichee.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Pas assez d'historique (2 mois consécutifs minimum).</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+              <th style={{padding:"4px"}}>Mois → suivant</th><th style={{padding:"4px",textAlign:"right"}}>Actifs</th><th style={{padding:"4px",textAlign:"right"}}>Recommandé</th><th style={{padding:"4px",textAlign:"right"}}>Taux</th>
+            </tr></thead>
+            <tbody>
+              {retentionAffichee.map(r=>(
+                <tr key={r.mois} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{r.mois} → {r.moisSuivant}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{r.nbActifs}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{r.nbRecommande}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",fontWeight:700,color:r.taux>=60?"#059669":r.taux>=40?"#D97706":"#DC2626"}}>{Math.round(r.taux)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="barChart2" size={14} style={{color:"#5D6B82"}}/> Concentration du CA (règle 80/20)</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Sur la période sélectionnée — plus le nombre de clients ci-dessous est petit, plus la dépendance à une poignée de clients est élevée.</div>
+        <div style={{display:"flex",gap:10,marginBottom:10}}>
+          <div style={{...S.kpi("#334155"),flex:1}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{clientsAvec80PctCa.length} / {clientsParCaDesc.length}</div>
+            <div style={{fontSize:11,color:"#6B7280"}}>clients font 80% du CA</div>
+          </div>
+          <div style={{...S.kpi("#334155"),flex:1}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{Math.round(pctCaTop20Pct)}%</div>
+            <div style={{fontSize:11,color:"#6B7280"}}>du CA fait par les {nbClientsTop20Pct} plus gros clients (top 20%)</div>
+          </div>
+        </div>
+        {clientsAvec80PctCa.length>0 && (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {clientsAvec80PctCa.slice(0,10).map(c=>(
+                <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{c.nom}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(c.ca)}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{caGlobal>0?Math.round(c.ca/caGlobal*100):0}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+
+    {/* ── DSO — délai moyen de paiement ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> DSO — délai moyen de paiement</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Jours moyens entre la date de facture et la date de paiement effective, sur les factures payées de la période.</div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:10}}>
+        <div style={S.kpi("#334155")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{dsoGlobal!=null?Math.round(dsoGlobal)+"j":"—"}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>DSO global</div>
+        </div>
+        <div style={S.kpi("#334155")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{facturesPayeesCG.length}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>factures payées sur la période</div>
+        </div>
+      </div>
+      {listeDsoParClient.length===0 ? (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"8px 0",fontSize:12}}>Pas assez de factures payées (2 minimum par client) pour un détail par client.</div>
+      ) : (
+        <>
+          <div style={{fontSize:11,color:"#9CA3AF",fontWeight:600,marginBottom:4}}>Clients qui paient le plus tard (≥2 factures payées) :</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {listeDsoParClient.slice(0,10).map(d=>(
+                <tr key={d.nom} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{d.nom}</td>
+                  <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{d.nb} factures</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",fontWeight:700,color:d.dsoMoyen>45?"#DC2626":d.dsoMoyen>20?"#D97706":"#059669"}}>{Math.round(d.dsoMoyen)}j</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+
+    {/* ── Coût de livraison par chauffeur, mois par mois ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> Coût de livraison par chauffeur — tendance mensuelle</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Basé sur les relevés TrackFleet (km + heures de conduite) saisis mois par mois — "—" quand aucun relevé n'existe pour ce mois.</div>
+      {coutLivraisonParChauffeurParMois.length===0 ? (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucun mois dans la période sélectionnée.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+            <th style={{padding:"4px"}}>Mois</th>
+            {["Sefa","Mikail"].map(ch=><th key={ch} style={{padding:"4px",textAlign:"right"}}>{ch}</th>)}
+          </tr></thead>
+          <tbody>
+            {coutLivraisonParChauffeurParMois.map(m=>(
+              <tr key={m.mois} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{m.mois}</td>
+                {["Sefa","Mikail"].map(ch=>{
+                  const cd = m.parChauffeur[ch];
+                  return <td key={ch} style={{padding:"5px 4px",textAlign:"right"}}>{cd ? fmtFull(cd.cout)+" ("+Math.round(cd.km)+"km)" : <span style={{color:"#CBD5E1"}}>—</span>}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+
     {/* ── Marge par facture ── */}
     <div style={{...S.card,marginBottom:16}}>
       <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="factures" size={14} style={{color:"#5D6B82"}}/> Marge par facture</div>
@@ -5514,10 +5733,11 @@ function BossokApp({ session, onLogout }) {
           {key:"date", label:"Date", mobileShow:true, sortValue:r=>r.date},
           {key:"client", label:"Client", mobileShow:true, sortValue:r=>r.client},
           {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
-          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
-          {key:"margePct", label:"Marge %", align:"right", sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:r.marge<0?"#DC2626":"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", sortValue:r=>r.margePct, render:r=><span style={{color:r.marge<0?"#DC2626":"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
         ]}
       />
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>En rouge : les factures dont la marge est négative.</div>
     </div>
 
     {/* ── Marge par produit ── */}
@@ -8380,245 +8600,4 @@ function BossokApp({ session, onLogout }) {
     <div style={{...S.modalBox,maxWidth:440}} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>📊 Charges du mois</h2>
-        <button onClick={()=>{setShowFraisForm(false);setEditFrais(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
-      </div>
-      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
-        Ces chiffres alimentent le résultat net de l'onglet Contrôle de gestion. Laisse un champ vide si tu ne l'as pas encore — il sera marqué "?" plutôt que compté comme zéro.
-      </div>
-      <div style={{display:"grid",gap:10}}>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Mois *</label>
-          <input type="month" value={(fraisForm.mois||"").slice(0,7)} onChange={e=>setFraisForm(p=>({...p,mois:e.target.value+"-01"}))} style={S.input}/>
-        </div>
-        {[
-          ["masse_salariale","Masse salariale (coût total employeur)"],
-          ["loyer","Loyer entrepôt"],
-          ["carburant","Carburant"],
-          ["assurance_vehicules","Assurance véhicules"],
-          ["entretien_vehicules","Entretien véhicules"],
-          ["leasing_vehicule","Leasing véhicule"],
-          ["frais_comptabilite","Frais comptabilité"],
-          ["frais_bancaires","Frais bancaires (Revolut+BGL+TPE)"],
-          ["telephone_mobile","Téléphone mobile"],
-          ["abonnement_box","Abonnement box"],
-          ["autres","Autres charges"],
-        ].map(([champ,label])=>(
-          <div key={champ}>
-            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{label}</label>
-            <input type="number" step="0.01" value={fraisForm[champ]??""} onChange={e=>setFraisForm(p=>({...p,[champ]:e.target.value}))} placeholder="€" style={S.input}/>
-          </div>
-        ))}
-        <div style={{borderTop:"1px solid #F1F5F9",paddingTop:10,marginTop:4}}>
-          <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:2}}>Paramètres coût de livraison réel</div>
-          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:8}}>Utilisés pour convertir les relevés chauffeurs (km, heures) en coût réel — préremplis, à ajuster si le prix du diesel ou le coût chauffeur changent.</div>
-        </div>
-        {[
-          ["cout_horaire_chauffeur","Coût horaire chauffeur chargé (€/h)"],
-          ["prix_diesel_litre","Prix diesel (€/L)"],
-          ["consommation_l_100km","Consommation véhicule (L/100km)"],
-        ].map(([champ,label])=>(
-          <div key={champ}>
-            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{label}</label>
-            <input type="number" step="0.01" value={fraisForm[champ]??""} onChange={e=>setFraisForm(p=>({...p,[champ]:e.target.value}))} style={S.input}/>
-          </div>
-        ))}
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
-          <input value={fraisForm.notes||""} onChange={e=>setFraisForm(p=>({...p,notes:e.target.value}))} placeholder="Ex: estimation, chiffre partiel..." style={S.input}/>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:8,marginTop:18}}>
-        <button onClick={()=>{setShowFraisForm(false);setEditFrais(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={saveFrais} disabled={saving||!fraisForm.mois} style={{...S.btn(),flex:2,opacity:(saving||!fraisForm.mois)?0.5:1}}>
-          {saving?"Enregistrement...":"✅ Enregistrer"}
-        </button>
-      </div>
-    </div>
-  </div>
-  )}
-
-  {/* ══ MODAL RELEVÉ CHAUFFEUR (CONTRÔLE DE GESTION — coût livraison réel) ══ */}
-  {showRelevChfForm&&(
-  <div style={S.modal} onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}}>
-    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🚚 Relevé chauffeur (TrackFleet)</h2>
-        <button onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
-      </div>
-      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
-        À reporter chaque mois depuis le rapport "Résumé" de TrackFleet (export Excel), un relevé par chauffeur.
-      </div>
-      <div style={{display:"grid",gap:10}}>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Mois *</label>
-          <input type="month" value={(relevChfForm.mois||"").slice(0,7)} onChange={e=>setRelevChfForm(p=>({...p,mois:e.target.value+"-01"}))} style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Chauffeur *</label>
-          <div style={{display:"flex",gap:6}}>
-            {["Sefa","Mikail"].map(ch=>(
-              <button key={ch} onClick={()=>setRelevChfForm(p=>({...p,chauffeur:ch}))}
-                style={{...S.btn(relevChfForm.chauffeur===ch?"#1D4ED8":"#F1F5F9",relevChfForm.chauffeur===ch?"#fff":"#374151"),flex:1,padding:"8px 0",fontSize:13}}>
-                {ch}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Distance totale (km)</label>
-          <input type="number" step="0.01" value={relevChfForm.km??""} onChange={e=>setRelevChfForm(p=>({...p,km:e.target.value}))} placeholder="Ex: 1002.48" style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Temps de conduite (heures)</label>
-          <input type="number" step="0.01" value={relevChfForm.heures_conduite??""} onChange={e=>setRelevChfForm(p=>({...p,heures_conduite:e.target.value}))} placeholder="Ex: 25.63 (= 25h38)" style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Trajets (nombre, optionnel)</label>
-          <input type="number" value={relevChfForm.trajets??""} onChange={e=>setRelevChfForm(p=>({...p,trajets:e.target.value}))} style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
-          <input value={relevChfForm.notes||""} onChange={e=>setRelevChfForm(p=>({...p,notes:e.target.value}))} style={S.input}/>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:8,marginTop:18}}>
-        <button onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={saveRelevChf} disabled={saving||!relevChfForm.mois||!relevChfForm.chauffeur} style={{...S.btn(),flex:2,opacity:(saving||!relevChfForm.mois||!relevChfForm.chauffeur)?0.5:1}}>
-          {saving?"Enregistrement...":"✅ Enregistrer"}
-        </button>
-      </div>
-    </div>
-  </div>
-  )}
-
-  {/* ══ MODAL PRIX CONCURRENT (CONTRÔLE DE GESTION) ═══════════════ */}
-  {showPrixConcForm&&(
-  <div style={S.modal} onClick={()=>setShowPrixConcForm(false)}>
-    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🏷️ Prix concurrent</h2>
-        <button onClick={()=>setShowPrixConcForm(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
-      </div>
-      <div style={{display:"grid",gap:10}}>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit *</label>
-          <select value={prixConcForm.produit_id||""} onChange={e=>setPrixConcForm(p=>({...p,produit_id:e.target.value}))} style={S.input}>
-            <option value="">— Choisir —</option>
-            {produits.map(p=><option key={p.id} value={p.id}>{p.nom}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Concurrent</label>
-          <input value={prixConcForm.concurrent||"Freshy"} onChange={e=>setPrixConcForm(p=>({...p,concurrent:e.target.value}))} style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Prix relevé (€) *</label>
-          <input type="number" step="0.01" value={prixConcForm.prix||""} onChange={e=>setPrixConcForm(p=>({...p,prix:e.target.value}))} style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date du relevé</label>
-          <input type="date" value={prixConcForm.date_releve||localDateStr()} onChange={e=>setPrixConcForm(p=>({...p,date_releve:e.target.value}))} style={S.input}/>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:8,marginTop:18}}>
-        <button onClick={()=>setShowPrixConcForm(false)} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={savePrixConc} disabled={saving||!prixConcForm.produit_id||!prixConcForm.prix} style={{...S.btn(),flex:2,opacity:(saving||!prixConcForm.produit_id||!prixConcForm.prix)?0.5:1}}>
-          {saving?"Enregistrement...":"✅ Enregistrer"}
-        </button>
-      </div>
-    </div>
-  </div>
-  )}
-
-{/* ══ PAGE RETOUR CONSIGNE MANUEL ═══════════════════════════════ */}
-{showConsigneForm&&(
-  <div className="page-transition">
-    {workTabStrip()}
-    <div style={{...S.card,maxWidth:440}}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
-        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>♻️ Déclarer un retour de consignes</h2>
-      </div>
-      <div style={{display:"grid",gap:10}}>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Client *</label>
-          <select value={consigneClientId||""} onChange={e=>setConsigneClientId(e.target.value?parseInt(e.target.value):null)} style={S.input}>
-            <option value="">— Choisir —</option>
-            {[...clientsActifs].sort((a,b)=>a.nom.localeCompare(b.nom)).map(c=>(
-              <option key={c.id} value={c.id}>{c.nom}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Consignes à déclarer *</label>
-          <div style={{display:"grid",gap:8}}>
-            {consigneLignes.map((l,i)=>(
-              <div key={i} style={{background:"#F8FAFC",border:"1px solid #E3E7ED",borderRadius:8,padding:10}}>
-                <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr auto",gap:6,marginBottom:6}}>
-                  <input value={l.produitNom} onChange={e=>setConsigneLignes(prev=>prev.map((x,xi)=>xi===i?{...x,produitNom:e.target.value}:x))}
-                    placeholder="Produit (optionnel) — ex: Coca VC 24x20cl" style={{...S.input,padding:"7px 9px",fontSize:13}}/>
-                  {consigneLignes.length>1 && (
-                    <button onClick={()=>setConsigneLignes(prev=>prev.filter((_,xi)=>xi!==i))}
-                      style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:"4px 8px",display:"flex",alignItems:"center",justifySelf:isMobile?"end":"auto"}}>
-                      <Icon name="close" size={14}/>
-                    </button>
-                  )}
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                  <input type="number" min="0" value={l.qte} placeholder="Quantité (caisses)"
-                    onChange={e=>setConsigneLignes(prev=>prev.map((x,xi)=>xi===i?{...x,qte:e.target.value}:x))}
-                    style={{...S.input,padding:"7px 9px",fontSize:13}}/>
-                  <select value={l.consigneUnitaire} onChange={e=>setConsigneLignes(prev=>prev.map((x,xi)=>xi===i?{...x,consigneUnitaire:e.target.value}:x))}
-                    style={{...S.input,padding:"7px 9px",fontSize:13}}>
-                    <option value="">— Taille —</option>
-                    {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
-                      <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
-                    ))}
-                  </select>
-                </div>
-                {l.qte>0 && l.consigneUnitaire && (
-                  <div style={{fontSize:11,color:"#059669",fontWeight:600,marginTop:5}}>
-                    Crédit : {fmtFull(l.qte*l.consigneUnitaire)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <button onClick={()=>setConsigneLignes(prev=>[...prev,{produitNom:"",qte:"",consigneUnitaire:""}])}
-            style={{...S.btn("#F5F3FF","#7C3AED"),marginTop:8,width:"100%",padding:"8px",fontSize:12,fontWeight:600}}>
-            + Ajouter une autre consigne
-          </button>
-        </div>
-
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
-          <input type="date" value={consigneForm.date||""} onChange={e=>setConsigneForm(p=>({...p,date:e.target.value}))} style={S.input}/>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
-          <input value={consigneForm.notes||""} onChange={e=>setConsigneForm(p=>({...p,notes:e.target.value}))} placeholder="Optionnel" style={S.input}/>
-        </div>
-        {(() => {
-          const total = consigneLignes.filter(l=>l.qte>0&&l.consigneUnitaire).reduce((s,l)=>s+l.qte*l.consigneUnitaire,0);
-          return total>0 ? (
-            <div style={{background:"#ECFDF5",borderRadius:8,padding:10,fontSize:13,fontWeight:700,color:"#059669"}}>
-              Crédit total : {fmtFull(total)}
-            </div>
-          ) : null;
-        })()}
-      </div>
-      <div style={{display:"flex",gap:8,marginTop:16}}>
-        <button onClick={()=>{closeWorkTab("consigne");setConsigneClientId(null);setConsigneLignes([]);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
-        <button onClick={saveConsigneManuelle} disabled={saving}
-          style={{...S.btn(),flex:2,opacity:saving?0.6:1}}>
-          {saving?"Enregistrement...":"Enregistrer le retour"}
-        </button>
-      </div>
-    </div>
-  </div>
-  )}
-  </div>
-      </div>
-    </div>
-  );
-}
+        <button onClick={()=>{setShowFraisForm(fals
