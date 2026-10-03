@@ -5000,6 +5000,11 @@ function BossokApp({ session, onLogout }) {
   });
   const coutLivraisonTotal = Object.values(coutLivraisonParChauffeur).reduce((s,c)=>s+c.cout,0);
   const nbChauffeursRenseignes = Object.keys(coutLivraisonParChauffeur).length;
+  // Marge nette globale = null tant qu'au moins une zone n'a pas de coût de livraison
+  // calculé (chauffeur sans relevé TrackFleet sur la période) — pour ne jamais afficher
+  // un total net qui sous-estime les charges en silence.
+  const margeNetteGlobaleCalc = listeZoneNette.length>0 && listeZoneNette.every(z=>z.margeNette!=null)
+    ? margeGlobal - coutLivraisonTotal : null;
   // Marge nette par client : coût de livraison de la zone du client réparti au prorata
   // de son CA au sein de cette zone (un client qui pèse 20% du CA d'une zone porte
   // ~20% du coût réel de livraison relevé pour cette zone).
