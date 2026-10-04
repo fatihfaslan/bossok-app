@@ -3647,12 +3647,15 @@ function BossokApp({ session, onLogout }) {
         <div style={{flex:1,padding:"12px 10px",overflowY:"auto"}}>
           {NAV.map(n=>{
             const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=STOCK_BAS_SEUIL).length : 0;
+            const demandesCompteCount = n.k==="clients" ? clients.filter(c=>c.statut_compte==="en_attente").length : 0;
+            const commandesEnAttenteCount = n.k==="commandes" ? commandes.filter(c=>c.statut==="En attente").length : 0;
+            const badgeCount = stockAlerteCount || demandesCompteCount || commandesEnAttenteCount;
             return(
               <div key={n.k} className={page===n.k?"":"nav-hover"} style={S.navItem(page===n.k)} onClick={()=>{setSelClient(null);setPage(n.k);if(isMobile)setSidebarOpen(false);}}>
                 <span style={{display:"flex",color:page===n.k?"#1D4ED8":"#64748B"}}><Icon name={n.icon} size={16}/></span><span style={{flex:1}}>{n.label}</span>
-                {stockAlerteCount>0&&(
+                {badgeCount>0&&(
                   <span style={{background:"#DC2626",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>
-                    {stockAlerteCount}
+                    {badgeCount}
                   </span>
                 )}
               </div>
