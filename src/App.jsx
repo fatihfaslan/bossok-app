@@ -1526,6 +1526,30 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
 // ═══════════════════════════════════════════════════════════════════
 // LOGIN PAGE
 // ═══════════════════════════════════════════════════════════════════
+// Champ mot de passe — défini au niveau module (pas à l'intérieur de LoginPage) :
+// un composant redéfini à chaque rendu est traité par React comme un type différent,
+// ce qui démonte/remonte l'<input> à chaque frappe et fait perdre le focus (il fallait
+// re-cliquer dans le champ après chaque lettre). En le sortant ici, le composant garde
+// la même identité entre les rendus et le focus n'est plus perdu.
+const LOGIN_INPUT_STYLE = { width: "100%", padding: "11px 13px", background: "#fff", border: "1px solid #E3E7ED", borderRadius: 8, color: "#0F172A", fontSize: 14, outline: "none", boxSizing: "border-box" };
+const LOGIN_LABEL_STYLE = { fontSize: 11, fontWeight: 700, color: "#5D6B82", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" };
+function PwField({label, value, onChange, onEnter, show, setShow, placeholder}) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={LOGIN_LABEL_STYLE}>{label}</label>
+      <div style={{position:"relative"}}>
+        <input type={show?"text":"password"} value={value} onChange={onChange}
+          onKeyDown={e => e.key === "Enter" && onEnter && onEnter()}
+          placeholder={placeholder||"••••••••"} style={{...LOGIN_INPUT_STYLE,paddingRight:38}}/>
+        <button type="button" onClick={()=>setShow(s=>!s)}
+          style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#94A3B8",display:"flex"}}>
+          <Icon name={show?"eyeOff":"eye"} size={17}/>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function LoginPage({ onLogin, recoveryToken, onRecoveryDone }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -1626,21 +1650,6 @@ function LoginPage({ onLogin, recoveryToken, onRecoveryDone }) {
       <Icon name="check" size={16}/> {msg}
     </div>
   );
-  const PwField = ({label, value, onChange, onEnter, show, setShow, placeholder}) => (
-    <div style={{ marginBottom: 14 }}>
-      <label style={labelStyle}>{label}</label>
-      <div style={{position:"relative"}}>
-        <input type={show?"text":"password"} value={value} onChange={onChange}
-          onKeyDown={e => e.key === "Enter" && onEnter && onEnter()}
-          placeholder={placeholder||"••••••••"} style={{...inputStyle,paddingRight:38}}/>
-        <button type="button" onClick={()=>setShow(s=>!s)}
-          style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#94A3B8",display:"flex"}}>
-          <Icon name={show?"eyeOff":"eye"} size={17}/>
-        </button>
-      </div>
-    </div>
-  );
-
   return (
     <div style={{ fontFamily: "'Inter',system-ui,sans-serif", minHeight: "100vh", display: "flex", background:"#fff" }}>
       {!isNarrow && (
@@ -3979,7 +3988,7 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
         ) : (()=>{
-          const HOUR_START = 7, HOUR_END = 20, HOUR_HEIGHT = 64;
+          const HOUR_START = 7, HOUR_END = 20, HOUR_HEIGHT = 46;
           const hours = []; for (let h=HOUR_START; h<=HOUR_END; h++) hours.push(h);
           const gridHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
           const timeToY = (t) => { if(!t) return 0; const [h,m]=t.split(":").map(Number); return Math.max(0,((h-HOUR_START)+m/60)*HOUR_HEIGHT); };
@@ -4019,7 +4028,7 @@ function BossokApp({ session, onLogout }) {
               })}
             </div>
             {/* Grille horaire */}
-            <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",maxHeight:740,overflowY:"auto"}}>
+            <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",maxHeight:"calc(100vh - 340px)",overflowY:"auto"}}>
               <div>
                 {hours.map(h=>(
                   <div key={h} style={{height:HOUR_HEIGHT,textAlign:"right",paddingRight:5,fontSize:10,color:"#9CA3AF",position:"relative",top:-6}}>{h}:00</div>
