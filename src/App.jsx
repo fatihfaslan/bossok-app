@@ -5202,6 +5202,95 @@ function BossokApp({ session, onLogout }) {
   // sacrifiée sans raison, à vérifier au cas par cas.
   const produitsEcartPrixNegatif = listeProduit.filter(p=>p.ecartPct!=null && p.ecartPct<-10).sort((a,b)=>a.ecartPct-b.ecartPct);
 
+  // ── Évolution mensuelle CA/marge (12 derniers mois) ──────────────────────
+  // Vue tendance dans le temps, indépendante du filtre de période choisi en haut
+  // de page (qui agrège tout en un seul total) — basée sur tout l'historique.
+  const evolutionMensuelle12Mois = (() => {
+    const parMois = {};
+    factures.filter(f=>f.date && f.statut!=="Avoir" && f.statut!=="Annulée").forEach(f=>{
+      const m = f.date.slice(0,7);
+      if (!parMois[m]) parMois[m] = {mois:m, ca:0, marge:0};
+      const {total} = totalFact(f.lignes, f.tva_pct);
+      const mF = calcMargeFacture(f, produits, receptionsStock);
+      parMois[m].ca += total; parMois[m].marge += mF.marge;
+    });
+    return Object.values(parMois).map(m=>({...m, margePct: m.ca>0?m.marge/m.ca*100:0})).sort((a,b)=>a.mois.localeCompare(b.mois)).slice(-12);
+  })();
+  const maxCaEvolution = Math.max(1, ...evolutionMensuelle12Mois.map(m=>m.ca));
+
+  // ── Rentabilité Professionnel vs Particulier ─────────────────────────────
+  const parNatureClient = {};
+  cgFacts.forEach(f=>{
+    const cl = clients.find(c=>c.id===f.client_id);
+    const nature = cl?.nature_client || "Professionnel";
+    const {total} = totalFact(f.lignes, f.tva_pct);
+    const mF = calcMargeFacture(f, produits, receptionsStock);
+    if (!parNatureClient[nature]) parNatureClient[nature] = {nature, ca:0, marge:0, nb:0, clientsSet:new Set()};
+    parNatureClient[nature].ca += total; parNatureClient[nature].marge += mF.marge; parNatureClient[nature].nb++;
+    if (f.client_id) parNatureClient[nature].clientsSet.add(f.client_id);
+  });
+  const listeNatureClient = Object.values(parNatureClient).map(n=>({...n, nbClients:n.clientsSet.size, margePct: n.ca>0?n.marge/n.ca*100:0, panierMoyen: n.nb>0?n.ca/n.nb:0}));
+
+  // ── Produits en déclin ────────────────────────────────────────────────────
+  // Quantité vendue sur la période vs la période précédente de même durée
+  // (réutilise cgFromPrec/cgToPrec déjà calculés pour le panier moyen client).
+  const qtePrecParProduit = {};
+  if (cgFromPrec && cgToPrec) {
+    factures.filter(f=>f.date && f.date>=cgFromPrec && f.date<=cgToPrec && f.statut!=="Avoir" && f.statut!=="Annulée").forEach(f=>{
+      (f.lignes||[]).filter(l=>!l.isCredit && l.produitId!=="CREDIT_CONSIGNES").forEach(l=>{
+        const nomProd = (l.nom||"").replace(/\s*\(offert\)$/,"");
+        qtePrecParProduit[nomProd] = (qtePrecParProduit[nomProd]||0) + l.qte;
+      });
+    });
+  }
+  const produitsEnDeclin = listeProduit.map(p=>{
+    const qtePrec = qtePrecParProduit[p.nom] || 0;
+    const evolutionQtePct = qtePrec>0 ? (p.qte-qtePrec)/qtePrec*100 : null;
+    return {...p, qtePrec, evolutionQtePct};
+  }).filter(p=>p.evolutionQtePct!=null && p.evolutionQtePct<-20 && p.qtePrec>=5) // seuil pour éviter le bruit sur petits volumes
+    .sort((a,b)=>a.evolutionQtePct-b.evolutionQtePct);
+
+  // ── Rentabilité des nouveaux clients (≤90j) vs clients établis ───────────
+  const clientsRecents90j = new Set(clients.filter(c=>c.created_at && (new Date(AUJOURD_HUI_CG)-new Date(c.created_at))/86400000<=90).map(c=>c.id));
+  const statsNouveauxVsAnciens = ["Nouveaux (≤90j)","Clients établis"].map(label=>{
+    const subset = listeClientNette.filter(c=> label.startsWith("Nouveaux") ? clientsRecents90j.has(c.id) : !clientsRecents90j.has(c.id));
+    const ca = subset.reduce((s,c)=>s+c.ca,0);
+    const marge = subset.reduce((s,c)=>s+c.marge,0);
+    const nb = subset.reduce((s,c)=>s+c.nb,0);
+    return {label, nbClients:subset.length, ca, marge, margePct: ca>0?marge/ca*100:0, panierMoyen: nb>0?ca/nb:0};
+  });
+
+  // ── Score de risque client combiné ───────────────────────────────────────
+  // Cumule 3 signaux déjà calculés par ailleurs : inactif 30j+, panier en baisse
+  // de 15%+ vs période précédente, créance en souffrance (60j+). On ne garde que
+  // les clients avec au moins 2 signaux sur 3, pour prioriser sans croiser les tableaux à la main.
+  const clientsScoreRisque = listeClientNette.map(c=>{
+    let signaux = 0;
+    const joursDepuis = derniereFactureParClient[c.id] ? Math.round((new Date(AUJOURD_HUI_CG)-new Date(derniereFactureParClient[c.id]))/86400000) : null;
+    if (joursDepuis==null || joursDepuis>30) signaux++;
+    if (c.panierEvolutionPct!=null && c.panierEvolutionPct<-15) signaux++;
+    if (clientsIdAvecCreanceEnSouffrance.has(c.id)) signaux++;
+    return {...c, joursDepuisScore:joursDepuis, signauxRisque:signaux};
+  }).filter(c=>c.signauxRisque>=2).sort((a,b)=>b.signauxRisque-a.signauxRisque);
+
+  // ── Prévision de trésorerie simple ───────────────────────────────────────
+  // Échéance standard supposée à 30 jours (pas de champ d'échéance dédié en base) —
+  // sépare les impayés "normaux" (pas encore échus) des vrais retards, et compare
+  // au montant des charges fixes déjà connues pour le mois prochain.
+  const DELAI_PAIEMENT_STANDARD_CG = 30;
+  const facturesNonEcheuesCG = facturesImpayeesCG.filter(f=>{
+    if (!f.date) return false;
+    const echeance = new Date(f.date); echeance.setDate(echeance.getDate()+DELAI_PAIEMENT_STANDARD_CG);
+    return echeance >= new Date(AUJOURD_HUI_CG);
+  });
+  const facturesEnRetardCG = facturesImpayeesCG.filter(f=>!facturesNonEcheuesCG.includes(f));
+  const montantNonEcheuesCG = facturesNonEcheuesCG.reduce((s,f)=>s+totalFact(f.lignes,f.tva_pct).total,0);
+  const montantEnRetardCG = facturesEnRetardCG.reduce((s,f)=>s+totalFact(f.lignes,f.tva_pct).total,0);
+  const moisProchainCG = (() => { const d=new Date(AUJOURD_HUI_CG); d.setMonth(d.getMonth()+1); return d.toISOString().slice(0,7); })();
+  const fraisMoisProchainCG = fraisGeneraux.find(f=>(f.mois||"").slice(0,7)===moisProchainCG);
+  const CHAMPS_CHARGES_FIXES = ["masse_salariale","loyer","carburant","assurance_vehicules","entretien_vehicules","leasing_vehicule","frais_comptabilite","frais_bancaires","telephone_mobile","abonnement_box","autres"];
+  const chargesFixesMoisProchainCG = fraisMoisProchainCG ? CHAMPS_CHARGES_FIXES.reduce((s,ch)=>s+(Number(fraisMoisProchainCG[ch])||0),0) : null;
+
   // CA historique pré-app — référence uniquement (montant global, sans marge ni détail
   // client/produit disponibles), pour les mois antérieurs à la mise en service du système (10/09/2026).
   const caHistPreAppPeriode = caHistoriquePreApp.filter(h=>{
@@ -5806,6 +5895,137 @@ function BossokApp({ session, onLogout }) {
           </tbody>
         </table>
       )}
+    </div>
+
+    {/* ── Évolution mensuelle CA / marge (12 mois) ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="trendingUp" size={14} style={{color:"#5D6B82"}}/> Évolution mensuelle CA / marge (12 derniers mois)</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Tendance dans le temps, indépendante du filtre de période choisi en haut de page.</div>
+      {evolutionMensuelle12Mois.length===0 ? (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Pas de données.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <tbody>
+            {evolutionMensuelle12Mois.map(m=>(
+              <tr key={m.mois} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600,whiteSpace:"nowrap"}}>{m.mois}</td>
+                <td style={{padding:"5px 4px",width:"40%"}}>
+                  <div style={{background:"#EEF2FF",borderRadius:4,height:14,width:(m.ca/maxCaEvolution*100)+"%",minWidth:2}}/>
+                </td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(m.ca)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#059669",fontWeight:600}}>{fmtFull(m.marge)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#059669"}}>{Math.round(m.margePct)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+
+    {/* ── Rentabilité Pro vs Particulier & Nouveaux vs établis ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Professionnel vs Particulier</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Sur la période sélectionnée.</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+            <th style={{padding:"4px"}}></th><th style={{padding:"4px",textAlign:"right"}}>Clients</th><th style={{padding:"4px",textAlign:"right"}}>CA</th><th style={{padding:"4px",textAlign:"right"}}>Marge %</th><th style={{padding:"4px",textAlign:"right"}}>Panier moyen</th>
+          </tr></thead>
+          <tbody>
+            {listeNatureClient.map(n=>(
+              <tr key={n.nature} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{n.nature}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{n.nbClients}</td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(n.ca)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#059669",fontWeight:600}}>{Math.round(n.margePct)}%</td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(n.panierMoyen)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="sparkle" size={14} style={{color:"#5D6B82"}}/> Nouveaux clients vs clients établis</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>"Nouveaux" = fiche créée il y a ≤90 jours — marge sur la période sélectionnée.</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+            <th style={{padding:"4px"}}></th><th style={{padding:"4px",textAlign:"right"}}>Clients</th><th style={{padding:"4px",textAlign:"right"}}>CA</th><th style={{padding:"4px",textAlign:"right"}}>Marge %</th><th style={{padding:"4px",textAlign:"right"}}>Panier moyen</th>
+          </tr></thead>
+          <tbody>
+            {statsNouveauxVsAnciens.map(n=>(
+              <tr key={n.label} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{n.label}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{n.nbClients}</td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(n.ca)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#059669",fontWeight:600}}>{Math.round(n.margePct)}%</td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(n.panierMoyen)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {/* ── Produits en déclin & Score de risque clients ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="produits" size={14} style={{color:"#5D6B82"}}/> Produits en déclin ({produitsEnDeclin.length})</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Quantité vendue en baisse de 20%+ vs la période précédente de même durée (≥5 unités vendues avant, pour éviter le bruit).</div>
+        {produitsEnDeclin.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucun produit en déclin marqué sur cette période.</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {produitsEnDeclin.map(p=>(
+                <tr key={p.nom} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{p.nom}</td>
+                  <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{p.qtePrec} → {p.qte}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#DC2626",fontWeight:700}}>{Math.round(p.evolutionQtePct)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="danger" size={14} style={{color:"#DC2626"}}/> Score de risque clients ({clientsScoreRisque.length})</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Clients cumulant au moins 2 signaux sur 3 : inactif 30j+, panier en baisse de 15%+, créance en souffrance (60j+).</div>
+        {clientsScoreRisque.length===0 ? (
+          <div style={{textAlign:"center",color:"#059669",padding:"12px 0",fontSize:12,fontWeight:600}}>Aucun client à risque élevé actuellement. 👍</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {clientsScoreRisque.map(c=>(
+                <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{c.nom}</td>
+                  <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{c.zone}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",fontWeight:700,color:c.signauxRisque>=3?"#DC2626":"#D97706"}}>{"🚩".repeat(c.signauxRisque)} {c.signauxRisque}/3</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+
+    {/* ── Prévision de trésorerie simple ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> Prévision de trésorerie simple</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Échéance standard supposée à 30 jours (pas de date d'échéance dédiée en base) — à prendre comme un ordre de grandeur, pas un calcul comptable précis.</div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10}}>
+        <div style={S.kpi("#334155")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{fmtFull(montantNonEcheuesCG)}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>Impayés pas encore échus ({facturesNonEcheuesCG.length} factures)</div>
+        </div>
+        <div style={S.kpi("#DC2626")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#DC2626"}}>{fmtFull(montantEnRetardCG)}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>Impayés en retard ({facturesEnRetardCG.length} factures)</div>
+        </div>
+        <div style={S.kpi("#334155")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{chargesFixesMoisProchainCG!=null?fmtFull(chargesFixesMoisProchainCG):"—"}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>Charges fixes connues pour {moisProchainCG}{chargesFixesMoisProchainCG==null?" (non renseignées)":""}</div>
+        </div>
+      </div>
     </div>
 
     {/* ── Marge par facture ── */}
