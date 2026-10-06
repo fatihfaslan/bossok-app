@@ -368,8 +368,12 @@ const REGION_COORDS = {
   "Hollande":      {lat:50.0000, lng:6.1000},
 };
 
-// Aspelt departure point
-const DEPOT = {lat:49.5281, lng:6.1450};
+// Dépôt / entrepôt : 477 route de Thionville, Hesperange (ancien : Aspelt).
+// Les coordonnées ci-dessous sont une position approximative de Hesperange : elles sont
+// remplacées par la position exacte de l'adresse (géocodage) dès qu'on lance
+// « Calculer les distances réelles » dans le Contrôle de gestion.
+const DEPOT_ADRESSE = "477 route de Thionville, L-5886 Hesperange, Luxembourg";
+const DEPOT = {lat:49.5728, lng:6.1522};
 
 // Géocodage d'adresse via Nominatim (OpenStreetMap) — gratuit, sans clé API.
 // Respecte la limite d'usage de Nominatim (max ~1 requête/seconde côté appelant).
@@ -478,26 +482,19 @@ const DRIVERS = { A: "Sefa", B: "Mikail" };
 
 // Zone delivery schedule
 const ZONE_SCHEDULE = {
-  "Centre-ville": {days:["Lundi","Mercredi","Vendredi"], driver:"Sefa"},
-  "Nord":         {days:["Lundi","Mardi","Jeudi"],        driver:"Sefa"},
+  "Centre-ville": {days:["Lundi","Jeudi"],                driver:"Sefa"},
+  "Nord":         {days:["Mardi"],                        driver:"Sefa"},
   "Nord-ouest":   {days:["Mardi"],                        driver:"Sefa"},
-  "Nord-Est":     {days:["Mercredi"],                     driver:"Sefa"},
-  "Nord-est":     {days:["Mercredi"],                     driver:"Sefa"},
-  "Est":          {days:["Mardi","Jeudi"],                 driver:"Sefa"},
-  "Sud":          {days:["Lundi","Mardi","Jeudi"],         driver:"Mikail"},
-  "Sud-ouest":    {days:["Mercredi","Vendredi"],           driver:"Mikail"},
-  "Sud-Est":      {days:["Mardi"],                        driver:"Mikail"},
-  "Ouest":        {days:["Mercredi","Vendredi"],           driver:"Mikail"},
-  "Belgique":     {days:["Jeudi","Vendredi"],             driver:"Mikail"},
-  "France":       {days:["Lundi"],                        driver:"Mikail"},
-  "Hollande":     {days:["Jeudi"],                        driver:"Mikail"},
+  "Nord-Est":     {days:["Mardi"],                        driver:"Sefa"},
+  "Nord-est":     {days:["Mardi"],                        driver:"Sefa"},
+  "Est":          {days:["Mardi"],                        driver:"Sefa"},
+  "Sud":          {days:["Lundi","Vendredi"],             driver:"Mikail"},
+  "Sud-ouest":    {days:["Mercredi"],                     driver:"Mikail"},
+  "Sud-Est":      {days:["Lundi","Vendredi"],             driver:"Mikail"},
+  "Ouest":        {days:["Mercredi"],                     driver:"Mikail"},
 };
 
-// Dépôt BOSSOK — 61 Péiter vun Uespelt-Strooss, L-5710 Aspelt (Frisange).
-// Coordonnées au niveau de la rue (géoportail.lu) — suffisant pour une distance
-// à vol d'oiseau utilisée comme proxy relatif entre zones, pas un calcul d'itinéraire réel.
-const DEPOT_LAT = 49.52917;
-const DEPOT_LNG = 6.22479;
+// Distance à vol d'oiseau (proxy relatif) — le dépôt est défini plus haut (DEPOT, Hesperange).
 const distanceKm = (lat1, lng1, lat2, lng2) => {
   if (lat1==null || lng1==null || lat2==null || lng2==null) return null;
   const R = 6371;
@@ -638,13 +635,22 @@ ${zonesHTML}
 };
 
 // Zone assignments per day (0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri)
+// Planning issu de l'analyse des commandes historiques (fréquence + volume/camion), Luxembourg uniquement :
+// Sefa = Centre-ville (lun+jeu) et Nord/Est (mar) · Mikail = Sud (lun+ven), Sud-ouest/Ouest (mer).
 const DAILY_ZONES = {
-  0: { A: ["Centre-ville","Nord"],                    B: ["Sud","Sud-ouest","Belgique","France"] },
-  1: { A: ["Centre-ville","Nord","Nord-ouest"],        B: ["Sud","Ouest","Belgique"] },
-  2: { A: ["Est","Nord","Nord-ouest"],                 B: ["Centre-ville","Sud","Ouest","France"] },
-  3: { A: ["Centre-ville","Nord","Est"],               B: ["France","Sud","Ouest"] },
-  4: { A: ["Centre-ville","Nord","Est"],               B: ["Sud","Sud-ouest","Ouest","Belgique"] },
+  0: { A: ["Centre-ville"],                                              B: ["Sud","Sud-Est"] },
+  1: { A: ["Nord","Nord-ouest","Nord-Est","Nord-est","Est"],             B: [] },
+  2: { A: [],                                                            B: ["Sud-ouest","Ouest"] },
+  3: { A: ["Centre-ville"],                                              B: [] },
+  4: { A: [],                                                            B: ["Sud","Sud-Est"] },
 };
+// Historique des commandes mai→août 2026 (fichiers Excel de facturation), clé = nom client normalisé.
+// Sert uniquement à calculer la fréquence de commande de chaque client pour le planning.
+const normNomClient = (n) => String(n||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()
+  .replace(/\b(sarl|sa|sas|s a r l|s\.a\.r\.l)\b/g,"").replace(/[^a-z0-9]/g,"");
+const HISTORIQUE_CMD_MAI_AOUT = {"dashaus":"2026-05-03,2026-05-18,2026-05-28,2026-06-03,2026-06-17,2026-06-28,2026-07-08,2026-07-22,2026-08-04,2026-08-16,2026-08-19,2026-08-31","luxji":"2026-05-03,2026-05-19,2026-06-02,2026-06-23,2026-07-08,2026-07-20,2026-08-05,2026-08-13","harun":"2026-05-03,2026-05-20,2026-06-07,2026-06-18,2026-06-25,2026-07-09,2026-07-28,2026-08-20","snackistanbulesch":"2026-05-03,2026-05-12,2026-05-21,2026-06-01,2026-06-08,2026-06-17,2026-06-25,2026-07-01,2026-07-08,2026-07-14,2026-07-20,2026-08-06,2026-08-13,2026-08-24","cirta":"2026-05-03,2026-05-20,2026-06-16,2026-07-05,2026-07-16,2026-08-02,2026-08-19","garipzaza2":"2026-05-03,2026-05-25,2026-06-16,2026-07-01,2026-08-17","restauranpistachbinnikaile":"2026-05-03,2026-05-28,2026-06-24,2026-07-21,2026-08-26","chezdaltonville":"2026-05-03,2026-05-06,2026-05-12,2026-05-18,2026-05-25,2026-06-03,2026-06-07,2026-06-11,2026-06-23,2026-06-29,2026-07-02,2026-07-09,2026-07-14,2026-07-22,2026-07-27,2026-08-04,2026-08-10,2026-08-17,2026-08-24,2026-08-27","chezdaltonesch":"2026-05-03,2026-05-12,2026-05-21,2026-05-28,2026-06-04,2026-06-11,2026-06-18,2026-06-25,2026-07-02,2026-07-09,2026-07-14,2026-07-20,2026-08-06,2026-08-17,2026-08-27","snackantalyachodelices":"2026-05-04,2026-05-10,2026-05-25,2026-05-31,2026-06-01,2026-06-08,2026-06-14,2026-06-23,2026-06-28,2026-07-12,2026-07-20,2026-07-27,2026-08-09,2026-08-17,2026-08-24,2026-08-31","souvenir":"2026-05-04,2026-05-27,2026-06-10,2026-06-29,2026-07-19,2026-08-10,2026-08-27","tacosburger":"2026-05-04,2026-05-11,2026-05-18,2026-05-25,2026-06-08,2026-06-15,2026-06-21,2026-06-29,2026-07-05,2026-07-08,2026-07-12,2026-08-04,2026-08-24","izumi":"2026-05-04,2026-05-19,2026-06-09,2026-06-29,2026-07-22,2026-08-19","arslankebab":"2026-05-04,2026-06-23,2026-07-20","harutfrite":"2026-05-04,2026-05-28,2026-06-21,2026-07-23,2026-08-09,2026-08-17","trechiavi":"2026-05-04,2026-08-31","pizzicotto":"2026-05-04,2026-05-27,2026-06-10,2026-06-25,2026-07-12,2026-07-28,2026-08-24","snacksinbaddm":"2026-05-04,2026-05-25,2026-06-14,2026-06-24,2026-07-12,2026-07-24,2026-08-05,2026-08-23","restaurantholiday":"2026-05-04,2026-06-01,2026-06-23,2026-07-14,2026-08-23","restaurantfuman":"2026-05-04,2026-08-31","foyernala":"2026-05-04,2026-06-17,2026-07-20,2026-08-18","restaurantaz":"2026-05-05,2026-06-08,2026-06-23,2026-07-05,2026-07-20,2026-08-03,2026-08-05,2026-08-17","popeysburger":"2026-05-05,2026-06-14,2026-07-20","serenabozzoli":"2026-05-05","carlislemanagementcompany":"2026-05-05","crechemargreitchen":"2026-05-05,2026-07-22","eurokebab":"2026-05-05,2026-05-14,2026-05-17,2026-05-27,2026-06-04,2026-06-08,2026-06-11,2026-06-21,2026-07-01,2026-07-06,2026-07-08,2026-07-15,2026-08-23","ozpinar":"2026-05-06,2026-07-12","hakii":"2026-05-06,2026-05-17,2026-05-21,2026-06-03,2026-06-10,2026-06-17,2026-06-25,2026-07-02,2026-07-08","sushiatelier":"2026-05-06,2026-05-20,2026-06-04,2026-06-23,2026-07-07,2026-07-21,2026-08-05,2026-08-20","mrback":"2026-05-06","dechertllp":"2026-05-06,2026-05-27,2026-06-11,2026-06-18,2026-07-05,2026-07-13,2026-07-27,2026-08-05,2026-08-09,2026-08-26","newcolibribleu":"2026-05-06,2026-05-28,2026-06-16,2026-07-07,2026-08-11","ledysfood":"2026-05-06,2026-05-10,2026-05-11,2026-05-31,2026-06-15,2026-06-29,2026-07-13,2026-08-02,2026-08-24","restaurantfudoulou":"2026-05-06,2026-07-08,2026-08-30","restaurantginza":"2026-05-06,2026-07-22","royalkebabbe":"2026-05-06,2026-06-24","yangming":"2026-05-06,2026-08-11","breaktime":"2026-05-06,2026-05-12,2026-05-21,2026-05-28,2026-06-04,2026-06-11,2026-06-18,2026-06-25,2026-07-01,2026-07-02,2026-07-08,2026-07-14,2026-07-21,2026-08-05,2026-08-10,2026-08-13,2026-08-23","restaurantxunweitaltwies":"2026-05-07,2026-06-03,2026-06-30,2026-07-06","alicepizzeriakebabhaus":"2026-05-07,2026-05-17,2026-05-31,2026-06-11,2026-06-23,2026-07-02,2026-07-09,2026-07-16,2026-08-10,2026-08-20","foodaddict":"2026-05-07,2026-05-25,2026-06-01,2026-06-11,2026-06-23,2026-07-02,2026-08-10,2026-08-19","misushi":"2026-05-07,2026-07-05,2026-08-10","lesfreress":"2026-05-07,2026-05-14,2026-05-21,2026-05-28,2026-06-04,2026-06-11,2026-06-21,2026-07-01,2026-07-07,2026-07-15,2026-07-23,2026-08-03,2026-08-12,2026-08-20,2026-08-30","amakorn":"2026-05-07,2026-06-17,2026-07-06,2026-07-20,2026-08-06","climali":"2026-05-07,2026-06-29","mydrinksmelik":"2026-05-07,2026-06-10","restaurantkicheneck":"2026-05-07","bozokebab":"2026-05-10,2026-05-31,2026-06-24,2026-07-09,2026-08-05,2026-08-25","luxkebabmersch":"2026-05-10,2026-06-03,2026-07-24,2026-08-04","splsardag":"2026-05-10,2026-06-17,2026-06-18,2026-07-27","deryakebablarochette":"2026-05-10,2026-06-01,2026-07-01,2026-07-19,2026-08-06","italuxfoods":"2026-05-10,2026-05-19,2026-06-11,2026-06-24,2026-07-09,2026-07-23,2026-08-16","hanamirestaurantlabonnefortune":"2026-05-10,2026-05-31,2026-06-21,2026-07-15","idiemeringmarketspartners":"2026-05-11,2026-08-12","ankarasnackrestaurantlonguyon":"2026-05-11,2026-06-24","kebabtaksim":"2026-05-11,2026-05-21,2026-06-03,2026-06-15,2026-06-29,2026-07-07,2026-07-14,2026-08-16","restaurantzafir":"2026-05-11,2026-05-27,2026-06-09,2026-06-23,2026-07-01","snackbbtcarloesch":"2026-05-11,2026-05-25,2026-06-15,2026-06-29,2026-07-20,2026-08-06","snackanadolia":"2026-05-11,2026-05-28,2026-06-16,2026-06-29,2026-07-02,2026-07-14,2026-08-19,2026-08-30","lapetitevenice":"2026-05-11,2026-05-18,2026-06-02,2026-06-17,2026-07-02,2026-07-13,2026-08-17","goodtaste":"2026-05-11,2026-08-10","kebabhauswasserbilig":"2026-05-12,2026-06-01,2026-06-28,2026-07-22,2026-08-12","crechemusekshaus":"2026-05-12,2026-06-02,2026-06-29,2026-07-12,2026-07-23,2026-08-09,2026-08-25","boissonsmanternach":"2026-05-12,2026-07-06","snakhakan":"2026-05-12,2026-05-25,2026-06-08,2026-06-21,2026-06-28,2026-07-07,2026-07-15,2026-07-24,2026-08-16,2026-08-23","restaurantraiskar":"2026-05-12,2026-06-03,2026-06-24,2026-07-16,2026-08-11,2026-08-25","ekenz":"2026-05-12,2026-07-07,2026-08-03","snackistanbulville":"2026-05-12,2026-05-25,2026-05-31,2026-06-11,2026-06-18,2026-07-05,2026-07-13,2026-07-21,2026-07-27,2026-08-06,2026-08-16,2026-08-27","lwalucianaville":"2026-05-12,2026-06-21,2026-08-05","crecheelmen":"2026-05-12,2026-06-15,2026-07-06,2026-08-05","adsconcept":"2026-05-12,2026-05-27,2026-06-16,2026-06-28,2026-07-06,2026-07-20,2026-08-31","intersnackjusuf":"2026-05-12,2026-05-31,2026-06-04,2026-06-28,2026-08-24","liaoxianghua":"2026-05-12","restaurantsashimi":"2026-05-14,2026-06-01,2026-06-18,2026-07-01,2026-07-16,2026-08-03","kebabhousen":"2026-05-14,2026-06-07,2026-07-09","snackpacharodangeroyalkebab":"2026-05-14,2026-05-31,2026-06-15,2026-07-06,2026-07-19","espaceimmo":"2026-05-14,2026-05-25,2026-06-01,2026-06-04,2026-07-02,2026-07-08,2026-07-27,2026-08-20","restaurantyummy":"2026-05-14,2026-06-03,2026-06-18,2026-07-02,2026-07-23,2026-08-13","libertykebab":"2026-05-14,2026-06-02,2026-06-21,2026-07-06,2026-07-19,2026-08-09,2026-08-25","snackankaraesch":"2026-05-17,2026-07-01,2026-08-11","btn":"2026-05-17,2026-06-29,2026-08-06","restaurantdoredahongyun":"2026-05-17,2026-06-24,2026-08-18","restauranttempura":"2026-05-17,2026-05-31,2026-06-14,2026-06-21,2026-07-02,2026-07-28,2026-08-13,2026-08-24","pizzeriailsorriso":"2026-05-18,2026-06-17,2026-07-06,2026-07-23,2026-08-31","idilkebab":"2026-05-18,2026-06-01,2026-06-15,2026-06-29,2026-07-12,2026-07-24,2026-08-17,2026-08-30","snackrapido":"2026-05-18,2026-06-02,2026-06-15,2026-06-30,2026-07-16,2026-08-17","montstlambert":"2026-05-18,2026-06-08,2026-06-21,2026-07-02,2026-07-13,2026-07-27,2026-08-10,2026-08-24","foetzhotelrestaurantdao":"2026-05-18","restaurantsumi":"2026-05-18,2026-06-18,2026-07-07,2026-08-03,2026-08-27","pitabotan":"2026-05-18,2026-07-01,2026-08-04","luxkebabbettembourg":"2026-05-18,2026-06-08","haslibel":"2026-05-18","nathaliehoen":"2026-05-18,2026-06-24","friteriedroitaukitsch":"2026-05-19","stblawsimpsonsthacherbarlettscs":"2026-05-19,2026-06-24,2026-07-23,2026-08-20","seedboxluxembourg":"2026-05-19,2026-06-15,2026-07-16,2026-08-05","eternel":"2026-05-19,2026-06-16,2026-07-09,2026-08-19","peakkyburgers":"2026-05-19,2026-06-03,2026-06-18,2026-06-30,2026-07-16,2026-08-31","zrsushirestaurant":"2026-05-19,2026-06-18,2026-07-16,2026-08-23","halilhakan":"2026-05-19,2026-07-07","restaurantwangchef":"2026-05-20,2026-08-12","dreamlease":"2026-05-20,2026-05-31,2026-06-04,2026-06-23,2026-07-05,2026-07-20,2026-08-03,2026-08-18","sogerouteschmitschmit":"2026-05-20,2026-06-23","bojanaarel":"2026-05-20,2026-06-30","restaurantvilledasie":"2026-05-20","snackmondial":"2026-05-20,2026-06-14,2026-07-09,2026-07-19","snackmoris":"2026-05-21,2026-06-15,2026-07-07","az":"2026-05-21,2026-06-11,2026-06-25,2026-07-06,2026-07-24,2026-08-11","tarboosh":"2026-05-25,2026-06-14,2026-06-28,2026-07-14,2026-08-19","rayleegroup":"2026-05-27,2026-07-06,2026-08-30","amicorpluxembourg":"2026-05-27,2026-06-16,2026-07-12,2026-08-20","urbanfood":"2026-05-27,2026-06-29,2026-07-23","rojkebabpizza":"2026-05-27,2026-07-02,2026-07-28,2026-08-19","oishisushi":"2026-05-27","restaurantpanda":"2026-05-27,2026-06-23,2026-07-23,2026-08-12","snackroyalaras":"2026-05-27,2026-06-18,2026-07-27","restaurantkiyomi":"2026-05-27","sevin":"2026-05-28,2026-06-29,2026-07-22,2026-08-26","mimcocapital":"2026-05-28","jiayuan":"2026-05-28,2026-06-23,2026-07-21,2026-08-26","helin":"2026-05-31,2026-07-05,2026-07-24,2026-08-12","wcpinvestment":"2026-06-01,2026-08-20","salutsushi":"2026-06-02","ogourmet":"2026-06-02,2026-07-12,2026-08-16","snacklena":"2026-06-02,2026-06-29,2026-07-19,2026-07-24","shenyang":"2026-06-03","escapade":"2026-06-03","restaurantfucheng":"2026-06-03,2026-07-09,2026-08-18","restjinetfeng":"2026-06-04,2026-06-23,2026-07-09,2026-07-22,2026-08-06,2026-08-20","restaurantichi":"2026-06-07,2026-07-22","superspatz":"2026-06-09,2026-08-11","moventum":"2026-06-09,2026-07-07,2026-08-25","liaoxianghuagosushi":"2026-06-09,2026-07-14","dashaussaarbrucken":"2026-06-10,2026-07-19","huating":"2026-06-10,2026-08-06","kanuvicafiteria":"2026-06-10","jeanpetitarchitectessa":"2026-06-11,2026-07-16","admarket":"2026-06-11,2026-07-12","gioscafe":"2026-06-11,2026-08-31","ccins":"2026-06-14","yuki":"2026-06-14,2026-08-23","snackbosphore":"2026-06-15","arteceuropesenningerberg":"2026-06-16","lapetitefritegaumaise":"2026-06-16,2026-07-28","colonnadeinsurancesa":"2026-06-16","monsieurkebab":"2026-06-16,2026-08-13","restaurantoishihai":"2026-06-17,2026-08-18","dongya":"2026-06-18,2026-06-24","apax":"2026-06-18","milansalamon":"2026-06-21","luxstabilisation":"2026-06-21","ctie":"2026-06-21","garipzaza2musson":"2026-06-24,2026-07-24","jj32hotel":"2026-06-25,2026-07-23,2026-08-24","letzeburgerhowald":"2026-06-25,2026-06-30,2026-07-02,2026-07-06,2026-07-13,2026-07-16,2026-07-27,2026-08-17,2026-08-31","uyanisseyfichefsteakhouse":"2026-06-28","letzeburgerschouweiler":"2026-06-29,2026-07-06,2026-07-13,2026-07-20,2026-07-27,2026-08-03,2026-08-10,2026-08-17,2026-08-24,2026-08-31","restaurantmiyako":"2026-06-30","snack2bras":"2026-06-30,2026-08-06","restaurantshico":"2026-07-01","daynight2023":"2026-07-01","logico":"2026-07-02","snackantalyarumelange":"2026-07-02,2026-07-16,2026-08-02,2026-08-23","letzeburgerfoetz":"2026-07-02,2026-07-09,2026-07-14,2026-07-21,2026-08-05,2026-08-12,2026-08-17,2026-08-20,2026-08-26","letzeburgerstrassen":"2026-07-05,2026-07-09,2026-07-12,2026-07-13,2026-07-16,2026-07-20,2026-07-21,2026-07-27,2026-08-04,2026-08-09,2026-08-13,2026-08-23,2026-08-30,2026-08-31","teavana":"2026-07-06,2026-07-22","restauranthappyvilla":"2026-07-06","birkasbl":"2026-07-06,2026-08-04","nstrans":"2026-07-07,2026-08-27","sectorgroupe":"2026-07-09","djamiladiawara":"2026-07-14,2026-08-06","havin":"2026-07-15","tradition1":"2026-07-16","hongxiang":"2026-07-22","vipkebab":"2026-07-23,2026-08-19","kebabhousenderyakebabhossingen":"2026-07-24,2026-08-05","rizroyal":"2026-08-02","suhsihana":"2026-08-18","novalicsuad":"2026-08-23","pizzacircus2":"2026-08-25"};
+// Fréquence médiane max (jours) pour qu'un client soit proposé comme "attendu" dans le planning
+const PLANNING_FREQ_MAX = 45;
 
 // Speed per zone (km/h)
 const ZONE_SPEED = {
@@ -2021,6 +2027,7 @@ function BossokApp({ session, onLogout }) {
     return dow === 0 ? 0 : Math.min(dow - 1, 4);
   });
   const [planningWeekOffset, setPlanningWeekOffset] = useState(0); // 0=current, -1=last week, etc.
+  const [planningView, setPlanningView] = useState("semaine"); // "semaine" | "jour"
   const [cmdView, setCmdView] = useState("attente");
   const [searchC, setSearchC] = useState("");
   const [filterType, setFilterType] = useState("Tous");
@@ -3093,12 +3100,22 @@ function BossokApp({ session, onLogout }) {
     const aTraiter = clients.filter(c=>c.lat!=null && c.lng!=null && (forcerTout || c.distance_route_km==null));
     if (aTraiter.length===0) { setCalcDistancesMsg("Toutes les distances sont déjà calculées."); return; }
     setCalcDistancesLoading(true);
+    // Position exacte du dépôt (Hesperange) avant de calculer les trajets
+    setCalcDistancesMsg("Localisation du dépôt (Hesperange)...");
+    let posDepot = await geocodeAddress(DEPOT_ADRESSE);
+    if (!posDepot) posDepot = await geocodeAddress("Route de Thionville, Hesperange, Luxembourg");
+    if (!posDepot) {
+      setCalcDistancesMsg("Adresse du dépôt introuvable (service de localisation indisponible). Réessayez dans un moment.");
+      setCalcDistancesLoading(false);
+      return;
+    }
+    DEPOT.lat = posDepot.lat; DEPOT.lng = posDepot.lng;
     setCalcDistancesMsg("Calcul en cours : 0 / "+aTraiter.length);
     let ok=0, fail=0;
     for (let i=0;i<aTraiter.length;i++) {
       const c = aTraiter[i];
       try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${DEPOT_LNG},${DEPOT_LAT};${Number(c.lng)},${Number(c.lat)}?overview=false`;
+        const url = `https://router.project-osrm.org/route/v1/driving/${DEPOT.lng},${DEPOT.lat};${Number(c.lng)},${Number(c.lat)}?overview=false`;
         const res = await fetch(url);
         const data = await res.json();
         const distM = data?.routes?.[0]?.distance;
@@ -4957,7 +4974,7 @@ function BossokApp({ session, onLogout }) {
   clients.forEach(c=>{
     const z = c.region || "Inconnu";
     const reelle = c.distance_route_km!=null ? Number(c.distance_route_km) : null;
-    const d = reelle!=null ? reelle : distanceKm(DEPOT_LAT, DEPOT_LNG, Number(c.lat), Number(c.lng));
+    const d = reelle!=null ? reelle : distanceKm(DEPOT.lat, DEPOT.lng, Number(c.lat), Number(c.lng));
     if (d==null) return;
     if (!distanceParZone[z]) distanceParZone[z] = {sum:0, n:0, nReel:0};
     distanceParZone[z].sum += d; distanceParZone[z].n++;
@@ -6882,6 +6899,7 @@ function BossokApp({ session, onLogout }) {
   const isPastWeek = planningWeekOffset < 0;
   const weekLabel = planningWeekOffset === 0 ? "Semaine courante" :
     planningWeekOffset === -1 ? "Semaine dernière" :
+    planningWeekOffset === 1 ? "Semaine prochaine" :
     `Semaine du ${weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})}`;
 
   const getWeekDate = (dayIdx) => {
@@ -6897,32 +6915,91 @@ function BossokApp({ session, onLogout }) {
 
   const selectedDate = getDayDate(selectedDay);
 
+  const zonesFor = (i) => {
+    const z = DAILY_ZONES[i] || {A:[],B:[]};
+    return { A: z.A||[], B: z.B||[] };
+  };
+  const driverOfCmd = (c,i) => {
+    const z = zonesFor(i);
+    if (z.A.includes(c.client_region)) return 'A';
+    if (z.B.includes(c.client_region)) return 'B';
+    if (c.chauffeur==='A'||c.chauffeur==='B') return c.chauffeur;
+    return c.client_region ? getChauffeur(c.client_region) : null;
+  };
+  // Jour (0-4) où une commande non datée est planifiée : 1er jour de sa zone à partir d'aujourd'hui
+  const pendingDayIdx = (c) => {
+    if (planningWeekOffset !== 0) return -1;
+    if (!c.client_region) return todayDow<=4?todayDow:0;
+    for (let i=Math.min(todayDow,4); i<5; i++){ const z=zonesFor(i); if([...z.A,...z.B].includes(c.client_region)) return i; }
+    for (let i=0;i<5;i++){ const z=zonesFor(i); if([...z.A,...z.B].includes(c.client_region)) return i; }
+    return -1;
+  };
+  const cmdsForDayIdx = (i) => {
+    const dDate = getDayDate(i);
+    if (isPastWeek) return commandes.filter(c=>c.statut==='Livré' && (c.date_livraison===dDate || (!c.date_livraison && c.jour_livraison===days[i])));
+    return commandes.filter(c=>{
+      if (c.date_livraison) return c.date_livraison===dDate;
+      if (c.statut==='Livré') return false;
+      return pendingDayIdx(c)===i;
+    });
+  };
+
+  // ── Clients "attendus" d'après leur fréquence de commande historique ──
+  const DAY_MS = 86400000;
+  const toT = (str)=>new Date(String(str).slice(0,10)+"T12:00:00").getTime();
+  const predByDay = {0:[],1:[],2:[],3:[],4:[]};
+  if (!isPastWeek) {
+    const hist = {};
+    commandes.forEach(c=>{
+      if(!c.client_id) return;
+      const d = c.date_livraison || c.date_commande; if(!d) return;
+      (hist[c.client_id] = hist[c.client_id] || []).push(String(d).slice(0,10));
+    });
+    const enCours = new Set(commandes.filter(c=>c.statut!=='Livré').map(c=>c.client_id));
+    const dejaSemaine = new Set();
+    for (let i=0;i<5;i++) cmdsForDayIdx(i).forEach(c=>dejaSemaine.add(c.client_id));
+    clients.forEach(cl=>{
+      if (cl.statut!=="Actif" || !cl.region) return;
+      if (cl.pays && cl.pays!=="Luxembourg") return; // Luxembourg uniquement
+      if (enCours.has(cl.id) || dejaSemaine.has(cl.id)) return;
+      const ds = [...new Set([...(hist[cl.id]||[]), ...String(HISTORIQUE_CMD_MAI_AOUT[normNomClient(cl.nom)]||"").split(",").filter(Boolean)])].sort();
+      if (ds.length<3) return;
+      const ints=[]; for(let k=1;k<ds.length;k++) ints.push((toT(ds[k])-toT(ds[k-1]))/DAY_MS);
+      const rec = ints.slice(-6).sort((a,b)=>a-b);
+      const med = rec.length%2 ? rec[(rec.length-1)/2] : (rec[rec.length/2-1]+rec[rec.length/2])/2;
+      if (med>PLANNING_FREQ_MAX) return;
+      const last = ds[ds.length-1];
+      if ((Date.now()-toT(last))/DAY_MS > Math.max(60, med*4)) return; // client probablement perdu
+      const nextT = toT(last) + Math.max(1,Math.round(med))*DAY_MS;
+      for (let i=0;i<5;i++){
+        if (planningWeekOffset===0 && i<todayDow) continue;
+        const z = zonesFor(i);
+        const drv = z.A.includes(cl.region)?'A':z.B.includes(cl.region)?'B':null;
+        if (!drv) continue;
+        const dT = toT(getDayDate(i));
+        if (dT >= nextT - DAY_MS) {
+          predByDay[i].push({client:cl, drv, med:Math.round(med), last, retard:Math.round((dT-nextT)/DAY_MS)});
+          break;
+        }
+      }
+    });
+  }
+
   const getCmdMontant = (cmd) => {
     const fact = findFactureForCommande(cmd.id);
     return fact ? totalFact(fact.lignes, fact.tva_pct).total : null;
   };
 
-  const dayCommandes = isPastWeek
-    ? commandes.filter(c => c.statut === 'Livré' &&
-        (c.date_livraison === selectedDate || (!c.date_livraison && c.jour_livraison === days[selectedDay])))
-    : commandes.filter(c => {
-        if (c.date_livraison) {
-          return c.date_livraison === selectedDate || c.jour_livraison === days[selectedDay];
-        }
-        if (c.statut === 'Livré') return false;
-        const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
-        const allZones = [...(zones.A||[]), ...(zones.B||[])];
-        return allZones.includes(c.client_region) || !c.client_region;
-      });
+  const dayCommandes = cmdsForDayIdx(selectedDay);
 
   const buildSchedule = (driver) => {
     if (isPastWeek) {
       const driverCmds = dayCommandes.filter(c => c.chauffeur === driver || getChauffeur(c.client_region) === driver);
       return { schedule: driverCmds, retDist: 0, totalKm: 0 };
     }
-    const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
+    const zones = zonesFor(selectedDay);
     const driverZones = zones[driver] || [];
-    const driverCmds = dayCommandes.filter(c => driverZones.includes(c.client_region));
+    const driverCmds = dayCommandes.filter(c => driverOfCmd(c,selectedDay) === driver);
 
     const cvCmds = driverCmds.filter(c => c.client_region === 'Centre-ville');
     const otherCmds = driverCmds.filter(c => c.client_region !== 'Centre-ville');
@@ -6957,8 +7034,81 @@ function BossokApp({ session, onLogout }) {
 
   const scheduleA = buildSchedule('A');
   const scheduleB = buildSchedule('B');
-  const totalCaisses = dayCommandes.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0);
-  const totalCA = isPastWeek ? dayCommandes.reduce((s,c)=>s+(getCmdMontant(c)||0),0) : 0;
+
+  // ── Vue semaine : noms des clients par jour et par chauffeur ──
+  const weekTotalCmds = days.reduce((t,_,i)=>t+cmdsForDayIdx(i).length,0);
+  const weekTotalPred = days.reduce((t,_,i)=>t+predByDay[i].length,0);
+  const fmtShort = (str)=>{ const d=new Date(String(str).slice(0,10)+"T12:00:00"); return d.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'}); };
+  const weekView = (
+    <div>
+      <div style={{fontSize:11,color:"#6B7280",marginBottom:10,lineHeight:1.5}}>
+        {isPastWeek
+          ? `${weekTotalCmds} livraison(s) effectuée(s) cette semaine.`
+          : <>{weekTotalCmds} commande(s) enregistrée(s) · <b>{weekTotalPred} client(s) attendu(s)</b> d'après leur fréquence de commande habituelle.
+</>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(5,minmax(0,1fr))",gap:10,alignItems:"start"}}>
+        {days.map((day,i)=>{
+          const list = cmdsForDayIdx(i);
+          const preds = predByDay[i];
+          const z = zonesFor(i);
+          const zonesLabel = [...z.A,...z.B].filter(r=>r!=="Nord-est").join(" · ");
+          const groups = [
+            {k:'A',name:'Sefa',col:'#0EA5E9',bg:'#E0F2FE'},
+            {k:'B',name:'Mikail',col:'#8B5CF6',bg:'#EDE9FE'},
+            {k:null,name:'Sans zone',col:'#9CA3AF',bg:'#F3F4F6'},
+          ].map(g=>({...g,
+            cmds:list.filter(c=>driverOfCmd(c,i)===g.k).sort((a,b)=>(a.client_region||"").localeCompare(b.client_region||"")||(a.client_nom||"").localeCompare(b.client_nom||"")),
+            preds:preds.filter(p=>p.drv===g.k).sort((a,b)=>(a.client.region||"").localeCompare(b.client.region||"")||(a.client.nom||"").localeCompare(b.client.nom||"")),
+          })).filter(g=>g.cmds.length+g.preds.length>0);
+          const isToday = i===todayDow && isCurrentWeek;
+          return (
+            <div key={i} style={{...S.card,padding:10,borderTop:"4px solid "+(isToday?"#1D4ED8":"#E5E7EB"),background:isToday?"#F8FBFF":"#fff"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+                <div style={{fontWeight:800,fontSize:14,color:isToday?"#1D4ED8":"#111827"}}>{day}</div>
+                <div style={{fontSize:11,color:"#9CA3AF"}}>{getWeekDate(i)}</div>
+              </div>
+              <div style={{fontSize:10,color:"#6B7280",marginBottom:2,minHeight:14}}>{zonesLabel||"Pas de tournée"}</div>
+              <div style={{fontSize:10,color:"#9CA3AF",marginBottom:8}}>
+                {list.length} {isPastWeek?"livraison":"commande"}{list.length>1?"s":""}{preds.length>0?` · ${preds.length} attendu${preds.length>1?"s":""}`:""}
+              </div>
+              {groups.length===0 && <div style={{fontSize:11,color:"#9CA3AF",textAlign:"center",padding:"14px 0"}}>Rien de prévu</div>}
+              {groups.map(g=>(
+                <div key={String(g.k)} style={{marginBottom:8}}>
+                  <div style={{fontSize:10,fontWeight:700,color:g.col,background:g.bg,padding:"2px 6px",borderRadius:4,marginBottom:4}}>
+                    🚚 {g.name} · {g.cmds.length+g.preds.length}
+                  </div>
+                  {g.cmds.map(c=>{
+                    const caisses=(c.produits||[]).reduce((t,p)=>t+(p.qte||0),0);
+                    return (
+                      <div key={c.id} onClick={()=>{setSelectedDay(i);setPlanningView("jour");}}
+                        style={{padding:"4px 6px",borderBottom:"1px solid #F3F4F6",cursor:"pointer"}}>
+                        <div style={{fontSize:12,fontWeight:600,color:"#111827",display:"flex",justifyContent:"space-between",gap:6}}>
+                          <span>{c.statut==='Livré'?"✅ ":""}{c.client_nom}</span>
+                          <span style={{fontSize:10,color:"#6B7280",fontWeight:500,whiteSpace:"nowrap"}}>📦 {caisses}</span>
+                        </div>
+                        <div style={{fontSize:10,color:"#9CA3AF"}}>{c.client_region||"—"}</div>
+                      </div>
+                    );
+                  })}
+                  {g.preds.map(p=>(
+                    <div key={"p"+p.client.id} style={{padding:"4px 6px",margin:"3px 0",border:"1px dashed #CBD5E1",borderRadius:6,background:"#FAFAFA"}}>
+                      <div style={{fontSize:12,fontWeight:600,color:"#475569"}}>🔄 {p.client.nom}</div>
+                      <div style={{fontSize:10,color:"#94A3B8"}}>
+                        {p.client.region} · ~tous les {p.med} j · dernière {fmtShort(p.last)}
+                        {p.retard>=3&&<span style={{color:"#D97706",fontWeight:600}}> · en retard</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      {!isPastWeek && <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>🔄 = client attendu (pas encore de commande) : calculé sur sa fréquence médiane de commande et sa dernière commande. Seuls les clients actifs avec ≥3 commandes et une fréquence ≤{PLANNING_FREQ_MAX} jours sont proposés.</div>}
+    </div>
+  );
 
   return(
   <div>
@@ -6974,23 +7124,25 @@ function BossokApp({ session, onLogout }) {
           {isPastWeek&&<span style={{color:"#D97706",fontWeight:600,marginLeft:6}}>Mode historique</span>}
         </div>
       </div>
-      <button onClick={()=>setPlanningWeekOffset(w=>Math.min(0,w+1))}
-        disabled={isCurrentWeek}
-        style={{...S.btn(isCurrentWeek?"#F9FAFB":"#F1F5F9",isCurrentWeek?"#D1D5DB":"#374151"),padding:"6px 14px",fontSize:13,opacity:isCurrentWeek?0.5:1}}>
+      <button onClick={()=>setPlanningWeekOffset(w=>Math.min(2,w+1))}
+        disabled={planningWeekOffset>=2}
+        style={{...S.btn(planningWeekOffset>=2?"#F9FAFB":"#F1F5F9",planningWeekOffset>=2?"#D1D5DB":"#374151"),padding:"6px 14px",fontSize:13,opacity:planningWeekOffset>=2?0.5:1}}>
         Semaine suiv. ›
       </button>
     </div>
 
+    <div style={{display:"flex",gap:6,marginBottom:12}}>
+      {[["semaine","📅 Vue semaine"],["jour","🚚 Détail du jour"]].map(([k,l])=>(
+        <button key={k} onClick={()=>setPlanningView(k)}
+          style={{...S.btn(planningView===k?"#1D4ED8":"#F1F5F9",planningView===k?"#fff":"#374151"),padding:"6px 14px",fontSize:12}}>{l}</button>
+      ))}
+    </div>
+
+    {planningView==="semaine" ? weekView : (<>
     <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
       {days.map((day,i)=>{
         const dDate = getDayDate(i);
-        const cmdsDay = isPastWeek
-          ? commandes.filter(c=>c.statut==='Livré' && (c.date_livraison===dDate || (!c.date_livraison && c.jour_livraison===day)))
-          : commandes.filter(c=>{
-              if(c.statut==='Livré') return false;
-              const zones = DAILY_ZONES[i]||DAILY_ZONES[0];
-              return [...(zones.A||[]),...(zones.B||[])].includes(c.client_region)||!c.client_region;
-            });
+        const cmdsDay = cmdsForDayIdx(i);
         const isToday = i === todayDow && isCurrentWeek;
         const isSelected = i === selectedDay;
         return(
@@ -7050,7 +7202,7 @@ function BossokApp({ session, onLogout }) {
                 <div style={{fontSize:11,color:"#6B7280"}}>
                   {isPastWeek
                     ? `${schedule.schedule.length} livraison(s) effectuée(s)`
-                    : `Départ Aspelt 8h00 · ${schedule.schedule.length} arrêt(s) · ${schedule.retDist}km retour`}
+                    : `Départ Hesperange 8h00 · ${schedule.schedule.length} arrêt(s) · ${schedule.retDist}km retour`}
                 </div>
               </div>
               {!isPastWeek&&(
@@ -7102,7 +7254,7 @@ function BossokApp({ session, onLogout }) {
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,position:"relative"}}>
                     <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>🏠</div>
                     <div style={{flex:1,padding:"6px 10px",background:"#F8FAFC",borderRadius:6}}>
-                      <div style={{fontWeight:600,fontSize:11,color:col}}>🏠 Départ — Aspelt</div>
+                      <div style={{fontWeight:600,fontSize:11,color:col}}>🏠 Départ — Hesperange</div>
                     </div>
                   </div>
 
@@ -7144,7 +7296,7 @@ function BossokApp({ session, onLogout }) {
                   <div style={{display:"flex",alignItems:"center",gap:8,position:"relative"}}>
                     <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:"#059669",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9}}>🏠</div>
                     <div style={{flex:1,padding:"6px 10px",background:"#F0FDF4",borderRadius:6,border:"1px solid #86EFAC"}}>
-                      <div style={{fontWeight:600,fontSize:11,color:"#059669"}}>🏠 Retour Aspelt (~{schedule.retDist}km)</div>
+                      <div style={{fontWeight:600,fontSize:11,color:"#059669"}}>🏠 Retour Hesperange (~{schedule.retDist}km)</div>
                     </div>
                   </div>
                 </div>
@@ -7159,6 +7311,7 @@ function BossokApp({ session, onLogout }) {
         ))}
       </div>
     )}
+    </>)}
   </div>
   );
 })()}
