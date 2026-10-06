@@ -404,6 +404,89 @@ const distKm = (a, b) => {
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
 };
 
+// ── Optimisation de tournée (distances routières exactes quand la matrice est calculée) ──
+const TRUCK_CAPACITY = 200; // colis par camionnette (2 palettes)
+// Held-Karp : ordre optimal exact pour ≤ 11 arrêts. D[i][j], nœud 0 = dépôt. Retourne la permutation de 1..n.
+const heldKarp = (n, D) => {
+  const N = 1<<n, INF = 1e15;
+  const dp = Array.from({length:N}, ()=>new Float64Array(n).fill(INF));
+  const par = Array.from({length:N}, ()=>new Int8Array(n).fill(-1));
+  for (let i=0;i<n;i++) dp[1<<i][i] = D[0][i+1];
+  for (let m=1;m<N;m++) for (let last=0;last<n;last++) {
+    if (!(m&(1<<last)) || dp[m][last]>=INF) continue;
+    for (let nx=0;nx<n;nx++) {
+      if (m&(1<<nx)) continue;
+      const nm = m|(1<<nx), v = dp[m][last]+D[last+1][nx+1];
+      if (v<dp[nm][nx]) { dp[nm][nx]=v; par[nm][nx]=last; }
+    }
+  }
+  let best=INF, bl=0; const full=N-1;
+  for (let l=0;l<n;l++){ const v=dp[full][l]+D[l+1][0]; if(v<best){best=v;bl=l;} }
+  const tour=[]; let m=full, l=bl;
+  while (l!==-1) { tour.push(l+1); const pl=par[m][l]; m&=~(1<<l); l=pl; }
+  return tour.reverse();
+};
+// Heuristique (plus proche voisin + 2-opt + or-opt) pour > 11 arrêts
+const tourHeuristique = (n, D) => {
+  const rest = new Set(Array.from({length:n},(_,i)=>i+1)); let cur=0; const tour=[];
+  while (rest.size) { let b=-1,bd=Infinity; rest.forEach(k=>{ if(D[cur][k]<bd){bd=D[cur][k];b=k;} }); tour.push(b); rest.delete(b); cur=b; }
+  const len = (t)=>{ let L=D[0][t[0]]; for(let i=1;i<t.length;i++) L+=D[t[i-1]][t[i]]; return L+D[t[t.length-1]][0]; };
+  let improved=true, guard=0;
+  while (improved && guard++<200) {
+    improved=false;
+    for (let i=0;i<n-1;i++) for (let j=i+1;j<n;j++) { // 2-opt
+      const a=i===0?0:tour[i-1], b=tour[i], c=tour[j], d=j===n-1?0:tour[j+1];
+      if (D[a][c]+D[b][d] < D[a][b]+D[c][d]-1e-9) { tour.splice(i,j-i+1,...tour.slice(i,j+1).reverse()); improved=true; }
+    }
+    for (let i=0;i<n;i++) { // or-opt (déplacer 1 arrêt)
+      const base=len(tour), x=tour[i]; const t2=tour.filter((_,k)=>k!==i);
+      let bestPos=-1, bestL=base-1e-9;
+      for (let p=0;p<=t2.length;p++) { if(p===i) continue; const t3=[...t2.slice(0,p),x,...t2.slice(p)]; const L=len(t3); if(L<bestL){bestL=L;bestPos=p;} }
+      if (bestPos>=0) { tour.splice(0,tour.length,...t2.slice(0,bestPos),x,...t2.slice(bestPos)); improved=true; }
+    }
+  }
+  return tour;
+};
+// items:[{key,charge}] ; distFn(keyA,keyB) → km ('depot' = dépôt). Retourne les rotations (listes d'index d'items).
+const optimiserTournee = (items, distFn, cap=TRUCK_CAPACITY) => {
+  const n = items.length; if (!n) return [];
+  const nodes = ['depot', ...items.map(i=>i.key)];
+  const D = Array.from({length:n+1}, (_,i)=>Array.from({length:n+1}, (_,j)=> i===j?0:distFn(nodes[i],nodes[j])));
+  const tour = n<=11 ? heldKarp(n,D) : tourHeuristique(n,D); // indices 1..n
+  // découpe en rotations (capacité) : programmation dynamique sur la tournée géante
+  const best = new Array(n+1).fill(Infinity), from = new Array(n+1).fill(0); best[0]=0;
+  for (let j=1;j<=n;j++) {
+    let load=0, inner=0;
+    for (let i=j-1;i>=0;i--) {
+      load += items[tour[i]-1].charge||0;
+      if (i<j-1) inner += D[tour[i]][tour[i+1]];
+      if (load>cap && i<j-1) break;
+      const cost = best[i] + D[0][tour[i]] + inner + D[tour[j-1]][0];
+      if (cost<best[j]) { best[j]=cost; from[j]=i; }
+    }
+  }
+  const rots=[]; let j=n; while (j>0) { const i=from[j]; rots.unshift(tour.slice(i,j).map(k=>k-1)); j=i; }
+  return rots;
+};
+// Appel unique à l'API publique OSRM "table" (distances routières en bloc). Retourne {km[][], min[][]}.
+const osrmTable = async (coords, sources, destinations) => {
+  const c = coords.map(p=>`${p.lng},${p.lat}`).join(";");
+  const url = `https://router.project-osrm.org/table/v1/driving/${c}?sources=${sources.join(";")}&destinations=${destinations.join(";")}&annotations=duration,distance`;
+  const res = await fetch(url); const data = await res.json();
+  if (!data || data.code!=="Ok") throw new Error("OSRM "+(data?.code||res.status));
+  return { km: data.distances, min: data.durations };
+};
+// Upsert d'une ou plusieurs lignes (clé primaire = conflict)
+const sbUpsert = async (table, rows, conflict) => {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflict}`, {
+    method:"POST",
+    headers:{ "apikey":SUPABASE_KEY, "Authorization":`Bearer ${getSession()?.access_token || SUPABASE_KEY}`,
+      "Content-Type":"application/json", "Prefer":"resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) throw new Error(await res.text());
+};
+
 // Smart dispatch: balance caisses (max 10% diff) + minimize distance
 const smartDispatch = (commandes) => {
   if (commandes.length === 0) return {A:[], B:[]};
@@ -2104,6 +2187,9 @@ function BossokApp({ session, onLogout }) {
   const [caHistoriquePreApp, setCaHistoriquePreApp] = useState([]);
   const [calcDistancesLoading, setCalcDistancesLoading] = useState(false);
   const [calcDistancesMsg, setCalcDistancesMsg] = useState("");
+  const [matriceDist, setMatriceDist] = useState({}); // {origine:{dest:[km,min]}} distances routières exactes
+  const [matriceMsg, setMatriceMsg] = useState("");
+  const [matriceLoading, setMatriceLoading] = useState(false);
   const [editEvent, setEditEvent] = useState(null);
   const [eventForm, setEventForm] = useState({});
   const [calMonth, setCalMonth] = useState(()=>{const d=new Date();return {year:d.getFullYear(),month:d.getMonth()};});
@@ -3131,6 +3217,58 @@ function BossokApp({ session, onLogout }) {
     setCalcDistancesMsg(ok+" distance(s) calculée(s)"+(fail>0?", "+fail+" échec(s) (gardent l'estimation à vol d'oiseau)":""));
     setCalcDistancesLoading(false);
   };
+
+  // Matrice des distances routières (km + minutes) dépôt ↔ clients géolocalisés du Luxembourg.
+  const MATRICE_LS = "bossok_matrice_routes_v1";
+  const chargerMatrice = async () => {
+    try {
+      const rows = await sb("distances_routieres?select=origine,destinations");
+      const m = {}; rows.forEach(r=>{ m[r.origine]=r.destinations||{}; });
+      if (Object.keys(m).length) { setMatriceDist(m); return; }
+    } catch(e) { /* table absente ou non accessible : repli navigateur */ }
+    try { const ls = JSON.parse(localStorage.getItem(MATRICE_LS)||"null"); if (ls) setMatriceDist(ls); } catch(e) {}
+  };
+  const calculerMatriceRoutes = async () => {
+    setMatriceLoading(true);
+    try {
+      setMatriceMsg("Localisation du dépôt (Hesperange)...");
+      let pos = await geocodeAddress(DEPOT_ADRESSE);
+      if (!pos) pos = await geocodeAddress("Route de Thionville, Hesperange, Luxembourg");
+      if (!pos) { setMatriceMsg("Adresse du dépôt introuvable. Réessayez dans un moment."); setMatriceLoading(false); return; }
+      DEPOT.lat = pos.lat; DEPOT.lng = pos.lng;
+      const etrangers = ["Belgique","France","Hollande","Allemagne"];
+      const noeuds = [{key:"depot", lat:DEPOT.lat, lng:DEPOT.lng},
+        ...clients.filter(c=>c.lat!=null && c.lng!=null && c.statut==="Actif" && (!c.pays||c.pays==="Luxembourg") && !etrangers.includes(c.region))
+                  .map(c=>({key:String(c.id), lat:Number(c.lat), lng:Number(c.lng)}))];
+      const TAILLE = 45, blocs = [];
+      for (let i=0;i<noeuds.length;i+=TAILLE) blocs.push(noeuds.slice(i,i+TAILLE));
+      const res = {}; noeuds.forEach(n=>{ res[n.key]={}; });
+      let fait = 0; const total = blocs.length*blocs.length;
+      for (let bi=0;bi<blocs.length;bi++) for (let bj=0;bj<blocs.length;bj++) {
+        setMatriceMsg(`Calcul des trajets routiers : ${fait}/${total} (${noeuds.length-1} clients)`);
+        const A = blocs[bi], B = blocs[bj];
+        const coords = bi===bj ? A : [...A, ...B];
+        const src = A.map((_,k)=>k), dst = bi===bj ? A.map((_,k)=>k) : B.map((_,k)=>A.length+k);
+        const t = await osrmTable(coords, src, dst);
+        A.forEach((a,ia)=>B.forEach((b,ib)=>{
+          const km = t.km?.[ia]?.[ib], mn = t.min?.[ia]?.[ib];
+          if (km!=null && a.key!==b.key) res[a.key][b.key] = [Math.round(km/100)/10, Math.round(mn/60*10)/10];
+        }));
+        fait++; await new Promise(r=>setTimeout(r,1100)); // ménage l'API publique gratuite
+      }
+      setMatriceDist(res);
+      try { localStorage.setItem(MATRICE_LS, JSON.stringify(res)); } catch(e) {}
+      let enBase = true;
+      try {
+        await sbUpsert("distances_routieres", Object.entries(res).map(([origine,destinations])=>({origine, destinations, updated_at:new Date().toISOString()})), "origine");
+      } catch(e) { enBase = false; }
+      setMatriceMsg(`✓ ${noeuds.length-1} clients — distances routières exactes calculées`+(enBase?"":" (enregistrées sur cet appareil seulement : table partagée non disponible)"));
+    } catch(e) {
+      setMatriceMsg("Échec du calcul : "+(e?.message||e)+". Réessayez.");
+    }
+    setMatriceLoading(false);
+  };
+  useEffect(()=>{ if (page==="planning") chargerMatrice(); }, [page]);
 
   const marquerDiverseImpayee = async (id) => {
     setSaving(true);
@@ -7001,35 +7139,43 @@ function BossokApp({ session, onLogout }) {
     const driverZones = zones[driver] || [];
     const driverCmds = dayCommandes.filter(c => driverOfCmd(c,selectedDay) === driver);
 
-    const cvCmds = driverCmds.filter(c => c.client_region === 'Centre-ville');
-    const otherCmds = driverCmds.filter(c => c.client_region !== 'Centre-ville');
-    const zoneOrder = driverZones.filter(z => z !== 'Centre-ville');
-
-    const sortedOthers = [...otherCmds].sort((a,b) => {
-      const ai = zoneOrder.indexOf(a.client_region);
-      const bi = zoneOrder.indexOf(b.client_region);
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    // Tournée optimisée : ordre des arrêts qui minimise les km (Held-Karp exact ≤11 arrêts,
+    // sinon heuristique 2-opt), distances routières exactes si la matrice est calculée,
+    // découpe en rotations si la charge dépasse la capacité du camion.
+    const clientById = {}; clients.forEach(c=>{ clientById[c.id]=c; });
+    const keyOfCmd = (cmd) => { const cl = clientById[cmd.client_id]; return (cl && cl.lat!=null && cl.lng!=null) ? String(cl.id) : "z:"+(cmd.client_region||"?"); };
+    const coordsOfKey = (key, cmd) => {
+      if (key==="depot") return DEPOT;
+      if (key.startsWith("z:")) return REGION_COORDS[key.slice(2)] || DEPOT;
+      const cl = clientById[key]; return cl ? {lat:Number(cl.lat), lng:Number(cl.lng)} : DEPOT;
+    };
+    const legInfo = (ka, kb) => {
+      if (ka===kb) return {km:0, min:0, exact:true};
+      const m = matriceDist?.[ka]?.[kb];
+      if (m) return {km:m[0], min:m[1], exact:true};
+      const km = distKm(coordsOfKey(ka), coordsOfKey(kb)) * 1.3;
+      return {km, min:km/45*60, exact:false};
+    };
+    const items = driverCmds.map(c=>({cmd:c, key:keyOfCmd(c), charge:(c.produits||[]).reduce((t,p)=>t+(p.qte||0),0)}));
+    const rots = optimiserTournee(items, (a,b)=>legInfo(a,b).km);
+    let schedule = [], totalKm = 0, totalMin = 0, retDist = 0, exactAll = true; const rotInfo = [];
+    rots.forEach((idxs,ri)=>{
+      let prev = "depot", rKm = 0, rCharge = 0;
+      idxs.forEach(k=>{
+        const it = items[k], leg = legInfo(prev, it.key);
+        rKm += leg.km; totalMin += leg.min; if (!leg.exact) exactAll = false; rCharge += it.charge;
+        schedule.push({...it.cmd, dist:Math.round(leg.km*10)/10, isCv: it.cmd.client_region==='Centre-ville', rot:ri, exact:leg.exact});
+        prev = it.key;
+      });
+      const back = legInfo(prev, "depot"); rKm += back.km; totalMin += back.min; if (!back.exact) exactAll = false;
+      retDist = Math.round(back.km*10)/10; totalKm += rKm;
+      rotInfo.push({n:idxs.length, km:Math.round(rKm*10)/10, charge:rCharge});
     });
+    totalKm = Math.round(totalKm*10)/10;
+    totalMin += schedule.length*STOP_TIME;
+    const dureeTxt = schedule.length ? `${Math.floor(totalMin/60)}h${String(Math.round(totalMin%60)).padStart(2,"0")}` : "";
 
-    const ordered = [...cvCmds, ...sortedOthers];
-    let schedule = [], prevRegion = null, totalKm = 0;
-
-    for (const cmd of ordered) {
-      const region = cmd.client_region;
-      const coords = REGION_COORDS[region] || DEPOT;
-      const prevCoords = prevRegion ? (REGION_COORDS[prevRegion] || DEPOT) : DEPOT;
-      const dist = Math.round(distKm(prevCoords, coords));
-      totalKm += dist;
-      schedule.push({...cmd, dist, isCv: region === 'Centre-ville'});
-      prevRegion = region;
-    }
-
-    const lastRegion = ordered.length > 0 ? ordered[ordered.length-1].client_region : null;
-    const lastCoords = lastRegion ? (REGION_COORDS[lastRegion] || DEPOT) : DEPOT;
-    const retDist = Math.round(distKm(lastCoords, DEPOT));
-    totalKm += retDist;
-
-    return { schedule, retDist, totalKm };
+    return { schedule, retDist, totalKm, rotInfo, exactAll, dureeTxt };
   };
 
   const scheduleA = buildSchedule('A');
@@ -7140,6 +7286,16 @@ function BossokApp({ session, onLogout }) {
       ))}
     </div>
 
+    <div style={{...S.card,padding:"8px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <button onClick={calculerMatriceRoutes} disabled={matriceLoading}
+        style={{...S.btn("#0F766E"),padding:"6px 12px",fontSize:12,opacity:matriceLoading?0.6:1}}>
+        {matriceLoading?"📐 Calcul en cours...":"📐 Calculer les distances routières exactes"}
+      </button>
+      <div style={{fontSize:11,color:"#6B7280",flex:1,minWidth:180}}>
+        {matriceMsg || (Object.keys(matriceDist).length>0 ? `Distances routières disponibles pour ${Object.keys(matriceDist).length-1} clients.` : "Les tournées sont optimisées (ordre des arrêts + camion plein). Calcule les distances routières pour des km exacts.")}
+      </div>
+    </div>
+
     {planningView==="semaine" ? weekView : (<>
     <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
       {days.map((day,i)=>{
@@ -7210,7 +7366,8 @@ function BossokApp({ session, onLogout }) {
               {!isPastWeek&&(
                 <div style={{textAlign:"right"}}>
                   <div style={{fontSize:11,color:"#6B7280"}}>Distance totale</div>
-                  <div style={{fontWeight:700,color:col,fontSize:14}}>~{schedule.totalKm} km</div>
+                  <div style={{fontWeight:700,color:col,fontSize:14}}>{schedule.exactAll?"":"~"}{schedule.totalKm} km{schedule.dureeTxt?` · ${schedule.dureeTxt}`:""}</div>
+                  <div style={{fontSize:9,color:schedule.exactAll?"#059669":"#D97706"}}>{schedule.exactAll?"distances routières exactes":"estimé — calculer les distances routières"}</div>
                 </div>
               )}
             </div>
@@ -7262,6 +7419,11 @@ function BossokApp({ session, onLogout }) {
 
                   {schedule.schedule.map((stop,idx)=>(
                     <div key={stop.id} style={{marginBottom:10,position:"relative"}}>
+                      {stop.rot>0 && schedule.schedule[idx-1]?.rot!==stop.rot && (
+                        <div style={{margin:"0 0 8px",padding:"5px 8px",background:"#FEF3C7",border:"1px solid #FCD34D",borderRadius:6,fontSize:10,fontWeight:600,color:"#92400E"}}>
+                          🔁 Camion plein (200 colis) — retour au dépôt, puis rotation {stop.rot+1}
+                        </div>
+                      )}
                       <div style={{position:"absolute",left:-22,top:0,bottom:-10,width:2,background:"#E5E7EB"}}/>
                       <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>{idx+1}</div>
                       <div style={{padding:"8px 10px",background:stop.isCv?"#FFF7ED":"#F8FAFC",borderRadius:8,border:(stop.isCv?"1px solid #FED7AA":"1px solid #E5E7EB")}}>
@@ -7270,7 +7432,7 @@ function BossokApp({ session, onLogout }) {
                             <span style={{fontWeight:700,color:col,fontSize:11}}>Arrêt #{idx+1}</span>
                             {stop.isCv&&<span style={{fontSize:9,background:"#FED7AA",color:"#92400E",padding:"1px 4px",borderRadius:3}}>⏰ Centre-ville en 1er</span>}
                           </div>
-                          <span style={{fontSize:9,color:"#9CA3AF"}}>~{stop.dist}km depuis étape précédente</span>
+                          <span style={{fontSize:9,color:"#9CA3AF"}}>{stop.dist} km depuis {idx===0||schedule.schedule[idx-1]?.rot!==stop.rot?"le dépôt":"l'arrêt précédent"} {stop.exact?"(route)":"(estimé)"}</span>
                         </div>
                         <div style={{fontWeight:600,fontSize:12,marginBottom:2}}>{stop.client_nom}</div>
                         <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>📍 {stop.client_adresse}</div>
@@ -7305,7 +7467,7 @@ function BossokApp({ session, onLogout }) {
 
                 <div style={{borderTop:"1px solid #E5E7EB",marginTop:12,paddingTop:8,display:"flex",justifyContent:"space-between",fontSize:11,color:"#6B7280"}}>
                   <span>📦 {schedule.schedule.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0)} caisses</span>
-                  <span>🗺️ Total : ~{schedule.totalKm} km</span>
+                  <span>🗺️ Total : {schedule.exactAll?"":"~"}{schedule.totalKm} km{schedule.rotInfo.length>1?` · ${schedule.rotInfo.length} rotations`:""}</span>
                 </div>
               </div>
             )}
