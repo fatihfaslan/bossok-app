@@ -7034,6 +7034,8 @@ function BossokApp({ session, onLogout }) {
 
   const scheduleA = buildSchedule('A');
   const scheduleB = buildSchedule('B');
+  const totalCaisses = dayCommandes.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0);
+  const totalCA = isPastWeek ? dayCommandes.reduce((s,c)=>s+(getCmdMontant(c)||0),0) : 0;
 
   // ── Vue semaine : noms des clients par jour et par chauffeur ──
   const weekTotalCmds = days.reduce((t,_,i)=>t+cmdsForDayIdx(i).length,0);
