@@ -377,21 +377,50 @@ const DEPOT = {lat:49.5728, lng:6.1522};
 
 // Géocodage d'adresse via Nominatim (OpenStreetMap) — gratuit, sans clé API.
 // Respecte la limite d'usage de Nominatim (max ~1 requête/seconde côté appelant).
-const geocodeAddress = async (address) => {
-  if (!address || !address.trim()) return null;
+const geocodeOnce = async (q, lu) => {
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`,
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1${lu ? "&countrycodes=lu" : ""}&q=${encodeURIComponent(q)}`,
       { headers: { "Accept-Language": "fr" } }
     );
     const data = await res.json();
-    if (data && data[0]) {
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    }
-    return null;
-  } catch (e) {
-    return null;
+    if (data && data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch (e) {}
+  return null;
+};
+const geocodeAddress = async (address) => {
+  if (!address || !address.trim()) return null;
+  const raw = address.replace(/\s+/g, " ").trim();
+  // Adresse déjà hors Luxembourg ? on ne force pas le pays.
+  const horsLu = /belgi|franc|german|allemag|deutsch|nederland|hollan|pays-bas/i.test(raw);
+  // Normalisation : "L- 4210", "L-4210", "L 4210" -> "4210" ; abréviations courantes
+  let s = raw
+    .replace(/\bL\s*-\s*(\d{4})\b/gi, "$1")
+    .replace(/\bL\s+(\d{4})\b/gi, "$1")
+    .replace(/\bBV\b\.?/gi, "Boulevard")
+    .replace(/\bAv\b\.?/gi, "Avenue")
+    .replace(/\bRte\b\.?/gi, "Route")
+    .replace(/\bMaison\s+/gi, "")
+    .replace(/,?\s*(luxembourg|lux|lu)\s*$/i, "")
+    .trim();
+  const m = s.match(/\b(\d{4})\b\s*([^\d,]*)$/);
+  const cp = m ? m[1] : "";
+  const ville = m ? m[2].trim() : "";
+  const rue = m ? s.slice(0, m.index).replace(/[,\s]+$/, "") : s;
+  const pays = horsLu ? "" : ", Luxembourg";
+  const essais = [];
+  essais.push(s + pays);
+  if (rue && ville) essais.push(`${rue}, ${ville}${pays}`);
+  if (rue && cp) essais.push(`${rue}, ${cp}${pays}`);
+  if (ville) essais.push(`${cp} ${ville}${pays}`.trim());
+  const vus = new Set();
+  for (const q of essais) {
+    if (vus.has(q)) continue; vus.add(q);
+    const r = await geocodeOnce(q, !horsLu);
+    if (r) return r;
+    await new Promise(r2 => setTimeout(r2, 1100)); // limite Nominatim entre essais
   }
+  return null;
 };
 
 const distKm = (a, b) => {
