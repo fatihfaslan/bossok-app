@@ -3486,7 +3486,8 @@ function BossokApp({ session, onLogout }) {
           client_adresse: client?.adresse||"", client_region: client?.region||"",
           client_tel: client?.telephone||"",
           produits: cmdProduits, notes: cmdNotes, transport: transportMontant||null,
-          chauffeur: getChauffeur(client?.region||""),
+          // Commande déjà livrée : on garde le chauffeur qui a réellement livré.
+          chauffeur: editingCmd.statut==="Livré" ? (editingCmd.chauffeur||getChauffeur(client?.region||"")) : getChauffeur(client?.region||""),
         });
 
         // Répercuter les nouvelles lignes sur la facture déjà créée pour cette commande
@@ -6979,7 +6980,7 @@ function BossokApp({ session, onLogout }) {
           isMobile={isMobile}
           rows={cmdList}
           pageSize={50}
-          onRowClick={c=>c.statut!=="Livré" ? openEditCmd(c) : null}
+          onRowClick={c=>openEditCmd(c)}
           emptyIcon="📋"
           emptyMessage="Aucune commande"
           initialSort={{key:"date",dir:"desc"}}
@@ -7027,10 +7028,8 @@ function BossokApp({ session, onLogout }) {
                         className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer facture</button>
                       <button onClick={()=>{setOpenCmdMenu(null);imprimerBonLivraison(c);}}
                         className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#7C3AED"}}>📦 Bon de livraison</button>
-                      {c.statut!=="Livré"&&(
-                        <button onClick={()=>{setOpenCmdMenu(null);openEditCmd(c);}}
-                          className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
-                      )}
+                      <button onClick={()=>{setOpenCmdMenu(null);openEditCmd(c);}}
+                        className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
                       <button onClick={()=>{setOpenCmdMenu(null);dupliquerCommande(c);}}
                         className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
                       {c.statut!=="Livré"&&(
