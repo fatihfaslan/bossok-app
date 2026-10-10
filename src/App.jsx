@@ -72,7 +72,11 @@ const Icon = ({name, size=15, style}) => (
 // columns: [{ key, label, align, sortable, sortValue(row), render(row),
 //             mobilePrimary, mobileShow, wrap }]
 // ═══════════════════════════════════════════════════════════════════
-function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", emptyMessage="Aucune donnée", initialSort, pageSize, footer }) {
+function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", emptyMessage="Aucune donnée", initialSort, pageSize, footer, selectedIds, onToggleRow, onToggleAll }) {
+  const selectable = !!(selectedIds && onToggleRow);
+  const isSel = (row) => selectable && selectedIds.includes(row.id);
+  const allSelected = selectable && rows.length > 0 && rows.every(r => selectedIds.includes(r.id));
+  const someSelected = selectable && !allSelected && rows.some(r => selectedIds.includes(r.id));
   const [sortKey, setSortKey] = useState(initialSort?.key || null);
   const [sortDir, setSortDir] = useState(initialSort?.dir || "asc");
   const [page, setPage] = useState(1);
@@ -136,15 +140,26 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
           <span style={{marginLeft:"auto"}}>{rows.length}</span>
         </div>
         <div style={{background:"#fff",borderRadius:10,border:"1px solid #E3E7ED",overflow:"hidden"}}>
+          {selectable && onToggleAll && (
+            <label style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:"1px solid #F1F5F9",background:"#F8FAFC",fontSize:12,fontWeight:600,color:"#374151",cursor:"pointer"}}>
+              <input type="checkbox" checked={allSelected} ref={el=>{ if(el) el.indeterminate = someSelected; }} onChange={()=>onToggleAll(rows)} style={{width:18,height:18}}/>
+              Tout sélectionner ({rows.length})
+            </label>
+          )}
           {visible.map((row,i)=>(
             <div key={row.id??i} onClick={()=>onRowClick&&onRowClick(row)}
-              style={{padding:"10px 12px",borderBottom:i<visible.length-1?"1px solid #F1F5F9":"none",cursor:onRowClick?"pointer":"default"}}>
+              style={{padding:"10px 12px",borderBottom:i<visible.length-1?"1px solid #F1F5F9":"none",cursor:onRowClick?"pointer":"default",background:isSel(row)?"#EFF6FF":"transparent",display:"flex",gap:10,alignItems:"flex-start"}}>
+              {selectable && (
+                <input type="checkbox" checked={isSel(row)} onClick={e=>e.stopPropagation()} onChange={()=>onToggleRow(row)} style={{width:18,height:18,marginTop:2,flexShrink:0}}/>
+              )}
+              <div style={{flex:1,minWidth:0}}>
               <div>{primaryCol.render ? primaryCol.render(row) : row[primaryCol.key]}</div>
               {secondaryCols.length>0&&(
                 <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",marginTop:4}}>
                   {secondaryCols.map(c=>(<span key={c.key}>{c.render ? c.render(row) : row[c.key]}</span>))}
                 </div>
               )}
+              </div>
             </div>
           ))}
           {footer && <div style={{padding:"9px 12px",borderTop:"1px solid #E3E7ED",background:"#F8FAFC",fontSize:12,fontWeight:700}}>{footer}</div>}
@@ -159,6 +174,11 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
         <thead>
           <tr style={{background:"#F8FAFC",borderBottom:"1px solid #E3E7ED"}}>
+            {selectable && (
+              <th style={{padding:"9px 12px",width:36}}>
+                {onToggleAll && <input type="checkbox" checked={allSelected} ref={el=>{ if(el) el.indeterminate = someSelected; }} onChange={()=>onToggleAll(rows)} title={"Tout sélectionner ("+rows.length+")"} style={{width:16,height:16,cursor:"pointer"}}/>}
+              </th>
+            )}
             {columns.map(c=>(
               <th key={c.key} onClick={()=>c.sortable!==false && toggleSort(c.key)}
                 style={{padding:"9px 12px",textAlign:c.align||"left",fontWeight:700,color:"#5D6B82",fontSize:10.5,textTransform:"uppercase",letterSpacing:"0.04em",cursor:c.sortable!==false?"pointer":"default",whiteSpace:"nowrap",userSelect:"none"}}>
@@ -170,7 +190,12 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
         <tbody>
           {visible.map((row,i)=>(
             <tr key={row.id??i} onClick={()=>onRowClick&&onRowClick(row)}
-              style={{borderBottom:"1px solid #F1F5F9",cursor:onRowClick?"pointer":"default"}}>
+              style={{borderBottom:"1px solid #F1F5F9",cursor:onRowClick?"pointer":"default",background:isSel(row)?"#EFF6FF":"transparent"}}>
+              {selectable && (
+                <td style={{padding:"8px 12px",width:36}} onClick={e=>e.stopPropagation()}>
+                  <input type="checkbox" checked={isSel(row)} onChange={()=>onToggleRow(row)} style={{width:16,height:16,cursor:"pointer"}}/>
+                </td>
+              )}
               {columns.map(c=>(
                 <td key={c.key} style={{padding:"8px 12px",textAlign:c.align||"left",whiteSpace:c.wrap?"normal":"nowrap"}}>
                   {c.render ? c.render(row) : row[c.key]}
@@ -2198,6 +2223,8 @@ function BossokApp({ session, onLogout }) {
   const [showEventForm, setShowEventForm] = useState(false);
   const [showPaiementForm, setShowPaiementForm] = useState(false);
   const [openFactureMenu, setOpenFactureMenu] = useState(null);
+  const [factSelected, setFactSelected] = useState([]);   // ids des factures cochées (actions groupées)
+  const [paiementLot, setPaiementLot] = useState(null);   // ids à marquer payées en une fois (null = paiement unitaire)
   const [openCmdMenu, setOpenCmdMenu] = useState(null);
   const [paiementFacture, setPaiementFacture] = useState(null);
   const [paiementForm, setPaiementForm] = useState({});
@@ -2968,14 +2995,22 @@ function BossokApp({ session, onLogout }) {
     if (!paiementFacture || !paiementForm.mode) return;
     setSaving(true);
     try {
-      await db.update("factures", paiementFacture.id, {
+      const champs = {
         statut: "Payée",
         mode_paiement: paiementForm.mode,
         date_paiement: paiementForm.date || new Date().toISOString().split("T")[0],
-      });
+      };
+      if (paiementLot && paiementLot.length) {
+        // Action groupée : même mode et même date pour toutes les factures cochées
+        for (const id of paiementLot) await db.update("factures", id, champs);
+        setFactSelected([]);
+      } else {
+        await db.update("factures", paiementFacture.id, champs);
+      }
       await loadAll();
       setShowPaiementForm(false);
       setPaiementFacture(null);
+      setPaiementLot(null);
       setPaiementForm({});
     } catch(e) { logError(e); }
     finally { setSaving(false); }
@@ -6547,9 +6582,38 @@ function BossokApp({ session, onLogout }) {
   const totalImpaye = factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
   const totalFiltre = ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
 
+  // ── Sélection multiple (actions groupées) ──
+  const selFact = ff.filter(f=>factSelected.includes(f.id));
+  const selImpayees = selFact.filter(f=>f.statut==="Impayée");
+  const selPayees = selFact.filter(f=>f.statut==="Payée");
+  const toggleFactRow = (f) => setFactSelected(prev=>prev.includes(f.id)?prev.filter(x=>x!==f.id):[...prev,f.id]);
+  const toggleFactAll = (rows) => setFactSelected(prev=>{
+    const ids = rows.map(r=>r.id);
+    return ids.every(id=>prev.includes(id)) ? prev.filter(id=>!ids.includes(id)) : Array.from(new Set([...prev,...ids]));
+  });
+  const payerLot = () => {
+    if (!selImpayees.length) return;
+    setPaiementLot(selImpayees.map(f=>f.id));
+    setPaiementFacture({numero:"", client_nom:""});
+    setPaiementForm({mode:"", date:new Date().toISOString().split("T")[0]});
+    setShowPaiementForm(true);
+  };
+  const impayeeLot = () => {
+    if (!selPayees.length) return;
+    askConfirm(`Remettre ${selPayees.length} facture(s) en « Impayée » ?`, async () => {
+      setSaving(true);
+      try {
+        for (const f of selPayees) await db.update("factures", f.id, {statut:"Impayée"});
+        setFactSelected([]);
+        await loadAll();
+      } catch(e) { logError(e); }
+      finally { setSaving(false); }
+    }, {confirmLabel:"Remettre impayées"});
+  };
+
   const exportExcel = () => {
     const rows = [["N°","Date","Client","Montant HT","Consignes","Total TTC","Statut","Notes"]];
-    ff.forEach(f=>{
+    (selFact.length ? selFact : ff).forEach(f=>{
       const {prod,cons,total}=totalFact(f.lignes, f.tva_pct);
       rows.push([f.numero,f.date,f.client_nom,prod.toFixed(2),cons.toFixed(2),total.toFixed(2),f.statut,f.notes||""]);
     });
@@ -6631,18 +6695,34 @@ function BossokApp({ session, onLogout }) {
           <button onClick={()=>{setFactFilterStatut("Tous");setFactFilterSearch("");setFactFilterMois("Tous");setFactFilterClient("");setFactFilterDateFrom("");setFactFilterDateTo("");}}
             style={{...S.btn("#F3F4F6","#374151"),padding:"6px 12px",fontSize:12}}>✕ Réinitialiser</button>
         )}
-        <button onClick={exportExcel} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>📥 Export CSV</button>
+        <button onClick={exportExcel} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>📥 Export CSV{selFact.length>0?` (${selFact.length} sélection)`:""}</button>
         <span style={{fontSize:12,color:"#6B7280",marginLeft:"auto",fontWeight:600}}>
           {ff.length} résultat(s) · {fmtFull(totalFiltre)}
         </span>
       </div>
     </div>
 
+    {/* Barre d'actions groupées */}
+    {selFact.length>0&&(
+      <div style={{position:"sticky",top:0,zIndex:40,background:"#1E3A8A",color:"#fff",borderRadius:10,padding:"10px 12px",marginBottom:10,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",boxShadow:"0 4px 14px rgba(15,23,42,0.25)"}}>
+        <span style={{fontSize:13,fontWeight:700}}>{selFact.length} sélectionnée(s) · {fmtFull(selFact.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0))}</span>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
+          {selImpayees.length>0&&<button onClick={payerLot} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>✓ Marquer payées ({selImpayees.length})</button>}
+          {selPayees.length>0&&<button onClick={impayeeLot} style={{...S.btn("#D97706"),padding:"6px 12px",fontSize:12}}>↺ Remettre impayées ({selPayees.length})</button>}
+          <button onClick={exportExcel} style={{...S.btn("#0EA5E9"),padding:"6px 12px",fontSize:12}}>📥 Export CSV</button>
+          <button onClick={()=>setFactSelected([])} style={{...S.btn("#fff","#1E3A8A"),padding:"6px 12px",fontSize:12}}>✕ Désélectionner</button>
+        </div>
+      </div>
+    )}
+
     {/* Tableau */}
     <DataTable
       isMobile={isMobile}
       rows={ff}
       pageSize={FACT_PER_PAGE}
+      selectedIds={factSelected}
+      onToggleRow={toggleFactRow}
+      onToggleAll={toggleFactAll}
       onRowClick={f=>openEditFacture(f)}
       emptyIcon="🧾"
       emptyMessage="Aucune facture trouvée"
@@ -6654,7 +6734,7 @@ function BossokApp({ session, onLogout }) {
         </div>
       ) : (
         <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
-          <td colSpan={3} style={{padding:"8px 12px"}}>Total ({ff.length} factures)</td>
+          <td colSpan={4} style={{padding:"8px 12px"}}>Total ({ff.length} factures)</td>
           <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).prod,0))}</td>
           <td style={{padding:"8px 12px",textAlign:"right",color:"#7C3AED"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).cons,0))}</td>
           <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(totalFiltre)}</td>
@@ -9172,14 +9252,16 @@ function BossokApp({ session, onLogout }) {
 
   {/* ══ MODAL MODE DE PAIEMENT ══════════════════════════════════════ */}
   {showPaiementForm&&paiementFacture&&(
-  <div style={S.modal} onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}}>
+  <div style={S.modal} onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);setPaiementLot(null);}}>
     <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>💰 Moyen de paiement</h2>
-        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);setPaiementLot(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
       <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>
-        Facture {paiementFacture.numero} — {paiementFacture.client_nom}
+        {paiementLot && paiementLot.length
+          ? <>{paiementLot.length} facture(s) sélectionnée(s) — le même moyen et la même date seront appliqués à toutes</>
+          : <>Facture {paiementFacture.numero} — {paiementFacture.client_nom}</>}
       </div>
 
       <div style={{display:"grid",gap:10}}>
@@ -9205,7 +9287,7 @@ function BossokApp({ session, onLogout }) {
       </div>
 
       <div style={{display:"flex",gap:8,marginTop:18}}>
-        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);setPaiementLot(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveModePaiement} disabled={saving||!paiementForm.mode}
           style={{...S.btn(),flex:2,opacity:(saving||!paiementForm.mode)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Confirmer"}
