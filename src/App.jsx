@@ -2203,7 +2203,27 @@ function App({ session, onLogout }) {
 }
 
 function BossokApp({ session, onLogout }) {
-  const [page, setPage] = useState(()=>parseHash().page);
+  // Rôle de l'utilisateur connecté : "staff" (équipe, accès complet) ou "comptable"
+  // (lecture seule des factures uniquement). null = en cours de détermination.
+  const [role, setRole] = useState(null);
+  const lectureSeule = role === "comptable";
+  const [pageState, setPage] = useState(()=>parseHash().page);
+  const page = role === "comptable" ? "factures" : pageState;
+  useEffect(() => {
+    let annule = false;
+    (async () => {
+      try {
+        const [st, co] = await Promise.all([sb("rpc/is_staff", "POST", {}), sb("rpc/is_comptable", "POST", {})]);
+        if (annule) return;
+        setRole(st === true ? "staff" : co === true ? "comptable" : "staff");
+      } catch (e) {
+        if (annule) return;
+        setError("Impossible de vérifier vos droits d'accès. Rechargez la page.");
+        setLoading(false);
+      }
+    })();
+    return () => { annule = true; };
+  }, []);
   const [pendingClientId, setPendingClientId] = useState(()=>{
     const {page: p, id} = parseHash();
     return p==="clients" ? id : null;
@@ -2560,6 +2580,18 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
+      // Comptable : uniquement les factures + la vue limitée des clients (aucune autre table n'est lue)
+      if (role === "comptable") {
+        const [clsC, factsC] = await Promise.all([
+          sb("clients_compta?select=*&order=id.desc"),
+          fetchAllFactures(),
+        ]);
+        setClients(clsC);
+        setFactures(factsC);
+        setError(null);
+        return;
+      }
+
       const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv, frais, prixConc, caHistPre, relevesChf, creancesSnap] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
@@ -2610,9 +2642,9 @@ function BossokApp({ session, onLogout }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [role]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { if (role) loadAll(); }, [role, loadAll]);
 
   // ── DERIVED ────────────────────────────────────────────────────
   const clientsActifs = clients.filter(c=>c.statut==="Actif");
@@ -3989,7 +4021,7 @@ function BossokApp({ session, onLogout }) {
 
   const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",controle:"Contrôle de gestion",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",diverses:"Factures diverses",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
-  if (loading) return (
+  if ((loading || role===null) && !error) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8FAFC",fontFamily:"Inter,system-ui,sans-serif"}}>
       <div style={{textAlign:"center"}}>
         <div style={{fontSize:40,marginBottom:16}}>🍺</div>
@@ -4080,7 +4112,7 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
         <div style={{flex:1,padding:"12px 10px",overflowY:"auto"}}>
-          {NAV.map(n=>{
+          {(lectureSeule ? NAV.filter(n=>n.k==="factures") : NAV).map(n=>{
             const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=STOCK_BAS_SEUIL).length : 0;
             const demandesCompteCount = n.k==="clients" ? clients.filter(c=>c.statut_compte==="en_attente").length : 0;
             const commandesEnAttenteCount = n.k==="commandes" ? commandes.filter(c=>c.statut==="En attente").length : 0;
@@ -4099,7 +4131,8 @@ function BossokApp({ session, onLogout }) {
         </div>
         <div style={{padding:"14px 16px",borderTop:"1px solid #F1F5F9",fontSize:11,color:"#94A3B8"}}>
           {saving && <span style={{color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}><Icon name="refresh" size={11}/> Sauvegarde...</span>}
-          {!saving && <span>✅ {clientsActifs.length} clients actifs</span>}
+          {!saving && !lectureSeule && <span>✅ {clientsActifs.length} clients actifs</span>}
+          {!saving && lectureSeule && <span>🔒 Accès comptable — lecture seule</span>}
         </div>
         <div style={{padding:"10px 16px 16px",borderTop:"1px solid #F1F5F9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <span style={{fontSize:11,color:"#94A3B8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session?.user?.email}</span>
@@ -4118,7 +4151,7 @@ function BossokApp({ session, onLogout }) {
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
-            {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewFactureTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
+            {page==="factures" && !lectureSeule && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewFactureTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
             {page==="diverses" && !showDiverseForm && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewDiverseTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
             {page==="commandes" && (showCmdForm ? (
               <button style={{...S.btn("#fff","#1D4ED8"),opacity:saving?0.6:1}} onClick={saveCmd} disabled={saving}>{isMobile?"✅":"✅ Enregistrer"}</button>
@@ -6841,8 +6874,9 @@ function BossokApp({ session, onLogout }) {
     const triees = [...selFact].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")) || String(a.numero||"").localeCompare(String(b.numero||"")));
     const htmls = triees.map((f,k)=>{
       const c = clients.find(x=>x.id===f.client_id);
-      const imp = factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);
-      const detail = soldeConsignes(f.client_id);
+      // Comptable : copie "propre" de la facture, sans encadrés consignes/impayés (données non accessibles)
+      const imp = lectureSeule ? [] : factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);
+      const detail = lectureSeule ? [] : soldeConsignes(f.client_id);
       const solde = detail.reduce((s,r)=>s+r.solde*r.consigne,0);
       return generatePDF(f, c, imp, solde, detail, {retour:true, qrId:"qrcode"+k});
     });
@@ -6945,8 +6979,8 @@ function BossokApp({ session, onLogout }) {
       <div style={{position:"sticky",top:0,zIndex:40,background:"#1E3A8A",color:"#fff",borderRadius:10,padding:"10px 12px",marginBottom:10,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",boxShadow:"0 4px 14px rgba(15,23,42,0.25)"}}>
         <span style={{fontSize:13,fontWeight:700}}>{selFact.length} sélectionnée(s) · {fmtFull(selFact.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0))}</span>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
-          {selImpayees.length>0&&<button onClick={payerLot} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>✓ Marquer payées ({selImpayees.length})</button>}
-          {selPayees.length>0&&<button onClick={impayeeLot} style={{...S.btn("#D97706"),padding:"6px 12px",fontSize:12}}>↺ Remettre impayées ({selPayees.length})</button>}
+          {!lectureSeule&&selImpayees.length>0&&<button onClick={payerLot} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>✓ Marquer payées ({selImpayees.length})</button>}
+          {!lectureSeule&&selPayees.length>0&&<button onClick={impayeeLot} style={{...S.btn("#D97706"),padding:"6px 12px",fontSize:12}}>↺ Remettre impayées ({selPayees.length})</button>}
           <button onClick={imprimerLot} style={{...S.btn("#fff","#1E3A8A"),padding:"6px 12px",fontSize:12}}>🖨️ Imprimer PDF ({selFact.length})</button>
           <button onClick={exportExcel} style={{...S.btn("#0EA5E9"),padding:"6px 12px",fontSize:12}}>📥 Export CSV</button>
           <button onClick={()=>setFactSelected([])} style={{...S.btn("#fff","#1E3A8A"),padding:"6px 12px",fontSize:12}}>✕ Désélectionner</button>
@@ -6963,7 +6997,7 @@ function BossokApp({ session, onLogout }) {
       selectedIds={factSelected}
       onToggleRow={toggleFactRow}
       onToggleAll={toggleFactAll}
-      onRowClick={f=>openEditFacture(f)}
+      onRowClick={lectureSeule ? undefined : (f=>openEditFacture(f))}
       emptyIcon="🧾"
       emptyMessage="Aucune facture trouvée"
       initialSort={{key:"date",dir:"desc"}}
@@ -7011,7 +7045,12 @@ function BossokApp({ session, onLogout }) {
           const sl = f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":"⚠ Impayée";
           return <span style={S.badge(sc,st)}>{sl}</span>;
         }},
-        {key:"actions", label:"", sortable:false, render:f=>(
+        {key:"actions", label:"", sortable:false, render:f=> lectureSeule ? (
+          <div onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>{const c=clients.find(x=>x.id===f.client_id);generatePDF(f,c,[],0,[]);}}
+              style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:12,fontWeight:600}}>🖨️ PDF</button>
+          </div>
+        ) : (
           <div style={{position:"relative",display:"inline-block"}} onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setOpenFactureMenu(openFactureMenu===f.id?null:f.id)}
               style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:14,fontWeight:700}}>⋯</button>
