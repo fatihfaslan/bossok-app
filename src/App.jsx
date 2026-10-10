@@ -72,7 +72,7 @@ const Icon = ({name, size=15, style}) => (
 // columns: [{ key, label, align, sortable, sortValue(row), render(row),
 //             mobilePrimary, mobileShow, wrap }]
 // ═══════════════════════════════════════════════════════════════════
-function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", emptyMessage="Aucune donnée", initialSort, pageSize, footer, selectedIds, onToggleRow, onToggleAll }) {
+function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", emptyMessage="Aucune donnée", initialSort, pageSize, footer, selectedIds, onToggleRow, onToggleAll, exportName }) {
   const selectable = !!(selectedIds && onToggleRow);
   const isSel = (row) => selectable && selectedIds.includes(row.id);
   const allSelected = selectable && rows.length > 0 && rows.every(r => selectedIds.includes(r.id));
@@ -105,6 +105,39 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
     else { setSortKey(key); setSortDir("asc"); }
   };
 
+  // ── Export Excel du tableau (toutes les lignes filtrées/triées, pas seulement la page affichée) ──
+  const nodeText = (n) => (n == null || n === false || n === true) ? "" :
+    (typeof n === "string" || typeof n === "number") ? String(n) :
+    Array.isArray(n) ? n.map(nodeText).join("") :
+    n.props ? nodeText(n.props.children) : "";
+  const exporter = (brut) => {
+    const jour = localDateStr();
+    let data;
+    if (brut) {
+      data = sorted.map(r => ({ ...r }));
+    } else {
+      const cols = columns.filter(c => c.label && c.key !== "actions");
+      const noms = [];
+      cols.forEach(c => { let n = c.label, k = 2; while (noms.includes(n)) n = c.label + " " + k++; noms.push(n); });
+      data = sorted.map(r => {
+        const o = {};
+        cols.forEach((c, i) => {
+          let v = c.render ? nodeText(c.render(r)) : r[c.key];
+          if (v !== null && typeof v === "object") v = JSON.stringify(v);
+          o[noms[i]] = v;
+        });
+        return o;
+      });
+    }
+    telechargerBlob(buildXlsx([{ name: String(exportName).slice(0, 31), rows: data }]), `bossok_${exportName}${brut ? "_brut" : ""}_${jour}.xlsx`);
+  };
+  const exportBar = exportName && rows.length > 0 ? (
+    <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:6}}>
+      <button onClick={()=>exporter(false)} title="Les colonnes telles qu'affichées (toutes les lignes du filtre)" style={{background:"#fff",border:"1px solid #CBD5E1",borderRadius:7,padding:"4px 10px",fontSize:11,fontWeight:600,color:"#374151",cursor:"pointer"}}>📥 Excel</button>
+      <button onClick={()=>exporter(true)} title="Toutes les colonnes de la base de données" style={{background:"#fff",border:"1px solid #CBD5E1",borderRadius:7,padding:"4px 10px",fontSize:11,fontWeight:600,color:"#374151",cursor:"pointer"}}>🗂️ Excel complet</button>
+    </div>
+  ) : null;
+
   if (rows.length === 0) {
     return (
       <div style={{textAlign:"center",padding:"48px 20px",color:"#9CA3AF",background:"#fff",borderRadius:10,border:"1px solid #E3E7ED"}}>
@@ -130,6 +163,7 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
     const sortableCols = columns.filter(c => c.sortable !== false);
     return (
       <div>
+        {exportBar}
         <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,fontSize:11,color:"#6B7280"}}>
           <span>Trier :</span>
           <select value={sortKey||""} onChange={e=>toggleSort(e.target.value)} style={{padding:"5px 8px",border:"1px solid #E3E7ED",borderRadius:6,fontSize:11,flex:1}}>
@@ -170,6 +204,8 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
   }
 
   return (
+    <div>
+    {exportBar}
     <div style={{background:"#fff",borderRadius:10,border:"1px solid #E3E7ED",overflow:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
         <thead>
@@ -207,6 +243,7 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
         {footer && <tfoot>{footer}</tfoot>}
       </table>
       <Pagination/>
+    </div>
     </div>
   );
 }
@@ -335,6 +372,157 @@ const db = {
   update: (table, id, data) => sb(`${table}?id=eq.${id}`, "PATCH", data),
   delete: (table, id) => sb(`${table}?id=eq.${id}`, "DELETE"),
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// EXPORT COMPLET DE LA BASE (Excel .xlsx multi-onglets ou sauvegarde JSON)
+// Aucune dépendance : le .xlsx est assemblé à la main (zip non compressé).
+// Relit chaque table directement dans Supabase (pas l'état de l'écran), donc
+// l'export est toujours complet et à jour, même au-delà de 1000 lignes.
+// ═══════════════════════════════════════════════════════════════════
+const EXPORT_TABLES = [
+  ["clients","id"],["produits","id"],["stock","produit_id"],["commandes","id"],["factures","id"],
+  ["factures_diverses","id"],["receptions_stock","id"],["pertes_stock","id"],["consignes_manuelles","id"],
+  ["frais_generaux_mensuels","id"],["prix_concurrents","id"],["ca_historique_pre_app","id"],
+  ["creances_clients_snapshot","id"],["releves_chauffeurs_mensuels","id"],["evenements","id"],
+  ["note_partagee","id"],["notes_personnelles","id"],["distances_routieres","origine"],["staff_users","user_id"],
+];
+
+const fetchTableComplete = async (table, orderCol) => {
+  const PAGE = 1000;
+  const out = [];
+  for (let from = 0; ; from += PAGE) {
+    let batch;
+    try {
+      batch = await sb(`${table}?select=*&order=${orderCol}.asc`, "GET", null, from, from + PAGE - 1);
+    } catch {
+      batch = await sb(`${table}?select=*`, "GET", null, from, from + PAGE - 1); // table sans cette colonne : sans tri
+    }
+    out.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  return out;
+};
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+const crc32 = (u8) => { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+
+const zipStore = (files) => {
+  const enc = new TextEncoder();
+  const d = new Date();
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  const parts = []; const central = []; let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name); const data = enc.encode(f.content); const crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), name, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), name);
+    offset += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((s, p) => s + p.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+};
+
+const xmlEsc = (s) => String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const colLetter = (i) => { let s = ""; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+
+const sheetXml = (rows) => {
+  const cols = [];
+  rows.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
+  const idIdx = cols.indexOf("id"); if (idIdx > 0) { cols.splice(idIdx, 1); cols.unshift("id"); }
+  const cell = (ref, v, style) => {
+    const s = style ? ` s="${style}"` : "";
+    if (v === null || v === undefined || v === "") return "";
+    if (typeof v === "number" && isFinite(v)) return `<c r="${ref}"${s}><v>${v}</v></c>`;
+    if (typeof v === "boolean") return `<c r="${ref}"${s} t="b"><v>${v ? 1 : 0}</v></c>`;
+    const txt = (typeof v === "object" ? JSON.stringify(v) : String(v)).slice(0, 32000);
+    return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xmlEsc(txt)}</t></is></c>`;
+  };
+  let x = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>`;
+  x += `<row r="1">` + cols.map((c, i) => cell(colLetter(i) + "1", c, 1)).join("") + `</row>`;
+  rows.forEach((r, ri) => {
+    x += `<row r="${ri + 2}">` + cols.map((c, i) => cell(colLetter(i) + (ri + 2), r[c], 0)).join("") + `</row>`;
+  });
+  return x + `</sheetData></worksheet>`;
+};
+
+const buildXlsx = (tables /* [{name, rows}] */) => {
+  const files = [];
+  files.push({ name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${tables.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>` });
+  files.push({ name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` });
+  files.push({ name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${tables.map((t, i) => `<sheet name="${xmlEsc(t.name.slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>` });
+  files.push({ name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${tables.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${tables.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` });
+  files.push({ name: "xl/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>` });
+  tables.forEach((t, i) => files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, content: sheetXml(t.rows) }));
+  return zipStore(files);
+};
+
+const telechargerBlob = (blob, nom) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nom;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+};
+
+const exporterToutesLesDonnees = async (format, onProgress) => {
+  const tables = [];
+  for (let i = 0; i < EXPORT_TABLES.length; i++) {
+    const [name, orderCol] = EXPORT_TABLES[i];
+    onProgress && onProgress(`Lecture ${i + 1}/${EXPORT_TABLES.length} : ${name}…`);
+    try { tables.push({ name, rows: await fetchTableComplete(name, orderCol) }); }
+    catch (e) { tables.push({ name, rows: [{ erreur: String(e.message || e).slice(0, 300) }] }); }
+  }
+  const jour = localDateStr();
+  const marque = jour + " " + new Date().toTimeString().slice(0, 5);
+  if (format === "json") {
+    const obj = { exporte_le: marque, tables: Object.fromEntries(tables.map(t => [t.name, t.rows])) };
+    telechargerBlob(new Blob([JSON.stringify(obj, null, 1)], { type: "application/json" }), `bossok_sauvegarde_${jour}.json`);
+  } else {
+    const resume = { name: "_resume", rows: [{ export_le: marque }, ...tables.map(t => ({ table: t.name, nb_lignes: t.rows.length }))] };
+    telechargerBlob(buildXlsx([resume, ...tables]), `bossok_donnees_${jour}.xlsx`);
+  }
+  return tables;
+};
+
+function ExportDonneesBoutons({ isMobile }) {
+  const [etat, setEtat] = useState("");
+  const [enCours, setEnCours] = useState(false);
+  const lancer = async (format) => {
+    if (enCours) return;
+    setEnCours(true);
+    try {
+      const t = await exporterToutesLesDonnees(format, setEtat);
+      const total = t.reduce((s, x) => s + x.rows.length, 0);
+      const erreurs = t.filter(x => x.rows[0] && x.rows[0].erreur).map(x => x.name);
+      setEtat(`✓ Export terminé : ${t.length} tables, ${total} lignes${erreurs.length ? " — erreur sur : " + erreurs.join(", ") : ""}`);
+    } catch (e) { setEtat("✕ Échec de l'export : " + String(e.message || e).slice(0, 120)); }
+    finally { setEnCours(false); }
+  };
+  const btn = (bg, col) => ({ background: bg, color: col, border: "1px solid #CBD5E1", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: enCours ? "wait" : "pointer", opacity: enCours ? 0.6 : 1 });
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: isMobile ? "0 0 12px" : "0 0 14px" }}>
+      <button disabled={enCours} onClick={() => lancer("xlsx")} style={btn("#059669", "#fff")}>📦 Exporter toutes les données (Excel)</button>
+      <button disabled={enCours} onClick={() => lancer("json")} style={btn("#fff", "#374151")}>💾 Sauvegarde JSON</button>
+      {etat && <span style={{ fontSize: 12, color: etat.startsWith("✕") ? "#DC2626" : "#6B7280" }}>{etat}</span>}
+    </div>
+  );
+}
 
 const CONSIGNE_PRIX = {"20cl":5.00,"25cl":5.00,"50cl":7.95,"1L":4.20};
 
@@ -1031,7 +1219,10 @@ const ouvrirEtImprimer = (html, nomFichierSecours) => {
   fenetre.onload = () => { try { fenetre.print(); } catch(e) {} };
 };
 
-const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetail = []) => {
+// opts.retour : renvoie le HTML au lieu d'ouvrir la fenêtre (impression groupée)
+// opts.qrId   : identifiant unique du QR code (plusieurs factures dans une même page)
+const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetail = [], opts = {}) => {
+  const qrId = opts.qrId || "qrcode";
   const lignes = facture.lignes || [];
   // Les lignes de consigne manuelle (ajout/retour de vidange) sortent de l'assiette
   // TVA au même titre que les consignes normales — voir totalFact() plus haut.
@@ -1257,13 +1448,13 @@ ${noteClientHTML}
   <p class="bank">Conditions : 7 jours date de facture &nbsp;|&nbsp; BIC: BGLLLULL · LU14 0030 1895 5248 0000 &nbsp;|&nbsp; BIC: REVOLT21 · LT85 3250 0571 2868 0584</p>
   <p class="bank">Titulaire : BOSSOK DISTRIBUTION S.A.R.L</p>
   <div style="display:flex;justify-content:flex-end;margin-top:6px">
-    <div id="qrcode" style="display:inline-block"></div>
+    <div id="${qrId}" style="display:inline-block"></div>
   </div>
   <p style="margin-top:14px;padding-top:10px;border-top:1px solid #EAEAEA;font-size:6.5pt;color:#999;font-style:italic;text-align:justify;">La présente facture vaut contrat. Par sa signature, le client reconnaît la dette et accepte les présentes conditions ainsi que les General Terms &amp; Conditions de Bossok Distribution S.à r.l. Toute contestation doit être formulée par écrit dans un délai de 8 jours à compter de la date de la facture. Le droit luxembourgeois est applicable et les tribunaux de Luxembourg sont exclusivement compétents.</p>
 </div>
 
 <script>
-  window.onload = function() {
+  window.addEventListener("load", function() {
     // EPC QR Code for SEPA payment
     const epcData = [
       "BCD",           // Service Tag
@@ -1281,7 +1472,7 @@ ${noteClientHTML}
     ].join("\n");
 
     try {
-      new QRCode(document.getElementById("qrcode"), {
+      new QRCode(document.getElementById("${qrId}"), {
         text: epcData,
         width: 80,
         height: 80,
@@ -1290,14 +1481,38 @@ ${noteClientHTML}
         correctLevel: QRCode.CorrectLevel.M
       });
     } catch(e) {
-      document.getElementById("qrcode").innerHTML = "";
+      document.getElementById("${qrId}").innerHTML = "";
     }
-  };
+  });
 </script>
 </body>
 </html>`;
 
+  if (opts.retour) return html;
   ouvrirEtImprimer(html, "Facture_" + facture.numero + ".html");
+};
+
+// Assemble plusieurs factures (HTML complets issus de generatePDF avec opts.retour)
+// en un seul document : une facture par page, une seule fenêtre d'impression.
+const assemblerFacturesPDF = (htmls) => {
+  const style = (htmls[0].match(/<style>([\s\S]*?)<\/style>/) || [,""])[1];
+  const corps = htmls.map(h => {
+    let b = (h.match(/<body>([\s\S]*)<\/body>/) || [,""])[1];
+    b = b.replace(/<div class="no-print">[\s\S]*?<\/div>\s*/, "");
+    return `<section class="fpage">${b}</section>`;
+  }).join("\n");
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"/><title>Factures (${htmls.length})</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>${style}
+body { display:block; min-height:0; padding:0; }
+.fpage { display:flex; flex-direction:column; min-height:100vh; padding:12mm 14mm; page-break-after:always; break-after:page; }
+.fpage:last-child { page-break-after:auto; break-after:auto; }
+@media print { body { padding:0; } .fpage { padding:8mm 10mm; } }
+</style></head><body>
+<div class="no-print"><button onclick="window.print()">🖨️ Imprimer (${htmls.length} factures)</button></div>
+${corps}
+</body></html>`;
 };
 
 // Facture "diverse" : facture libre à un tiers non-client (ex : repreneur de
@@ -4613,6 +4828,7 @@ function BossokApp({ session, onLogout }) {
 
   return(
   <div>
+    <ExportDonneesBoutons isMobile={isMobile}/>
     {(()=>{
       const todayStr = localDateStr();
       const facturesEnRetard = factures.filter(f => f.statut==="Impayée" && f.echeance && f.echeance < todayStr);
@@ -4931,6 +5147,7 @@ function BossokApp({ session, onLogout }) {
       <DataTable
         isMobile={isMobile}
         rows={rentabiliteJours}
+        exportName="rentabilite_par_jour"
         pageSize={15}
         emptyIcon="€"
         emptyMessage="Aucune facture sur cette période"
@@ -5557,6 +5774,7 @@ function BossokApp({ session, onLogout }) {
 
   return (
   <div>
+    <ExportDonneesBoutons isMobile={isMobile}/>
     {/* ── Filtre période ── */}
     <div style={{...S.card,marginBottom:14,padding:"12px 16px"}}>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
@@ -5824,6 +6042,7 @@ function BossokApp({ session, onLogout }) {
       <DataTable
         isMobile={isMobile}
         rows={listeType}
+        exportName="marge_par_type_client"
         pageSize={15}
         emptyMessage="Aucune donnée sur cette période"
         initialSort={{key:"marge",dir:"desc"}}
@@ -5861,6 +6080,7 @@ function BossokApp({ session, onLogout }) {
       <DataTable
         isMobile={isMobile}
         rows={listeClientNette}
+        exportName="marge_par_client"
         pageSize={20}
         emptyMessage="Aucune donnée sur cette période"
         initialSort={{key:"marge",dir:"desc"}}
@@ -6266,6 +6486,7 @@ function BossokApp({ session, onLogout }) {
       <DataTable
         isMobile={isMobile}
         rows={margeParFacture}
+        exportName="marge_par_facture"
         pageSize={20}
         emptyMessage="Aucune facture sur cette période"
         initialSort={{key:"date",dir:"desc"}}
@@ -6287,6 +6508,7 @@ function BossokApp({ session, onLogout }) {
       <DataTable
         isMobile={isMobile}
         rows={listeProduit}
+        exportName="marge_par_produit"
         pageSize={20}
         emptyMessage="Aucune donnée sur cette période"
         initialSort={{key:"marge",dir:"desc"}}
@@ -6341,6 +6563,7 @@ function BossokApp({ session, onLogout }) {
       <DataTable
         isMobile={isMobile}
         rows={listeZoneNette}
+        exportName="marge_par_zone"
         pageSize={15}
         emptyMessage="Aucune donnée sur cette période"
         initialSort={{key:"marge",dir:"desc"}}
@@ -6519,6 +6742,7 @@ function BossokApp({ session, onLogout }) {
     <DataTable
       isMobile={isMobile}
       rows={filteredClients}
+      exportName="clients"
       onRowClick={c=>openClientTab(c,"info")}
       emptyIcon="👥"
       emptyMessage={clients.length===0?"Aucun client — clique sur '+ Nouveau client'":"Aucun résultat pour ces filtres"}
@@ -6609,6 +6833,20 @@ function BossokApp({ session, onLogout }) {
       } catch(e) { logError(e); }
       finally { setSaving(false); }
     }, {confirmLabel:"Remettre impayées"});
+  };
+
+  // Impression groupée : toutes les factures cochées dans UNE seule fenêtre, une facture par page
+  const imprimerLot = () => {
+    if (!selFact.length) return;
+    const triees = [...selFact].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")) || String(a.numero||"").localeCompare(String(b.numero||"")));
+    const htmls = triees.map((f,k)=>{
+      const c = clients.find(x=>x.id===f.client_id);
+      const imp = factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);
+      const detail = soldeConsignes(f.client_id);
+      const solde = detail.reduce((s,r)=>s+r.solde*r.consigne,0);
+      return generatePDF(f, c, imp, solde, detail, {retour:true, qrId:"qrcode"+k});
+    });
+    ouvrirEtImprimer(assemblerFacturesPDF(htmls), "Factures_selection.html");
   };
 
   const exportExcel = () => {
@@ -6709,6 +6947,7 @@ function BossokApp({ session, onLogout }) {
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
           {selImpayees.length>0&&<button onClick={payerLot} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>✓ Marquer payées ({selImpayees.length})</button>}
           {selPayees.length>0&&<button onClick={impayeeLot} style={{...S.btn("#D97706"),padding:"6px 12px",fontSize:12}}>↺ Remettre impayées ({selPayees.length})</button>}
+          <button onClick={imprimerLot} style={{...S.btn("#fff","#1E3A8A"),padding:"6px 12px",fontSize:12}}>🖨️ Imprimer PDF ({selFact.length})</button>
           <button onClick={exportExcel} style={{...S.btn("#0EA5E9"),padding:"6px 12px",fontSize:12}}>📥 Export CSV</button>
           <button onClick={()=>setFactSelected([])} style={{...S.btn("#fff","#1E3A8A"),padding:"6px 12px",fontSize:12}}>✕ Désélectionner</button>
         </div>
@@ -6719,6 +6958,7 @@ function BossokApp({ session, onLogout }) {
     <DataTable
       isMobile={isMobile}
       rows={ff}
+      exportName="factures"
       pageSize={FACT_PER_PAGE}
       selectedIds={factSelected}
       onToggleRow={toggleFactRow}
@@ -7059,6 +7299,7 @@ function BossokApp({ session, onLogout }) {
         <DataTable
           isMobile={isMobile}
           rows={cmdList}
+          exportName="commandes"
           pageSize={50}
           onRowClick={c=>openEditCmd(c)}
           emptyIcon="📋"
@@ -7729,6 +7970,7 @@ function BossokApp({ session, onLogout }) {
     <DataTable
       isMobile={isMobile}
       rows={produits.filter(p=>stockCat==="Tous"||p.categorie===stockCat)}
+      exportName="stock"
       pageSize={50}
       emptyIcon="📦"
       emptyMessage="Aucun produit dans cette catégorie"
@@ -7847,6 +8089,7 @@ function BossokApp({ session, onLogout }) {
           <DataTable
             isMobile={isMobile}
             rows={clientsAvecSolde}
+            exportName="consignes_clients"
             pageSize={50}
             onRowClick={c=>openClientTab(c,"consignes")}
             emptyIcon="♻️"
@@ -7887,6 +8130,7 @@ function BossokApp({ session, onLogout }) {
               <DataTable
                 isMobile={isMobile}
                 rows={consignesManuelles.filter(c=>!c.utilise)}
+                exportName="consignes_retours_en_attente"
                 pageSize={50}
                 emptyIcon="📋"
                 emptyMessage="Aucun retour en attente"
@@ -7966,6 +8210,7 @@ function BossokApp({ session, onLogout }) {
     <DataTable
       isMobile={isMobile}
       rows={produitsFiltres}
+      exportName="catalogue_produits"
       pageSize={50}
       onRowClick={openEditProduitTab}
       emptyIcon="🍺"
@@ -8522,6 +8767,7 @@ function BossokApp({ session, onLogout }) {
     <DataTable
       isMobile={isMobile}
       rows={fd}
+      exportName="factures_diverses"
       onRowClick={openEditDiverse}
       pageSize={20}
       emptyIcon="🧾"
