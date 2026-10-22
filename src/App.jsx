@@ -2648,6 +2648,85 @@ function BossokApp({ session, onLogout }) {
 
   useEffect(() => { if (role) loadAll(); }, [role, loadAll]);
 
+  // ── ALERTE NOUVELLE COMMANDE WEB / NOUVELLE DEMANDE DE COMPTE ────────
+  // Vérifie toutes les 30 s (et au retour sur l'onglet) s'il y a du nouveau, puis
+  // joue un son et affiche une fenêtre qui reste jusqu'à ce qu'on la ferme.
+  const [alerteWeb, setAlerteWeb] = useState(null);
+  const vusWebRef = useRef(null);
+  const audioCtxRef = useRef(null);
+
+  useEffect(() => {
+    // Les navigateurs n'autorisent le son qu'après un premier clic/toucher : on le débloque ici.
+    const debloquer = () => {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
+        if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
+      } catch (e) {}
+    };
+    window.addEventListener("pointerdown", debloquer);
+    window.addEventListener("keydown", debloquer);
+    return () => {
+      window.removeEventListener("pointerdown", debloquer);
+      window.removeEventListener("keydown", debloquer);
+    };
+  }, []);
+
+  const jouerSonAlerte = useCallback(() => {
+    try {
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
+      [880, 1175, 1480, 1175, 1480].forEach((f, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = f;
+        o.connect(g);
+        g.connect(ctx.destination);
+        const t = ctx.currentTime + i * 0.2;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.3, t + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+        o.start(t);
+        o.stop(t + 0.3);
+      });
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    if (role !== "staff") return;
+    let arrete = false;
+    const verifier = async () => {
+      try {
+        const [cmds, cptes] = await Promise.all([
+          sb("commandes?source=eq.web&select=id,client_nom&order=id.desc&limit=30"),
+          sb("clients?statut_compte=eq.en_attente&select=id,nom&order=id.desc&limit=30"),
+        ]);
+        if (arrete) return;
+        const vus = vusWebRef.current;
+        const idsC = new Set(cmds.map(c => c.id));
+        const idsK = new Set(cptes.map(c => c.id));
+        if (vus === null) { vusWebRef.current = { c: idsC, k: idsK }; return; }
+        const nouvC = cmds.filter(c => !vus.c.has(c.id));
+        const nouvK = cptes.filter(c => !vus.k.has(c.id));
+        vusWebRef.current = { c: new Set([...vus.c, ...idsC]), k: new Set([...vus.k, ...idsK]) };
+        if (nouvC.length || nouvK.length) {
+          jouerSonAlerte();
+          setAlerteWeb(prev => ({
+            commandes: [...(prev?.commandes || []), ...nouvC],
+            comptes: [...(prev?.comptes || []), ...nouvK],
+          }));
+        }
+      } catch (e) { /* réseau coupé : on réessaiera au prochain passage */ }
+    };
+    verifier();
+    const timer = setInterval(verifier, 30000);
+    const auRetour = () => { if (document.visibilityState === "visible") verifier(); };
+    document.addEventListener("visibilitychange", auRetour);
+    return () => { arrete = true; clearInterval(timer); document.removeEventListener("visibilitychange", auRetour); };
+  }, [role, jouerSonAlerte]);
+
   // ── DERIVED ────────────────────────────────────────────────────
   const clientsActifs = clients.filter(c=>c.statut==="Actif");
   const filteredClients = useMemo(()=>clients.filter(c=>{
@@ -4076,6 +4155,26 @@ function BossokApp({ session, onLogout }) {
           );
         })}
       </div>
+
+      {/* ALERTE NOUVELLE COMMANDE WEB / DEMANDE DE COMPTE */}
+      {alerteWeb && (alerteWeb.commandes.length>0 || alerteWeb.comptes.length>0) && (
+        <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",zIndex:700,width:"calc(100% - 32px)",maxWidth:420,background:"#0F172A",color:"#fff",borderRadius:14,padding:"16px 18px",boxShadow:"0 16px 48px rgba(0,0,0,0.45)",borderTop:"4px solid #F59E0B",animation:"toastIn 0.25s ease"}}>
+          <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>🔔 {alerteWeb.commandes.length>0 && alerteWeb.comptes.length>0 ? "Du nouveau sur le portail" : alerteWeb.commandes.length>0 ? (alerteWeb.commandes.length>1 ? "Nouvelles commandes web" : "Nouvelle commande web") : (alerteWeb.comptes.length>1 ? "Nouvelles demandes de compte" : "Nouvelle demande de compte")}</div>
+          <div style={{fontSize:13,lineHeight:1.5,color:"#CBD5E1",marginBottom:12,maxHeight:130,overflowY:"auto"}}>
+            {alerteWeb.commandes.map(c=><div key={"c"+c.id}>🛒 Commande n°{c.id} · {c.client_nom||"client"}</div>)}
+            {alerteWeb.comptes.map(c=><div key={"k"+c.id}>👤 Demande de compte · {c.nom||"client"}</div>)}
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={()=>setAlerteWeb(null)} style={{background:"transparent",border:"1px solid #475569",color:"#CBD5E1",borderRadius:8,padding:"8px 14px",fontSize:13,cursor:"pointer"}}>Fermer</button>
+            <button onClick={()=>{
+              const versCommandes = alerteWeb.commandes.length>0;
+              setAlerteWeb(null);
+              loadAll();
+              if (versCommandes) { setCmdView("web"); setPage("commandes"); } else { setPage("clients"); }
+            }} style={{background:"#F59E0B",border:"none",color:"#0F172A",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Voir</button>
+          </div>
+        </div>
+      )}
 
       {/* MODALE DE CONFIRMATION */}
       {confirmDialog&&(
