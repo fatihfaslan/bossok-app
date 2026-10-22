@@ -54,6 +54,7 @@ const ICON_PATHS = {
   chat: <><path d="M4 4.5h16v12H9l-4 3.5v-3.5H4Z"/></>,
   phone: <><path d="M6.5 3.5h3l1.5 4-2 1.5a11 11 0 0 0 5 5l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2Z"/></>,
   mail: <><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="m3 6.5 9 6.5 9-6.5"/></>,
+  diverses: <><path d="M6 2.5h9l3 3V21H6z"/><path d="M15 2.5v3h3M12 10.5v6M9 13.5h6"/></>,
 };
 const Icon = ({name, size=15, style}) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
@@ -71,7 +72,11 @@ const Icon = ({name, size=15, style}) => (
 // columns: [{ key, label, align, sortable, sortValue(row), render(row),
 //             mobilePrimary, mobileShow, wrap }]
 // ═══════════════════════════════════════════════════════════════════
-function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", emptyMessage="Aucune donnée", initialSort, pageSize, footer }) {
+function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", emptyMessage="Aucune donnée", initialSort, pageSize, footer, selectedIds, onToggleRow, onToggleAll, exportName }) {
+  const selectable = !!(selectedIds && onToggleRow);
+  const isSel = (row) => selectable && selectedIds.includes(row.id);
+  const allSelected = selectable && rows.length > 0 && rows.every(r => selectedIds.includes(r.id));
+  const someSelected = selectable && !allSelected && rows.some(r => selectedIds.includes(r.id));
   const [sortKey, setSortKey] = useState(initialSort?.key || null);
   const [sortDir, setSortDir] = useState(initialSort?.dir || "asc");
   const [page, setPage] = useState(1);
@@ -100,6 +105,39 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
     else { setSortKey(key); setSortDir("asc"); }
   };
 
+  // ── Export Excel du tableau (toutes les lignes filtrées/triées, pas seulement la page affichée) ──
+  const nodeText = (n) => (n == null || n === false || n === true) ? "" :
+    (typeof n === "string" || typeof n === "number") ? String(n) :
+    Array.isArray(n) ? n.map(nodeText).join("") :
+    n.props ? nodeText(n.props.children) : "";
+  const exporter = (brut) => {
+    const jour = localDateStr();
+    let data;
+    if (brut) {
+      data = sorted.map(r => ({ ...r }));
+    } else {
+      const cols = columns.filter(c => c.label && c.key !== "actions");
+      const noms = [];
+      cols.forEach(c => { let n = c.label, k = 2; while (noms.includes(n)) n = c.label + " " + k++; noms.push(n); });
+      data = sorted.map(r => {
+        const o = {};
+        cols.forEach((c, i) => {
+          let v = c.render ? nodeText(c.render(r)) : r[c.key];
+          if (v !== null && typeof v === "object") v = JSON.stringify(v);
+          o[noms[i]] = v;
+        });
+        return o;
+      });
+    }
+    telechargerBlob(buildXlsx([{ name: String(exportName).slice(0, 31), rows: data }]), `bossok_${exportName}${brut ? "_brut" : ""}_${jour}.xlsx`);
+  };
+  const exportBar = exportName && rows.length > 0 ? (
+    <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:6}}>
+      <button onClick={()=>exporter(false)} title="Les colonnes telles qu'affichées (toutes les lignes du filtre)" style={{background:"#fff",border:"1px solid #CBD5E1",borderRadius:7,padding:"4px 10px",fontSize:11,fontWeight:600,color:"#374151",cursor:"pointer"}}>📥 Excel</button>
+      <button onClick={()=>exporter(true)} title="Toutes les colonnes de la base de données" style={{background:"#fff",border:"1px solid #CBD5E1",borderRadius:7,padding:"4px 10px",fontSize:11,fontWeight:600,color:"#374151",cursor:"pointer"}}>🗂️ Excel complet</button>
+    </div>
+  ) : null;
+
   if (rows.length === 0) {
     return (
       <div style={{textAlign:"center",padding:"48px 20px",color:"#9CA3AF",background:"#fff",borderRadius:10,border:"1px solid #E3E7ED"}}>
@@ -125,6 +163,7 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
     const sortableCols = columns.filter(c => c.sortable !== false);
     return (
       <div>
+        {exportBar}
         <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,fontSize:11,color:"#6B7280"}}>
           <span>Trier :</span>
           <select value={sortKey||""} onChange={e=>toggleSort(e.target.value)} style={{padding:"5px 8px",border:"1px solid #E3E7ED",borderRadius:6,fontSize:11,flex:1}}>
@@ -135,15 +174,26 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
           <span style={{marginLeft:"auto"}}>{rows.length}</span>
         </div>
         <div style={{background:"#fff",borderRadius:10,border:"1px solid #E3E7ED",overflow:"hidden"}}>
+          {selectable && onToggleAll && (
+            <label style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:"1px solid #F1F5F9",background:"#F8FAFC",fontSize:12,fontWeight:600,color:"#374151",cursor:"pointer"}}>
+              <input type="checkbox" checked={allSelected} ref={el=>{ if(el) el.indeterminate = someSelected; }} onChange={()=>onToggleAll(rows)} style={{width:18,height:18}}/>
+              Tout sélectionner ({rows.length})
+            </label>
+          )}
           {visible.map((row,i)=>(
             <div key={row.id??i} onClick={()=>onRowClick&&onRowClick(row)}
-              style={{padding:"10px 12px",borderBottom:i<visible.length-1?"1px solid #F1F5F9":"none",cursor:onRowClick?"pointer":"default"}}>
+              style={{padding:"10px 12px",borderBottom:i<visible.length-1?"1px solid #F1F5F9":"none",cursor:onRowClick?"pointer":"default",background:isSel(row)?"#EFF6FF":"transparent",display:"flex",gap:10,alignItems:"flex-start"}}>
+              {selectable && (
+                <input type="checkbox" checked={isSel(row)} onClick={e=>e.stopPropagation()} onChange={()=>onToggleRow(row)} style={{width:18,height:18,marginTop:2,flexShrink:0}}/>
+              )}
+              <div style={{flex:1,minWidth:0}}>
               <div>{primaryCol.render ? primaryCol.render(row) : row[primaryCol.key]}</div>
               {secondaryCols.length>0&&(
                 <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",marginTop:4}}>
                   {secondaryCols.map(c=>(<span key={c.key}>{c.render ? c.render(row) : row[c.key]}</span>))}
                 </div>
               )}
+              </div>
             </div>
           ))}
           {footer && <div style={{padding:"9px 12px",borderTop:"1px solid #E3E7ED",background:"#F8FAFC",fontSize:12,fontWeight:700}}>{footer}</div>}
@@ -154,10 +204,17 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
   }
 
   return (
+    <div>
+    {exportBar}
     <div style={{background:"#fff",borderRadius:10,border:"1px solid #E3E7ED",overflow:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
         <thead>
           <tr style={{background:"#F8FAFC",borderBottom:"1px solid #E3E7ED"}}>
+            {selectable && (
+              <th style={{padding:"9px 12px",width:36}}>
+                {onToggleAll && <input type="checkbox" checked={allSelected} ref={el=>{ if(el) el.indeterminate = someSelected; }} onChange={()=>onToggleAll(rows)} title={"Tout sélectionner ("+rows.length+")"} style={{width:16,height:16,cursor:"pointer"}}/>}
+              </th>
+            )}
             {columns.map(c=>(
               <th key={c.key} onClick={()=>c.sortable!==false && toggleSort(c.key)}
                 style={{padding:"9px 12px",textAlign:c.align||"left",fontWeight:700,color:"#5D6B82",fontSize:10.5,textTransform:"uppercase",letterSpacing:"0.04em",cursor:c.sortable!==false?"pointer":"default",whiteSpace:"nowrap",userSelect:"none"}}>
@@ -169,7 +226,12 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
         <tbody>
           {visible.map((row,i)=>(
             <tr key={row.id??i} onClick={()=>onRowClick&&onRowClick(row)}
-              style={{borderBottom:"1px solid #F1F5F9",cursor:onRowClick?"pointer":"default"}}>
+              style={{borderBottom:"1px solid #F1F5F9",cursor:onRowClick?"pointer":"default",background:isSel(row)?"#EFF6FF":"transparent"}}>
+              {selectable && (
+                <td style={{padding:"8px 12px",width:36}} onClick={e=>e.stopPropagation()}>
+                  <input type="checkbox" checked={isSel(row)} onChange={()=>onToggleRow(row)} style={{width:16,height:16,cursor:"pointer"}}/>
+                </td>
+              )}
               {columns.map(c=>(
                 <td key={c.key} style={{padding:"8px 12px",textAlign:c.align||"left",whiteSpace:c.wrap?"normal":"nowrap"}}>
                   {c.render ? c.render(row) : row[c.key]}
@@ -182,13 +244,14 @@ function DataTable({ columns, rows, onRowClick, isMobile, emptyIcon="📋", empt
       </table>
       <Pagination/>
     </div>
+    </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // ROUTING (URL basée sur le hash, ex: #/clients/482)
 // ═══════════════════════════════════════════════════════════════════
-const PAGE_KEYS = ["calendrier","dashboard","caisse","clients","carte","factures","commandes","planning","stock","consignes","produits","zones"];
+const PAGE_KEYS = ["calendrier","dashboard","controle","caisse","clients","carte","factures","diverses","commandes","planning","stock","consignes","produits","zones"];
 const parseHash = () => {
   const h = (window.location.hash || "").replace(/^#\/?/, "");
   const parts = h.split("/").filter(Boolean);
@@ -310,7 +373,162 @@ const db = {
   delete: (table, id) => sb(`${table}?id=eq.${id}`, "DELETE"),
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// EXPORT COMPLET DE LA BASE (Excel .xlsx multi-onglets ou sauvegarde JSON)
+// Aucune dépendance : le .xlsx est assemblé à la main (zip non compressé).
+// Relit chaque table directement dans Supabase (pas l'état de l'écran), donc
+// l'export est toujours complet et à jour, même au-delà de 1000 lignes.
+// ═══════════════════════════════════════════════════════════════════
+const EXPORT_TABLES = [
+  ["clients","id"],["produits","id"],["stock","produit_id"],["commandes","id"],["factures","id"],
+  ["factures_diverses","id"],["receptions_stock","id"],["pertes_stock","id"],["consignes_manuelles","id"],
+  ["frais_generaux_mensuels","id"],["prix_concurrents","id"],["ca_historique_pre_app","id"],
+  ["creances_clients_snapshot","id"],["releves_chauffeurs_mensuels","id"],["evenements","id"],
+  ["note_partagee","id"],["notes_personnelles","id"],["distances_routieres","origine"],["staff_users","user_id"],
+];
+
+const fetchTableComplete = async (table, orderCol) => {
+  const PAGE = 1000;
+  const out = [];
+  for (let from = 0; ; from += PAGE) {
+    let batch;
+    try {
+      batch = await sb(`${table}?select=*&order=${orderCol}.asc`, "GET", null, from, from + PAGE - 1);
+    } catch {
+      batch = await sb(`${table}?select=*`, "GET", null, from, from + PAGE - 1); // table sans cette colonne : sans tri
+    }
+    out.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  return out;
+};
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+const crc32 = (u8) => { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+
+const zipStore = (files) => {
+  const enc = new TextEncoder();
+  const d = new Date();
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  const parts = []; const central = []; let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name); const data = enc.encode(f.content); const crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), name, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), name);
+    offset += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((s, p) => s + p.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+};
+
+const xmlEsc = (s) => String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const colLetter = (i) => { let s = ""; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+
+const sheetXml = (rows) => {
+  const cols = [];
+  rows.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
+  const idIdx = cols.indexOf("id"); if (idIdx > 0) { cols.splice(idIdx, 1); cols.unshift("id"); }
+  const cell = (ref, v, style) => {
+    const s = style ? ` s="${style}"` : "";
+    if (v === null || v === undefined || v === "") return "";
+    if (typeof v === "number" && isFinite(v)) return `<c r="${ref}"${s}><v>${v}</v></c>`;
+    if (typeof v === "boolean") return `<c r="${ref}"${s} t="b"><v>${v ? 1 : 0}</v></c>`;
+    const txt = (typeof v === "object" ? JSON.stringify(v) : String(v)).slice(0, 32000);
+    return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xmlEsc(txt)}</t></is></c>`;
+  };
+  let x = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>`;
+  x += `<row r="1">` + cols.map((c, i) => cell(colLetter(i) + "1", c, 1)).join("") + `</row>`;
+  rows.forEach((r, ri) => {
+    x += `<row r="${ri + 2}">` + cols.map((c, i) => cell(colLetter(i) + (ri + 2), r[c], 0)).join("") + `</row>`;
+  });
+  return x + `</sheetData></worksheet>`;
+};
+
+const buildXlsx = (tables /* [{name, rows}] */) => {
+  const files = [];
+  files.push({ name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${tables.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>` });
+  files.push({ name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` });
+  files.push({ name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${tables.map((t, i) => `<sheet name="${xmlEsc(t.name.slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>` });
+  files.push({ name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${tables.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${tables.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` });
+  files.push({ name: "xl/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>` });
+  tables.forEach((t, i) => files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, content: sheetXml(t.rows) }));
+  return zipStore(files);
+};
+
+const telechargerBlob = (blob, nom) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nom;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+};
+
+const exporterToutesLesDonnees = async (format, onProgress) => {
+  const tables = [];
+  for (let i = 0; i < EXPORT_TABLES.length; i++) {
+    const [name, orderCol] = EXPORT_TABLES[i];
+    onProgress && onProgress(`Lecture ${i + 1}/${EXPORT_TABLES.length} : ${name}…`);
+    try { tables.push({ name, rows: await fetchTableComplete(name, orderCol) }); }
+    catch (e) { tables.push({ name, rows: [{ erreur: String(e.message || e).slice(0, 300) }] }); }
+  }
+  const jour = localDateStr();
+  const marque = jour + " " + new Date().toTimeString().slice(0, 5);
+  if (format === "json") {
+    const obj = { exporte_le: marque, tables: Object.fromEntries(tables.map(t => [t.name, t.rows])) };
+    telechargerBlob(new Blob([JSON.stringify(obj, null, 1)], { type: "application/json" }), `bossok_sauvegarde_${jour}.json`);
+  } else {
+    const resume = { name: "_resume", rows: [{ export_le: marque }, ...tables.map(t => ({ table: t.name, nb_lignes: t.rows.length }))] };
+    telechargerBlob(buildXlsx([resume, ...tables]), `bossok_donnees_${jour}.xlsx`);
+  }
+  return tables;
+};
+
+function ExportDonneesBoutons({ isMobile }) {
+  const [etat, setEtat] = useState("");
+  const [enCours, setEnCours] = useState(false);
+  const lancer = async (format) => {
+    if (enCours) return;
+    setEnCours(true);
+    try {
+      const t = await exporterToutesLesDonnees(format, setEtat);
+      const total = t.reduce((s, x) => s + x.rows.length, 0);
+      const erreurs = t.filter(x => x.rows[0] && x.rows[0].erreur).map(x => x.name);
+      setEtat(`✓ Export terminé : ${t.length} tables, ${total} lignes${erreurs.length ? " — erreur sur : " + erreurs.join(", ") : ""}`);
+    } catch (e) { setEtat("✕ Échec de l'export : " + String(e.message || e).slice(0, 120)); }
+    finally { setEnCours(false); }
+  };
+  const btn = (bg, col) => ({ background: bg, color: col, border: "1px solid #CBD5E1", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: enCours ? "wait" : "pointer", opacity: enCours ? 0.6 : 1 });
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: isMobile ? "0 0 12px" : "0 0 14px" }}>
+      <button disabled={enCours} onClick={() => lancer("xlsx")} style={btn("#059669", "#fff")}>📦 Exporter toutes les données (Excel)</button>
+      <button disabled={enCours} onClick={() => lancer("json")} style={btn("#fff", "#374151")}>💾 Sauvegarde JSON</button>
+      {etat && <span style={{ fontSize: 12, color: etat.startsWith("✕") ? "#DC2626" : "#6B7280" }}>{etat}</span>}
+    </div>
+  );
+}
+
 const CONSIGNE_PRIX = {"20cl":5.00,"25cl":5.00,"50cl":7.95,"1L":4.20};
+
+// Le transport est un service, toujours soumis au taux de TVA standard (17%)
+// — indépendamment du taux appliqué aux produits (0% ou 3%, selon le client).
+const TVA_TRANSPORT_PCT = 17;
 
 // Alias pour produits renommés dans le catalogue (protège les commandes en attente
 // qui référencent encore un ancien nom, ex: fautes de frappe corrigées)
@@ -363,26 +581,59 @@ const REGION_COORDS = {
   "Hollande":      {lat:50.0000, lng:6.1000},
 };
 
-// Aspelt departure point
-const DEPOT = {lat:49.5281, lng:6.1450};
+// Dépôt / entrepôt : 477 route de Thionville, Hesperange (ancien : Aspelt).
+// Les coordonnées ci-dessous sont une position approximative de Hesperange : elles sont
+// remplacées par la position exacte de l'adresse (géocodage) dès qu'on lance
+// « Calculer les distances réelles » dans le Contrôle de gestion.
+const DEPOT_ADRESSE = "477 route de Thionville, L-5886 Hesperange, Luxembourg";
+const DEPOT = {lat:49.5728, lng:6.1522};
 
 // Géocodage d'adresse via Nominatim (OpenStreetMap) — gratuit, sans clé API.
 // Respecte la limite d'usage de Nominatim (max ~1 requête/seconde côté appelant).
-const geocodeAddress = async (address) => {
-  if (!address || !address.trim()) return null;
+const geocodeOnce = async (q, lu) => {
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`,
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1${lu ? "&countrycodes=lu" : ""}&q=${encodeURIComponent(q)}`,
       { headers: { "Accept-Language": "fr" } }
     );
     const data = await res.json();
-    if (data && data[0]) {
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    }
-    return null;
-  } catch (e) {
-    return null;
+    if (data && data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch (e) {}
+  return null;
+};
+const geocodeAddress = async (address) => {
+  if (!address || !address.trim()) return null;
+  const raw = address.replace(/\s+/g, " ").trim();
+  // Adresse déjà hors Luxembourg ? on ne force pas le pays.
+  const horsLu = /belgi|franc|german|allemag|deutsch|nederland|hollan|pays-bas/i.test(raw);
+  // Normalisation : "L- 4210", "L-4210", "L 4210" -> "4210" ; abréviations courantes
+  let s = raw
+    .replace(/\bL\s*-\s*(\d{4})\b/gi, "$1")
+    .replace(/\bL\s+(\d{4})\b/gi, "$1")
+    .replace(/\bBV\b\.?/gi, "Boulevard")
+    .replace(/\bAv\b\.?/gi, "Avenue")
+    .replace(/\bRte\b\.?/gi, "Route")
+    .replace(/\bMaison\s+/gi, "")
+    .replace(/,?\s*(luxembourg|lux|lu)\s*$/i, "")
+    .trim();
+  const m = s.match(/\b(\d{4})\b\s*([^\d,]*)$/);
+  const cp = m ? m[1] : "";
+  const ville = m ? m[2].trim() : "";
+  const rue = m ? s.slice(0, m.index).replace(/[,\s]+$/, "") : s;
+  const pays = horsLu ? "" : ", Luxembourg";
+  const essais = [];
+  essais.push(s + pays);
+  if (rue && ville) essais.push(`${rue}, ${ville}${pays}`);
+  if (rue && cp) essais.push(`${rue}, ${cp}${pays}`);
+  if (ville) essais.push(`${cp} ${ville}${pays}`.trim());
+  const vus = new Set();
+  for (const q of essais) {
+    if (vus.has(q)) continue; vus.add(q);
+    const r = await geocodeOnce(q, !horsLu);
+    if (r) return r;
+    await new Promise(r2 => setTimeout(r2, 1100)); // limite Nominatim entre essais
   }
+  return null;
 };
 
 const distKm = (a, b) => {
@@ -393,6 +644,89 @@ const distKm = (a, b) => {
     Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*
     Math.sin(dLng/2)*Math.sin(dLng/2);
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+};
+
+// ── Optimisation de tournée (distances routières exactes quand la matrice est calculée) ──
+const TRUCK_CAPACITY = 200; // colis par camionnette (2 palettes)
+// Held-Karp : ordre optimal exact pour ≤ 11 arrêts. D[i][j], nœud 0 = dépôt. Retourne la permutation de 1..n.
+const heldKarp = (n, D) => {
+  const N = 1<<n, INF = 1e15;
+  const dp = Array.from({length:N}, ()=>new Float64Array(n).fill(INF));
+  const par = Array.from({length:N}, ()=>new Int8Array(n).fill(-1));
+  for (let i=0;i<n;i++) dp[1<<i][i] = D[0][i+1];
+  for (let m=1;m<N;m++) for (let last=0;last<n;last++) {
+    if (!(m&(1<<last)) || dp[m][last]>=INF) continue;
+    for (let nx=0;nx<n;nx++) {
+      if (m&(1<<nx)) continue;
+      const nm = m|(1<<nx), v = dp[m][last]+D[last+1][nx+1];
+      if (v<dp[nm][nx]) { dp[nm][nx]=v; par[nm][nx]=last; }
+    }
+  }
+  let best=INF, bl=0; const full=N-1;
+  for (let l=0;l<n;l++){ const v=dp[full][l]+D[l+1][0]; if(v<best){best=v;bl=l;} }
+  const tour=[]; let m=full, l=bl;
+  while (l!==-1) { tour.push(l+1); const pl=par[m][l]; m&=~(1<<l); l=pl; }
+  return tour.reverse();
+};
+// Heuristique (plus proche voisin + 2-opt + or-opt) pour > 11 arrêts
+const tourHeuristique = (n, D) => {
+  const rest = new Set(Array.from({length:n},(_,i)=>i+1)); let cur=0; const tour=[];
+  while (rest.size) { let b=-1,bd=Infinity; rest.forEach(k=>{ if(D[cur][k]<bd){bd=D[cur][k];b=k;} }); tour.push(b); rest.delete(b); cur=b; }
+  const len = (t)=>{ let L=D[0][t[0]]; for(let i=1;i<t.length;i++) L+=D[t[i-1]][t[i]]; return L+D[t[t.length-1]][0]; };
+  let improved=true, guard=0;
+  while (improved && guard++<200) {
+    improved=false;
+    for (let i=0;i<n-1;i++) for (let j=i+1;j<n;j++) { // 2-opt
+      const a=i===0?0:tour[i-1], b=tour[i], c=tour[j], d=j===n-1?0:tour[j+1];
+      if (D[a][c]+D[b][d] < D[a][b]+D[c][d]-1e-9) { tour.splice(i,j-i+1,...tour.slice(i,j+1).reverse()); improved=true; }
+    }
+    for (let i=0;i<n;i++) { // or-opt (déplacer 1 arrêt)
+      const base=len(tour), x=tour[i]; const t2=tour.filter((_,k)=>k!==i);
+      let bestPos=-1, bestL=base-1e-9;
+      for (let p=0;p<=t2.length;p++) { if(p===i) continue; const t3=[...t2.slice(0,p),x,...t2.slice(p)]; const L=len(t3); if(L<bestL){bestL=L;bestPos=p;} }
+      if (bestPos>=0) { tour.splice(0,tour.length,...t2.slice(0,bestPos),x,...t2.slice(bestPos)); improved=true; }
+    }
+  }
+  return tour;
+};
+// items:[{key,charge}] ; distFn(keyA,keyB) → km ('depot' = dépôt). Retourne les rotations (listes d'index d'items).
+const optimiserTournee = (items, distFn, cap=TRUCK_CAPACITY) => {
+  const n = items.length; if (!n) return [];
+  const nodes = ['depot', ...items.map(i=>i.key)];
+  const D = Array.from({length:n+1}, (_,i)=>Array.from({length:n+1}, (_,j)=> i===j?0:distFn(nodes[i],nodes[j])));
+  const tour = n<=11 ? heldKarp(n,D) : tourHeuristique(n,D); // indices 1..n
+  // découpe en rotations (capacité) : programmation dynamique sur la tournée géante
+  const best = new Array(n+1).fill(Infinity), from = new Array(n+1).fill(0); best[0]=0;
+  for (let j=1;j<=n;j++) {
+    let load=0, inner=0;
+    for (let i=j-1;i>=0;i--) {
+      load += items[tour[i]-1].charge||0;
+      if (i<j-1) inner += D[tour[i]][tour[i+1]];
+      if (load>cap && i<j-1) break;
+      const cost = best[i] + D[0][tour[i]] + inner + D[tour[j-1]][0];
+      if (cost<best[j]) { best[j]=cost; from[j]=i; }
+    }
+  }
+  const rots=[]; let j=n; while (j>0) { const i=from[j]; rots.unshift(tour.slice(i,j).map(k=>k-1)); j=i; }
+  return rots;
+};
+// Appel unique à l'API publique OSRM "table" (distances routières en bloc). Retourne {km[][], min[][]}.
+const osrmTable = async (coords, sources, destinations) => {
+  const c = coords.map(p=>`${p.lng},${p.lat}`).join(";");
+  const url = `https://router.project-osrm.org/table/v1/driving/${c}?sources=${sources.join(";")}&destinations=${destinations.join(";")}&annotations=duration,distance`;
+  const res = await fetch(url); const data = await res.json();
+  if (!data || data.code!=="Ok") throw new Error("OSRM "+(data?.code||res.status));
+  return { km: data.distances, min: data.durations };
+};
+// Upsert d'une ou plusieurs lignes (clé primaire = conflict)
+const sbUpsert = async (table, rows, conflict) => {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflict}`, {
+    method:"POST",
+    headers:{ "apikey":SUPABASE_KEY, "Authorization":`Bearer ${getSession()?.access_token || SUPABASE_KEY}`,
+      "Content-Type":"application/json", "Prefer":"resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) throw new Error(await res.text());
 };
 
 // Smart dispatch: balance caisses (max 10% diff) + minimize distance
@@ -473,19 +807,26 @@ const DRIVERS = { A: "Sefa", B: "Mikail" };
 
 // Zone delivery schedule
 const ZONE_SCHEDULE = {
-  "Centre-ville": {days:["Lundi","Mercredi","Vendredi"], driver:"Sefa"},
-  "Nord":         {days:["Lundi","Mardi","Jeudi"],        driver:"Sefa"},
+  "Centre-ville": {days:["Lundi","Jeudi"],                driver:"Sefa"},
+  "Nord":         {days:["Mardi"],                        driver:"Sefa"},
   "Nord-ouest":   {days:["Mardi"],                        driver:"Sefa"},
-  "Nord-Est":     {days:["Mercredi"],                     driver:"Sefa"},
-  "Nord-est":     {days:["Mercredi"],                     driver:"Sefa"},
-  "Est":          {days:["Mardi","Jeudi"],                 driver:"Sefa"},
-  "Sud":          {days:["Lundi","Mardi","Jeudi"],         driver:"Mikail"},
-  "Sud-ouest":    {days:["Mercredi","Vendredi"],           driver:"Mikail"},
-  "Sud-Est":      {days:["Mardi"],                        driver:"Mikail"},
-  "Ouest":        {days:["Mercredi","Vendredi"],           driver:"Mikail"},
-  "Belgique":     {days:["Jeudi","Vendredi"],             driver:"Mikail"},
-  "France":       {days:["Lundi"],                        driver:"Mikail"},
-  "Hollande":     {days:["Jeudi"],                        driver:"Mikail"},
+  "Nord-Est":     {days:["Mardi"],                        driver:"Sefa"},
+  "Nord-est":     {days:["Mardi"],                        driver:"Sefa"},
+  "Est":          {days:["Mardi"],                        driver:"Sefa"},
+  "Sud":          {days:["Lundi","Vendredi"],             driver:"Mikail"},
+  "Sud-ouest":    {days:["Mercredi"],                     driver:"Mikail"},
+  "Sud-Est":      {days:["Lundi","Vendredi"],             driver:"Mikail"},
+  "Ouest":        {days:["Mercredi"],                     driver:"Mikail"},
+};
+
+// Distance à vol d'oiseau (proxy relatif) — le dépôt est défini plus haut (DEPOT, Hesperange).
+const distanceKm = (lat1, lng1, lat2, lng2) => {
+  if (lat1==null || lng1==null || lat2==null || lng2==null) return null;
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 };
 
 const generateOnePager = (clients) => {
@@ -619,13 +960,22 @@ ${zonesHTML}
 };
 
 // Zone assignments per day (0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri)
+// Planning issu de l'analyse des commandes historiques (fréquence + volume/camion), Luxembourg uniquement :
+// Sefa = Centre-ville (lun+jeu) et Nord/Est (mar) · Mikail = Sud (lun+ven), Sud-ouest/Ouest (mer).
 const DAILY_ZONES = {
-  0: { A: ["Centre-ville","Nord"],                    B: ["Sud","Sud-ouest","Belgique","France"] },
-  1: { A: ["Centre-ville","Nord","Nord-ouest"],        B: ["Sud","Ouest","Belgique"] },
-  2: { A: ["Est","Nord","Nord-ouest"],                 B: ["Centre-ville","Sud","Ouest","France"] },
-  3: { A: ["Centre-ville","Nord","Est"],               B: ["France","Sud","Ouest"] },
-  4: { A: ["Centre-ville","Nord","Est"],               B: ["Sud","Sud-ouest","Ouest","Belgique"] },
+  0: { A: ["Centre-ville"],                                              B: ["Sud","Sud-Est"] },
+  1: { A: ["Nord","Nord-ouest","Nord-Est","Nord-est","Est"],             B: [] },
+  2: { A: [],                                                            B: ["Sud-ouest","Ouest"] },
+  3: { A: ["Centre-ville"],                                              B: [] },
+  4: { A: [],                                                            B: ["Sud","Sud-Est"] },
 };
+// Historique des commandes mai→août 2026 (fichiers Excel de facturation), clé = nom client normalisé.
+// Sert uniquement à calculer la fréquence de commande de chaque client pour le planning.
+const normNomClient = (n) => String(n||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()
+  .replace(/\b(sarl|sa|sas|s a r l|s\.a\.r\.l)\b/g,"").replace(/[^a-z0-9]/g,"");
+const HISTORIQUE_CMD_MAI_AOUT = {"dashaus":"2026-05-03,2026-05-18,2026-05-28,2026-06-03,2026-06-17,2026-06-28,2026-07-08,2026-07-22,2026-08-04,2026-08-16,2026-08-19,2026-08-31","luxji":"2026-05-03,2026-05-19,2026-06-02,2026-06-23,2026-07-08,2026-07-20,2026-08-05,2026-08-13","harun":"2026-05-03,2026-05-20,2026-06-07,2026-06-18,2026-06-25,2026-07-09,2026-07-28,2026-08-20","snackistanbulesch":"2026-05-03,2026-05-12,2026-05-21,2026-06-01,2026-06-08,2026-06-17,2026-06-25,2026-07-01,2026-07-08,2026-07-14,2026-07-20,2026-08-06,2026-08-13,2026-08-24","cirta":"2026-05-03,2026-05-20,2026-06-16,2026-07-05,2026-07-16,2026-08-02,2026-08-19","garipzaza2":"2026-05-03,2026-05-25,2026-06-16,2026-07-01,2026-08-17","restauranpistachbinnikaile":"2026-05-03,2026-05-28,2026-06-24,2026-07-21,2026-08-26","chezdaltonville":"2026-05-03,2026-05-06,2026-05-12,2026-05-18,2026-05-25,2026-06-03,2026-06-07,2026-06-11,2026-06-23,2026-06-29,2026-07-02,2026-07-09,2026-07-14,2026-07-22,2026-07-27,2026-08-04,2026-08-10,2026-08-17,2026-08-24,2026-08-27","chezdaltonesch":"2026-05-03,2026-05-12,2026-05-21,2026-05-28,2026-06-04,2026-06-11,2026-06-18,2026-06-25,2026-07-02,2026-07-09,2026-07-14,2026-07-20,2026-08-06,2026-08-17,2026-08-27","snackantalyachodelices":"2026-05-04,2026-05-10,2026-05-25,2026-05-31,2026-06-01,2026-06-08,2026-06-14,2026-06-23,2026-06-28,2026-07-12,2026-07-20,2026-07-27,2026-08-09,2026-08-17,2026-08-24,2026-08-31","souvenir":"2026-05-04,2026-05-27,2026-06-10,2026-06-29,2026-07-19,2026-08-10,2026-08-27","tacosburger":"2026-05-04,2026-05-11,2026-05-18,2026-05-25,2026-06-08,2026-06-15,2026-06-21,2026-06-29,2026-07-05,2026-07-08,2026-07-12,2026-08-04,2026-08-24","izumi":"2026-05-04,2026-05-19,2026-06-09,2026-06-29,2026-07-22,2026-08-19","arslankebab":"2026-05-04,2026-06-23,2026-07-20","harutfrite":"2026-05-04,2026-05-28,2026-06-21,2026-07-23,2026-08-09,2026-08-17","trechiavi":"2026-05-04,2026-08-31","pizzicotto":"2026-05-04,2026-05-27,2026-06-10,2026-06-25,2026-07-12,2026-07-28,2026-08-24","snacksinbaddm":"2026-05-04,2026-05-25,2026-06-14,2026-06-24,2026-07-12,2026-07-24,2026-08-05,2026-08-23","restaurantholiday":"2026-05-04,2026-06-01,2026-06-23,2026-07-14,2026-08-23","restaurantfuman":"2026-05-04,2026-08-31","foyernala":"2026-05-04,2026-06-17,2026-07-20,2026-08-18","restaurantaz":"2026-05-05,2026-06-08,2026-06-23,2026-07-05,2026-07-20,2026-08-03,2026-08-05,2026-08-17","popeysburger":"2026-05-05,2026-06-14,2026-07-20","serenabozzoli":"2026-05-05","carlislemanagementcompany":"2026-05-05","crechemargreitchen":"2026-05-05,2026-07-22","eurokebab":"2026-05-05,2026-05-14,2026-05-17,2026-05-27,2026-06-04,2026-06-08,2026-06-11,2026-06-21,2026-07-01,2026-07-06,2026-07-08,2026-07-15,2026-08-23","ozpinar":"2026-05-06,2026-07-12","hakii":"2026-05-06,2026-05-17,2026-05-21,2026-06-03,2026-06-10,2026-06-17,2026-06-25,2026-07-02,2026-07-08","sushiatelier":"2026-05-06,2026-05-20,2026-06-04,2026-06-23,2026-07-07,2026-07-21,2026-08-05,2026-08-20","mrback":"2026-05-06","dechertllp":"2026-05-06,2026-05-27,2026-06-11,2026-06-18,2026-07-05,2026-07-13,2026-07-27,2026-08-05,2026-08-09,2026-08-26","newcolibribleu":"2026-05-06,2026-05-28,2026-06-16,2026-07-07,2026-08-11","ledysfood":"2026-05-06,2026-05-10,2026-05-11,2026-05-31,2026-06-15,2026-06-29,2026-07-13,2026-08-02,2026-08-24","restaurantfudoulou":"2026-05-06,2026-07-08,2026-08-30","restaurantginza":"2026-05-06,2026-07-22","royalkebabbe":"2026-05-06,2026-06-24","yangming":"2026-05-06,2026-08-11","breaktime":"2026-05-06,2026-05-12,2026-05-21,2026-05-28,2026-06-04,2026-06-11,2026-06-18,2026-06-25,2026-07-01,2026-07-02,2026-07-08,2026-07-14,2026-07-21,2026-08-05,2026-08-10,2026-08-13,2026-08-23","restaurantxunweitaltwies":"2026-05-07,2026-06-03,2026-06-30,2026-07-06","alicepizzeriakebabhaus":"2026-05-07,2026-05-17,2026-05-31,2026-06-11,2026-06-23,2026-07-02,2026-07-09,2026-07-16,2026-08-10,2026-08-20","foodaddict":"2026-05-07,2026-05-25,2026-06-01,2026-06-11,2026-06-23,2026-07-02,2026-08-10,2026-08-19","misushi":"2026-05-07,2026-07-05,2026-08-10","lesfreress":"2026-05-07,2026-05-14,2026-05-21,2026-05-28,2026-06-04,2026-06-11,2026-06-21,2026-07-01,2026-07-07,2026-07-15,2026-07-23,2026-08-03,2026-08-12,2026-08-20,2026-08-30","amakorn":"2026-05-07,2026-06-17,2026-07-06,2026-07-20,2026-08-06","climali":"2026-05-07,2026-06-29","mydrinksmelik":"2026-05-07,2026-06-10","restaurantkicheneck":"2026-05-07","bozokebab":"2026-05-10,2026-05-31,2026-06-24,2026-07-09,2026-08-05,2026-08-25","luxkebabmersch":"2026-05-10,2026-06-03,2026-07-24,2026-08-04","splsardag":"2026-05-10,2026-06-17,2026-06-18,2026-07-27","deryakebablarochette":"2026-05-10,2026-06-01,2026-07-01,2026-07-19,2026-08-06","italuxfoods":"2026-05-10,2026-05-19,2026-06-11,2026-06-24,2026-07-09,2026-07-23,2026-08-16","hanamirestaurantlabonnefortune":"2026-05-10,2026-05-31,2026-06-21,2026-07-15","idiemeringmarketspartners":"2026-05-11,2026-08-12","ankarasnackrestaurantlonguyon":"2026-05-11,2026-06-24","kebabtaksim":"2026-05-11,2026-05-21,2026-06-03,2026-06-15,2026-06-29,2026-07-07,2026-07-14,2026-08-16","restaurantzafir":"2026-05-11,2026-05-27,2026-06-09,2026-06-23,2026-07-01","snackbbtcarloesch":"2026-05-11,2026-05-25,2026-06-15,2026-06-29,2026-07-20,2026-08-06","snackanadolia":"2026-05-11,2026-05-28,2026-06-16,2026-06-29,2026-07-02,2026-07-14,2026-08-19,2026-08-30","lapetitevenice":"2026-05-11,2026-05-18,2026-06-02,2026-06-17,2026-07-02,2026-07-13,2026-08-17","goodtaste":"2026-05-11,2026-08-10","kebabhauswasserbilig":"2026-05-12,2026-06-01,2026-06-28,2026-07-22,2026-08-12","crechemusekshaus":"2026-05-12,2026-06-02,2026-06-29,2026-07-12,2026-07-23,2026-08-09,2026-08-25","boissonsmanternach":"2026-05-12,2026-07-06","snakhakan":"2026-05-12,2026-05-25,2026-06-08,2026-06-21,2026-06-28,2026-07-07,2026-07-15,2026-07-24,2026-08-16,2026-08-23","restaurantraiskar":"2026-05-12,2026-06-03,2026-06-24,2026-07-16,2026-08-11,2026-08-25","ekenz":"2026-05-12,2026-07-07,2026-08-03","snackistanbulville":"2026-05-12,2026-05-25,2026-05-31,2026-06-11,2026-06-18,2026-07-05,2026-07-13,2026-07-21,2026-07-27,2026-08-06,2026-08-16,2026-08-27","lwalucianaville":"2026-05-12,2026-06-21,2026-08-05","crecheelmen":"2026-05-12,2026-06-15,2026-07-06,2026-08-05","adsconcept":"2026-05-12,2026-05-27,2026-06-16,2026-06-28,2026-07-06,2026-07-20,2026-08-31","intersnackjusuf":"2026-05-12,2026-05-31,2026-06-04,2026-06-28,2026-08-24","liaoxianghua":"2026-05-12","restaurantsashimi":"2026-05-14,2026-06-01,2026-06-18,2026-07-01,2026-07-16,2026-08-03","kebabhousen":"2026-05-14,2026-06-07,2026-07-09","snackpacharodangeroyalkebab":"2026-05-14,2026-05-31,2026-06-15,2026-07-06,2026-07-19","espaceimmo":"2026-05-14,2026-05-25,2026-06-01,2026-06-04,2026-07-02,2026-07-08,2026-07-27,2026-08-20","restaurantyummy":"2026-05-14,2026-06-03,2026-06-18,2026-07-02,2026-07-23,2026-08-13","libertykebab":"2026-05-14,2026-06-02,2026-06-21,2026-07-06,2026-07-19,2026-08-09,2026-08-25","snackankaraesch":"2026-05-17,2026-07-01,2026-08-11","btn":"2026-05-17,2026-06-29,2026-08-06","restaurantdoredahongyun":"2026-05-17,2026-06-24,2026-08-18","restauranttempura":"2026-05-17,2026-05-31,2026-06-14,2026-06-21,2026-07-02,2026-07-28,2026-08-13,2026-08-24","pizzeriailsorriso":"2026-05-18,2026-06-17,2026-07-06,2026-07-23,2026-08-31","idilkebab":"2026-05-18,2026-06-01,2026-06-15,2026-06-29,2026-07-12,2026-07-24,2026-08-17,2026-08-30","snackrapido":"2026-05-18,2026-06-02,2026-06-15,2026-06-30,2026-07-16,2026-08-17","montstlambert":"2026-05-18,2026-06-08,2026-06-21,2026-07-02,2026-07-13,2026-07-27,2026-08-10,2026-08-24","foetzhotelrestaurantdao":"2026-05-18","restaurantsumi":"2026-05-18,2026-06-18,2026-07-07,2026-08-03,2026-08-27","pitabotan":"2026-05-18,2026-07-01,2026-08-04","luxkebabbettembourg":"2026-05-18,2026-06-08","haslibel":"2026-05-18","nathaliehoen":"2026-05-18,2026-06-24","friteriedroitaukitsch":"2026-05-19","stblawsimpsonsthacherbarlettscs":"2026-05-19,2026-06-24,2026-07-23,2026-08-20","seedboxluxembourg":"2026-05-19,2026-06-15,2026-07-16,2026-08-05","eternel":"2026-05-19,2026-06-16,2026-07-09,2026-08-19","peakkyburgers":"2026-05-19,2026-06-03,2026-06-18,2026-06-30,2026-07-16,2026-08-31","zrsushirestaurant":"2026-05-19,2026-06-18,2026-07-16,2026-08-23","halilhakan":"2026-05-19,2026-07-07","restaurantwangchef":"2026-05-20,2026-08-12","dreamlease":"2026-05-20,2026-05-31,2026-06-04,2026-06-23,2026-07-05,2026-07-20,2026-08-03,2026-08-18","sogerouteschmitschmit":"2026-05-20,2026-06-23","bojanaarel":"2026-05-20,2026-06-30","restaurantvilledasie":"2026-05-20","snackmondial":"2026-05-20,2026-06-14,2026-07-09,2026-07-19","snackmoris":"2026-05-21,2026-06-15,2026-07-07","az":"2026-05-21,2026-06-11,2026-06-25,2026-07-06,2026-07-24,2026-08-11","tarboosh":"2026-05-25,2026-06-14,2026-06-28,2026-07-14,2026-08-19","rayleegroup":"2026-05-27,2026-07-06,2026-08-30","amicorpluxembourg":"2026-05-27,2026-06-16,2026-07-12,2026-08-20","urbanfood":"2026-05-27,2026-06-29,2026-07-23","rojkebabpizza":"2026-05-27,2026-07-02,2026-07-28,2026-08-19","oishisushi":"2026-05-27","restaurantpanda":"2026-05-27,2026-06-23,2026-07-23,2026-08-12","snackroyalaras":"2026-05-27,2026-06-18,2026-07-27","restaurantkiyomi":"2026-05-27","sevin":"2026-05-28,2026-06-29,2026-07-22,2026-08-26","mimcocapital":"2026-05-28","jiayuan":"2026-05-28,2026-06-23,2026-07-21,2026-08-26","helin":"2026-05-31,2026-07-05,2026-07-24,2026-08-12","wcpinvestment":"2026-06-01,2026-08-20","salutsushi":"2026-06-02","ogourmet":"2026-06-02,2026-07-12,2026-08-16","snacklena":"2026-06-02,2026-06-29,2026-07-19,2026-07-24","shenyang":"2026-06-03","escapade":"2026-06-03","restaurantfucheng":"2026-06-03,2026-07-09,2026-08-18","restjinetfeng":"2026-06-04,2026-06-23,2026-07-09,2026-07-22,2026-08-06,2026-08-20","restaurantichi":"2026-06-07,2026-07-22","superspatz":"2026-06-09,2026-08-11","moventum":"2026-06-09,2026-07-07,2026-08-25","liaoxianghuagosushi":"2026-06-09,2026-07-14","dashaussaarbrucken":"2026-06-10,2026-07-19","huating":"2026-06-10,2026-08-06","kanuvicafiteria":"2026-06-10","jeanpetitarchitectessa":"2026-06-11,2026-07-16","admarket":"2026-06-11,2026-07-12","gioscafe":"2026-06-11,2026-08-31","ccins":"2026-06-14","yuki":"2026-06-14,2026-08-23","snackbosphore":"2026-06-15","arteceuropesenningerberg":"2026-06-16","lapetitefritegaumaise":"2026-06-16,2026-07-28","colonnadeinsurancesa":"2026-06-16","monsieurkebab":"2026-06-16,2026-08-13","restaurantoishihai":"2026-06-17,2026-08-18","dongya":"2026-06-18,2026-06-24","apax":"2026-06-18","milansalamon":"2026-06-21","luxstabilisation":"2026-06-21","ctie":"2026-06-21","garipzaza2musson":"2026-06-24,2026-07-24","jj32hotel":"2026-06-25,2026-07-23,2026-08-24","letzeburgerhowald":"2026-06-25,2026-06-30,2026-07-02,2026-07-06,2026-07-13,2026-07-16,2026-07-27,2026-08-17,2026-08-31","uyanisseyfichefsteakhouse":"2026-06-28","letzeburgerschouweiler":"2026-06-29,2026-07-06,2026-07-13,2026-07-20,2026-07-27,2026-08-03,2026-08-10,2026-08-17,2026-08-24,2026-08-31","restaurantmiyako":"2026-06-30","snack2bras":"2026-06-30,2026-08-06","restaurantshico":"2026-07-01","daynight2023":"2026-07-01","logico":"2026-07-02","snackantalyarumelange":"2026-07-02,2026-07-16,2026-08-02,2026-08-23","letzeburgerfoetz":"2026-07-02,2026-07-09,2026-07-14,2026-07-21,2026-08-05,2026-08-12,2026-08-17,2026-08-20,2026-08-26","letzeburgerstrassen":"2026-07-05,2026-07-09,2026-07-12,2026-07-13,2026-07-16,2026-07-20,2026-07-21,2026-07-27,2026-08-04,2026-08-09,2026-08-13,2026-08-23,2026-08-30,2026-08-31","teavana":"2026-07-06,2026-07-22","restauranthappyvilla":"2026-07-06","birkasbl":"2026-07-06,2026-08-04","nstrans":"2026-07-07,2026-08-27","sectorgroupe":"2026-07-09","djamiladiawara":"2026-07-14,2026-08-06","havin":"2026-07-15","tradition1":"2026-07-16","hongxiang":"2026-07-22","vipkebab":"2026-07-23,2026-08-19","kebabhousenderyakebabhossingen":"2026-07-24,2026-08-05","rizroyal":"2026-08-02","suhsihana":"2026-08-18","novalicsuad":"2026-08-23","pizzacircus2":"2026-08-25"};
+// Fréquence médiane max (jours) pour qu'un client soit proposé comme "attendu" dans le planning
+const PLANNING_FREQ_MAX = 45;
 
 // Speed per zone (km/h)
 const ZONE_SPEED = {
@@ -754,10 +1104,16 @@ const TYPE_COLORS = {
 };
 const tc = (t) => TYPE_COLORS[t]||{bg:"#F3F4F6",text:"#374151"};
 const totalFact = (lignes=[], tvaPct=0) => {
-  const prod = lignes.reduce((s,l)=>s+l.qte*l.pu,0);
-  const cons = lignes.reduce((s,l)=>s+l.qte*(l.consigne||0),0);
-  const tva = prod * (tvaPct||0) / 100;
-  return {prod, cons, tva, total: prod+cons+tva};
+  // Les lignes de consigne manuelle (ajout ou retour de vidange, produitId
+  // "CONSIGNE_MANUELLE") ne sont jamais soumises à la TVA — au même titre que
+  // les consignes normales, elles sortent entièrement de l'assiette TVA.
+  // Le transport (produitId "TRANSPORT_MANUEL") est un service à part : toujours
+  // soumis à la TVA standard (TVA_TRANSPORT_PCT), quel que soit le taux du client.
+  const prod = lignes.reduce((s,l)=> (l.produitId==="CONSIGNE_MANUELLE"||l.produitId==="TRANSPORT_MANUEL") ? s : s+l.qte*l.pu, 0);
+  const cons = lignes.reduce((s,l)=> s + (l.produitId==="CONSIGNE_MANUELLE" ? l.qte*l.pu : l.qte*(l.consigne||0)), 0);
+  const transport = lignes.reduce((s,l)=> s + (l.produitId==="TRANSPORT_MANUEL" ? l.qte*l.pu : 0), 0);
+  const tva = prod * (tvaPct||0) / 100 + transport * TVA_TRANSPORT_PCT / 100;
+  return {prod, cons, transport, tva, total: prod+cons+transport+tva};
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -805,6 +1161,9 @@ const getCoutMoyenPondere = (produitId, receptionsStock) => {
 const COUT_RATIO_FALLBACK = 0.72;
 const calcMargeLigne = (ligne, produits, receptionsStock) => {
   if (ligne.isCredit || ligne.produitId === "CREDIT_CONSIGNES") return { marge: 0, reel: true };
+  // Transport : service facturé sans coût d'achat suivi dans le système — marge pleine,
+  // pas d'estimation par ratio (sinon on sous-évalue systématiquement la marge sur le transport).
+  if (ligne.produitId === "TRANSPORT_MANUEL") return { marge: ligne.qte * ligne.pu, reel: true };
   const coutMoyen = getCoutMoyenPondere(ligne.produitId, receptionsStock);
   if (coutMoyen != null && coutMoyen > 0) {
     return { marge: (ligne.pu - coutMoyen) * ligne.qte, reel: true };
@@ -837,6 +1196,9 @@ const calcMargeFacture = (facture, produits, receptionsStock) => {
 // Ouvre un document HTML dans un nouvel onglet et déclenche directement la boîte
 // d'impression du navigateur (qui propose "Enregistrer en PDF" comme destination) —
 // au lieu de télécharger un fichier .html qu'il faudrait rouvrir manuellement.
+// (Un rendu "vrai PDF" auto-téléchargé via html2canvas a été essayé puis abandonné :
+// mise en page dégradée — polices/espacements mal reproduits en captures d'écran.
+// La boîte d'impression, elle, produit un PDF fidèle au HTML/CSS d'origine.)
 const ouvrirEtImprimer = (html, nomFichierSecours) => {
   const fenetre = window.open("", "_blank");
   if (!fenetre) {
@@ -857,10 +1219,17 @@ const ouvrirEtImprimer = (html, nomFichierSecours) => {
   fenetre.onload = () => { try { fenetre.print(); } catch(e) {} };
 };
 
-const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetail = []) => {
+// opts.retour : renvoie le HTML au lieu d'ouvrir la fenêtre (impression groupée)
+// opts.qrId   : identifiant unique du QR code (plusieurs factures dans une même page)
+const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetail = [], opts = {}) => {
+  const qrId = opts.qrId || "qrcode";
   const lignes = facture.lignes || [];
-  const sousTotal = lignes.reduce((s, l) => s + l.qte * l.pu, 0);
-  const totalConsignes = lignes.reduce((s, l) => s + l.qte * (l.consigne || 0), 0);
+  // Les lignes de consigne manuelle (ajout/retour de vidange) sortent de l'assiette
+  // TVA au même titre que les consignes normales — voir totalFact() plus haut.
+  // Le transport (TRANSPORT_MANUEL) est traité à part : TVA standard fixe (TVA_TRANSPORT_PCT).
+  const sousTotal = lignes.reduce((s, l) => (l.produitId==="CONSIGNE_MANUELLE"||l.produitId==="TRANSPORT_MANUEL") ? s : s + l.qte * l.pu, 0);
+  const totalConsignes = lignes.reduce((s, l) => s + (l.produitId==="CONSIGNE_MANUELLE" ? l.qte * l.pu : l.qte * (l.consigne || 0)), 0);
+  const totalTransport = lignes.reduce((s, l) => s + (l.produitId==="TRANSPORT_MANUEL" ? l.qte * l.pu : 0), 0);
 
   // Le taux de TVA est figé au moment de la création de la facture (tva_pct).
   // Pour les factures créées avant ce correctif (champ absent), on retombe sur
@@ -868,7 +1237,8 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
   // pas changer rétroactivement un document déjà émis.
   const tvaPct = facture.tva_pct != null ? facture.tva_pct : (clientEstExonere(client) ? 0 : 3);
   const tvaVal = sousTotal * tvaPct / 100;
-  const total = sousTotal + tvaVal + totalConsignes; // vidanges incluses
+  const tvaTransportVal = totalTransport * TVA_TRANSPORT_PCT / 100;
+  const total = sousTotal + tvaVal + totalConsignes + totalTransport + tvaTransportVal; // vidanges + transport inclus
 
   const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
 
@@ -1057,6 +1427,10 @@ ${noteClientHTML}
       <tr><td>Sous-total HT</td><td style="text-align:right">${fmtEur(sousTotal)}</td></tr>
       <tr><td>TVA ${tvaPct}%</td><td style="text-align:right">${fmtEur(tvaVal)}</td></tr>
       <tr class="sub-row"><td>Total boissons (TTC)</td><td style="text-align:right">${fmtEur(sousTotal + tvaVal)}</td></tr>
+      ${totalTransport > 0 ? `
+      <tr><td>Transport HT</td><td style="text-align:right">${fmtEur(totalTransport)}</td></tr>
+      <tr><td>TVA transport ${TVA_TRANSPORT_PCT}%</td><td style="text-align:right">${fmtEur(tvaTransportVal)}</td></tr>
+      ` : ""}
       <tr class="sub-row"><td>Total vidanges</td><td style="text-align:right">${fmtEur(totalConsignes)}</td></tr>
       <tr class="total-row"><td>TOTAL À PAYER</td><td style="text-align:right">${fmtEur(total)}</td></tr>
     </table>
@@ -1076,13 +1450,13 @@ ${noteClientHTML}
   <p class="bank">Conditions : 7 jours date de facture &nbsp;|&nbsp; BIC: BGLLLULL · LU14 0030 1895 5248 0000 &nbsp;|&nbsp; BIC: REVOLT21 · LT85 3250 0571 2868 0584</p>
   <p class="bank">Titulaire : BOSSOK DISTRIBUTION S.A.R.L</p>
   <div style="display:flex;justify-content:flex-end;margin-top:6px">
-    <div id="qrcode" style="display:inline-block"></div>
+    <div id="${qrId}" style="display:inline-block"></div>
   </div>
   <p style="margin-top:14px;padding-top:10px;border-top:1px solid #EAEAEA;font-size:6.5pt;color:#999;font-style:italic;text-align:justify;">La présente facture vaut contrat. Par sa signature, le client reconnaît la dette et accepte les présentes conditions ainsi que les General Terms &amp; Conditions de Bossok Distribution S.à r.l. Toute contestation doit être formulée par écrit dans un délai de 8 jours à compter de la date de la facture. Le droit luxembourgeois est applicable et les tribunaux de Luxembourg sont exclusivement compétents.</p>
 </div>
 
 <script>
-  window.onload = function() {
+  window.addEventListener("load", function() {
     // EPC QR Code for SEPA payment
     const epcData = [
       "BCD",           // Service Tag
@@ -1100,7 +1474,7 @@ ${noteClientHTML}
     ].join("\n");
 
     try {
-      new QRCode(document.getElementById("qrcode"), {
+      new QRCode(document.getElementById("${qrId}"), {
         text: epcData,
         width: 80,
         height: 80,
@@ -1109,14 +1483,170 @@ ${noteClientHTML}
         correctLevel: QRCode.CorrectLevel.M
       });
     } catch(e) {
-      document.getElementById("qrcode").innerHTML = "";
+      document.getElementById("${qrId}").innerHTML = "";
     }
-  };
+  });
 </script>
 </body>
 </html>`;
 
+  if (opts.retour) return html;
   ouvrirEtImprimer(html, "Facture_" + facture.numero + ".html");
+};
+
+// Assemble plusieurs factures (HTML complets issus de generatePDF avec opts.retour)
+// en un seul document : une facture par page, une seule fenêtre d'impression.
+const assemblerFacturesPDF = (htmls) => {
+  const style = (htmls[0].match(/<style>([\s\S]*?)<\/style>/) || [,""])[1];
+  const corps = htmls.map(h => {
+    let b = (h.match(/<body>([\s\S]*)<\/body>/) || [,""])[1];
+    b = b.replace(/<div class="no-print">[\s\S]*?<\/div>\s*/, "");
+    return `<section class="fpage">${b}</section>`;
+  }).join("\n");
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"/><title>Factures (${htmls.length})</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>${style}
+body { display:block; min-height:0; padding:0; }
+.fpage { display:flex; flex-direction:column; min-height:100vh; padding:12mm 14mm; page-break-after:always; break-after:page; }
+.fpage:last-child { page-break-after:auto; break-after:auto; }
+@media print { body { padding:0; } .fpage { padding:8mm 10mm; } }
+</style></head><body>
+<div class="no-print"><button onclick="window.print()">🖨️ Imprimer (${htmls.length} factures)</button></div>
+${corps}
+</body></html>`;
+};
+
+// Facture "diverse" : facture libre à un tiers non-client (ex : repreneur de
+// palettes). Même identité visuelle que les factures normales, mais sans
+// dépendance à clients/commandes/consignes — destinataire et lignes libres.
+const generatePDFDiverse = (fd) => {
+  const lignes = fd.lignes || [];
+  const sousTotal = lignes.reduce((s,l)=>s+l.qte*l.pu, 0);
+  const tvaPct = fd.tva_pct != null ? fd.tva_pct : 0;
+  const tvaVal = sousTotal * tvaPct / 100;
+  const total = sousTotal + tvaVal;
+
+  const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
+
+  const rows = lignes.map(l => `
+    <tr>
+      <td style="text-align:center;font-weight:600">${l.qte}</td>
+      <td>${l.description}</td>
+      <td style="text-align:right">${fmtEur(l.pu)}</td>
+      <td style="text-align:right;font-weight:600">${fmtEur(l.qte * l.pu)}</td>
+    </tr>
+  `).join("");
+
+  const emptyRows = Array(Math.max(0, 5 - lignes.length)).fill("").map(() => `
+    <tr><td>&nbsp;</td><td></td><td></td><td style="text-align:right;color:#ccc">—</td></tr>
+  `).join("");
+
+  const payeeStampHTML = fd.statut === "Payée" ? `
+    <div class="paid-stamp"><b>Payée</b>${fd.date_paiement ? " le " + fd.date_paiement : ""}${fd.mode_paiement ? " · " + fd.mode_paiement : ""}</div>
+  ` : "";
+
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Facture ${fd.numero}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:12mm 14mm; min-height:100vh; display:flex; flex-direction:column; }
+    .no-print { position:fixed; top:8px; right:8px; z-index:999; }
+    .no-print button { padding:8px 16px; background:#1D4ED8; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; }
+    h1 { font-size:12.5pt; font-weight:700; color:#1D4ED8; margin-bottom:2px; letter-spacing:-0.2px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+    .company p { font-size:8pt; line-height:1.5; color:#333; }
+    hr { border:none; border-top:1px solid #EAEAEA; margin:12px 0; }
+    .meta { display:flex; justify-content:space-between; margin:16px 0; font-size:8.5pt; }
+    .meta-left p { line-height:1.9; color:#555; }
+    .meta-left p strong { color:#111; }
+    .client-name { font-size:11pt; font-weight:600; color:#111; }
+    .paid-stamp { display:inline-block; margin-top:8px; padding:3px 8px; background:#F0F5FF; border-radius:4px; font-size:7.5pt; color:#1D4ED8; font-weight:600; }
+    table { width:100%; border-collapse:collapse; margin:16px 0; font-size:8.5pt; }
+    thead tr { border-bottom:1.5px solid #111; }
+    th { padding:0 6px 7px; text-align:left; font-size:7pt; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.4px; }
+    td { padding:7px 6px; border-bottom:1px solid #F0F0F0; color:#222; }
+    .bottom { display:flex; justify-content:flex-end; margin-top:16px; }
+    .totals-table { width:220px; font-size:8.5pt; }
+    .totals-table td { padding:4px 0; border:none; color:#666; }
+    .totals-table .total-row td { border-top:1.5px solid #1D4ED8; font-weight:700; font-size:11.5pt; padding-top:8px; color:#1D4ED8; }
+    .footer { margin-top:auto; padding-top:14px; border-top:1px solid #EAEAEA; font-size:7pt; color:#999; }
+    .note { margin:14px 0; padding:8px 0 8px 10px; border-left:2px solid #C7D6FB; font-size:8pt; color:#555; font-style:italic; }
+    @media print { .no-print { display:none; } body { padding:8mm 10mm; } }
+  </style>
+</head>
+<body>
+
+<div class="no-print"><button onclick="window.print()">🖨️ Imprimer</button></div>
+
+<div>
+<div class="header">
+  <div class="company">
+    <h1>BOSSOK DISTRIBUTION Sàrl</h1>
+    <p>71A Boulevard Robert Schuman · 8340 Olm<br/>Tél : 661-620-620 · TVA : LU35355446</p>
+  </div>
+</div>
+
+<hr/>
+
+<div class="meta">
+  <div class="meta-left">
+    <p><strong>Date :</strong> ${fd.date || ""}</p>
+    <p><strong>N° Facture :</strong> <strong>${fd.numero}</strong></p>
+    <p><strong>Échéance :</strong> ${fd.echeance || ""}</p>
+    ${payeeStampHTML}
+  </div>
+  <div style="text-align:right">
+    <p style="font-size:7.5pt;color:#555;margin-bottom:2px">Facturé à :</p>
+    <p class="client-name">${fd.destinataire_nom || ""}</p>
+    <p style="font-size:8pt;color:#333;line-height:1.6">
+      ${(fd.destinataire_adresse||"").replace(/\n/g,"<br/>")}
+      ${fd.destinataire_tva ? "<br/>TVA : "+fd.destinataire_tva : ""}
+    </p>
+  </div>
+</div>
+
+<hr/>
+
+${fd.notes ? `<div class="note">${fd.notes}</div>` : ""}
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:45px;text-align:center">Qté</th>
+      <th>Description</th>
+      <th style="width:80px;text-align:right">Prix unit.</th>
+      <th style="width:80px;text-align:right">Montant</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rows}
+    ${emptyRows}
+  </tbody>
+</table>
+
+<div class="bottom">
+  <table class="totals-table">
+    <tr><td>Sous-total HT</td><td style="text-align:right"><strong>${fmtEur(sousTotal)}</strong></td></tr>
+    <tr><td>TVA ${tvaPct}%</td><td style="text-align:right">${fmtEur(tvaVal)}</td></tr>
+    <tr class="total-row"><td>TOTAL TTC</td><td style="text-align:right">${fmtEur(total)}</td></tr>
+  </table>
+</div>
+</div>
+
+<div class="footer">
+  <p>Pour toute question : <strong>Bossok Distribution Sàrl</strong> · 661-620-620</p>
+  <p>BIC: BGLLLULL · LU14 0030 1895 5248 0000</p>
+  <p>Titulaire : BOSSOK DISTRIBUTION S.A.R.L</p>
+</div>
+
+</body>
+</html>`;
+
+  ouvrirEtImprimer(html, "Facture_" + fd.numero + ".html");
 };
 
 // Bon de livraison : document de preuve de livraison, distinct de la facture.
@@ -1229,6 +1759,12 @@ const generateBonLivraison = (commande, client) => {
         <td style="text-align:center">${totalCaisses}</td>
         <td>Total caisses livrées</td>
       </tr>
+      ${commande.transport > 0 ? `
+      <tr>
+        <td style="text-align:center">🚚</td>
+        <td>Transport — ${Number(commande.transport).toFixed(2).replace(".", ",")} €</td>
+      </tr>
+      ` : ""}
     </tbody>
   </table>
 
@@ -1350,6 +1886,30 @@ function ClientSelected({cl, lastCmd, cmdProduits, onClear, onRepeat, S, badge, 
 // ═══════════════════════════════════════════════════════════════════
 // LOGIN PAGE
 // ═══════════════════════════════════════════════════════════════════
+// Champ mot de passe — défini au niveau module (pas à l'intérieur de LoginPage) :
+// un composant redéfini à chaque rendu est traité par React comme un type différent,
+// ce qui démonte/remonte l'<input> à chaque frappe et fait perdre le focus (il fallait
+// re-cliquer dans le champ après chaque lettre). En le sortant ici, le composant garde
+// la même identité entre les rendus et le focus n'est plus perdu.
+const LOGIN_INPUT_STYLE = { width: "100%", padding: "11px 13px", background: "#fff", border: "1px solid #E3E7ED", borderRadius: 8, color: "#0F172A", fontSize: 14, outline: "none", boxSizing: "border-box" };
+const LOGIN_LABEL_STYLE = { fontSize: 11, fontWeight: 700, color: "#5D6B82", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" };
+function PwField({label, value, onChange, onEnter, show, setShow, placeholder}) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={LOGIN_LABEL_STYLE}>{label}</label>
+      <div style={{position:"relative"}}>
+        <input type={show?"text":"password"} value={value} onChange={onChange}
+          onKeyDown={e => e.key === "Enter" && onEnter && onEnter()}
+          placeholder={placeholder||"••••••••"} style={{...LOGIN_INPUT_STYLE,paddingRight:38}}/>
+        <button type="button" onClick={()=>setShow(s=>!s)}
+          style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#94A3B8",display:"flex"}}>
+          <Icon name={show?"eyeOff":"eye"} size={17}/>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function LoginPage({ onLogin, recoveryToken, onRecoveryDone }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -1450,21 +2010,6 @@ function LoginPage({ onLogin, recoveryToken, onRecoveryDone }) {
       <Icon name="check" size={16}/> {msg}
     </div>
   );
-  const PwField = ({label, value, onChange, onEnter, show, setShow, placeholder}) => (
-    <div style={{ marginBottom: 14 }}>
-      <label style={labelStyle}>{label}</label>
-      <div style={{position:"relative"}}>
-        <input type={show?"text":"password"} value={value} onChange={onChange}
-          onKeyDown={e => e.key === "Enter" && onEnter && onEnter()}
-          placeholder={placeholder||"••••••••"} style={{...inputStyle,paddingRight:38}}/>
-        <button type="button" onClick={()=>setShow(s=>!s)}
-          style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#94A3B8",display:"flex"}}>
-          <Icon name={show?"eyeOff":"eye"} size={17}/>
-        </button>
-      </div>
-    </div>
-  );
-
   return (
     <div style={{ fontFamily: "'Inter',system-ui,sans-serif", minHeight: "100vh", display: "flex", background:"#fff" }}>
       {!isNarrow && (
@@ -1660,7 +2205,27 @@ function App({ session, onLogout }) {
 }
 
 function BossokApp({ session, onLogout }) {
-  const [page, setPage] = useState(()=>parseHash().page);
+  // Rôle de l'utilisateur connecté : "staff" (équipe, accès complet) ou "comptable"
+  // (lecture seule des factures uniquement). null = en cours de détermination.
+  const [role, setRole] = useState(null);
+  const lectureSeule = role === "comptable";
+  const [pageState, setPage] = useState(()=>parseHash().page);
+  const page = role === "comptable" ? "factures" : pageState;
+  useEffect(() => {
+    let annule = false;
+    (async () => {
+      try {
+        const [st, co] = await Promise.all([sb("rpc/is_staff", "POST", {}), sb("rpc/is_comptable", "POST", {})]);
+        if (annule) return;
+        setRole(st === true ? "staff" : co === true ? "comptable" : "staff");
+      } catch (e) {
+        if (annule) return;
+        setError("Impossible de vérifier vos droits d'accès. Rechargez la page.");
+        setLoading(false);
+      }
+    })();
+    return () => { annule = true; };
+  }, []);
   const [pendingClientId, setPendingClientId] = useState(()=>{
     const {page: p, id} = parseHash();
     return p==="clients" ? id : null;
@@ -1719,10 +2284,15 @@ function BossokApp({ session, onLogout }) {
   // Data
   const [clients, setClients] = useState([]);
   const [factures, setFactures] = useState([]);
+  const [facturesDiverses, setFacturesDiverses] = useState([]);
   const [commandes, setCommandes] = useState([]);
   const [stock, setStock] = useState({});
   const [produits, setProduits] = useState([]);
   const [receptionsStock, setReceptionsStock] = useState([]);
+  const [fraisGeneraux, setFraisGeneraux] = useState([]);
+  const [relevesChauffeurs, setRelevesChauffeurs] = useState([]);
+  const [creancesSnapshot, setCreancesSnapshot] = useState([]);
+  const [prixConcurrents, setPrixConcurrents] = useState([]);
   const [pertesStock, setPertesStock] = useState([]);
   const [evenements, setEvenements] = useState([]);
   const [stickyNote, setStickyNote] = useState("");
@@ -1831,6 +2401,7 @@ function BossokApp({ session, onLogout }) {
     return dow === 0 ? 0 : Math.min(dow - 1, 4);
   });
   const [planningWeekOffset, setPlanningWeekOffset] = useState(0); // 0=current, -1=last week, etc.
+  const [planningView, setPlanningView] = useState("semaine"); // "semaine" | "jour"
   const [cmdView, setCmdView] = useState("attente");
   const [searchC, setSearchC] = useState("");
   const [filterType, setFilterType] = useState("Tous");
@@ -1861,6 +2432,7 @@ function BossokApp({ session, onLogout }) {
   const [editProduit, setEditProduit] = useState(null);
   const [produitForm, setProduitForm] = useState({});
   const [produitFilterStatut, setProduitFilterStatut] = useState("Actif");
+  const [showReorderProduits, setShowReorderProduits] = useState(false);
   const showReceptionForm = activeWorkTab?.type==="reception";
   const [receptionLignes, setReceptionLignes] = useState([]); // [{produitId, nom, qte, prix}]
   const [receptionSearch, setReceptionSearch] = useState("");
@@ -1888,11 +2460,29 @@ function BossokApp({ session, onLogout }) {
   const [showEventForm, setShowEventForm] = useState(false);
   const [showPaiementForm, setShowPaiementForm] = useState(false);
   const [openFactureMenu, setOpenFactureMenu] = useState(null);
+  const [factSelected, setFactSelected] = useState([]);   // ids des factures cochées (actions groupées)
+  const [paiementLot, setPaiementLot] = useState(null);   // ids à marquer payées en une fois (null = paiement unitaire)
   const [openCmdMenu, setOpenCmdMenu] = useState(null);
   const [paiementFacture, setPaiementFacture] = useState(null);
   const [paiementForm, setPaiementForm] = useState({});
+  const [showPaiementDiverseForm, setShowPaiementDiverseForm] = useState(false);
+  const [paiementDiverse, setPaiementDiverse] = useState(null);
+  const [paiementDiverseForm, setPaiementDiverseForm] = useState({});
   const [caissePeriode, setCaissePeriode] = useState("semaine");
   const [caisseRef, setCaisseRef] = useState(()=>new Date().toISOString().split("T")[0]);
+
+  // Contrôle de gestion — charges de structure & prix concurrents (formulaires)
+  const [showFraisForm, setShowFraisForm] = useState(false);
+  const [editFrais, setEditFrais] = useState(null);
+  const [fraisForm, setFraisForm] = useState({});
+  const [showPrixConcForm, setShowPrixConcForm] = useState(false);
+  const [prixConcForm, setPrixConcForm] = useState({});
+  const [caHistoriquePreApp, setCaHistoriquePreApp] = useState([]);
+  const [calcDistancesLoading, setCalcDistancesLoading] = useState(false);
+  const [calcDistancesMsg, setCalcDistancesMsg] = useState("");
+  const [matriceDist, setMatriceDist] = useState({}); // {origine:{dest:[km,min]}} distances routières exactes
+  const [matriceMsg, setMatriceMsg] = useState("");
+  const [matriceLoading, setMatriceLoading] = useState(false);
   const [editEvent, setEditEvent] = useState(null);
   const [eventForm, setEventForm] = useState({});
   const [calMonth, setCalMonth] = useState(()=>{const d=new Date();return {year:d.getFullYear(),month:d.getMonth()};});
@@ -1910,12 +2500,34 @@ function BossokApp({ session, onLogout }) {
   const [factDate, setFactDate] = useState(new Date().toISOString().split("T")[0]);
   const [factNotes, setFactNotes] = useState("");
   const [factNoteClient, setFactNoteClient] = useState("");
+  const [factTransportMontant, setFactTransportMontant] = useState("");
   const [factNumero, setFactNumero] = useState("");
   const [factEcheance, setFactEcheance] = useState("");
+  // ── Factures diverses (factures libres à des tiers non-clients, ex : reprise
+  // de palettes par un repreneur externe — indépendant de clients/commandes) ──
+  const showDiverseForm = activeWorkTab?.type==="diverse";
+  const [fdFilterStatut, setFdFilterStatut] = useState("Tous");
+  const [fdFilterSearch, setFdFilterSearch] = useState("");
+  const [editingDiverse, setEditingDiverse] = useState(null);
+  const [fdNumero, setFdNumero] = useState("");
+  const [fdDate, setFdDate] = useState(new Date().toISOString().split("T")[0]);
+  const [fdEcheance, setFdEcheance] = useState("");
+  const [fdDestNom, setFdDestNom] = useState("");
+  const [fdDestAdresse, setFdDestAdresse] = useState("");
+  const [fdDestTva, setFdDestTva] = useState("");
+  const [fdLignes, setFdLignes] = useState([]);
+  const [fdLigneDesc, setFdLigneDesc] = useState("");
+  const [fdLigneQte, setFdLigneQte] = useState("1");
+  const [fdLignePu, setFdLignePu] = useState("");
+  const [fdTvaPct, setFdTvaPct] = useState(17);
+  const [fdNotes, setFdNotes] = useState("");
+  const [fdFichiers, setFdFichiers] = useState([]); // fichiers déjà uploadés : [{chemin, nom}]
+  const [fdFichierEnAttente, setFdFichierEnAttente] = useState(null); // File en cours d'upload
   const [searchFactClient, setSearchFactClient] = useState("");
   const [cmdClientId, setCmdClientId] = useState(null);
   const [cmdProduits, setCmdProduits] = useState([]);
   const [cmdNotes, setCmdNotes] = useState("");
+  const [cmdTransport, setCmdTransport] = useState("");
   const [searchCmdClient, setSearchCmdClient] = useState("");
   const [showProdAdd, setShowProdAdd] = useState(false);
   const [newProd, setNewProd] = useState("");
@@ -1937,6 +2549,15 @@ function BossokApp({ session, onLogout }) {
   const [dashChauffeur, setDashChauffeur] = useState("");
   const [dashProduit, setDashProduit] = useState("");
   const [dashStatut, setDashStatut] = useState("");
+
+  // Contrôle de gestion — filtres période (page dédiée, indépendante du Dashboard)
+  const [cgPeriod, setCgPeriod] = useState("mois");
+  const [cgDateFrom, setCgDateFrom] = useState(() => {
+    const now = new Date();
+    return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
+  });
+  const [cgDateTo, setCgDateTo] = useState(() => new Date().toISOString().split("T")[0]);
+  const [seuilPackOffert, setSeuilPackOffert] = useState(150);
 
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now()+86400000).toISOString().split("T")[0];
@@ -1961,7 +2582,19 @@ function BossokApp({ session, onLogout }) {
         return all.reverse();
       };
 
-      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan] = await Promise.all([
+      // Comptable : uniquement les factures + la vue limitée des clients (aucune autre table n'est lue)
+      if (role === "comptable") {
+        const [clsC, factsC] = await Promise.all([
+          sb("clients_compta?select=*&order=id.desc"),
+          fetchAllFactures(),
+        ]);
+        setClients(clsC);
+        setFactures(factsC);
+        setError(null);
+        return;
+      }
+
+      const [cls, facts, cmds, stk, prods, receps, pertes, evts, note, mesNotes, consMan, factDiv, frais, prixConc, caHistPre, relevesChf, creancesSnap] = await Promise.all([
         db.get("clients"),
         fetchAllFactures(),
         db.get("commandes"),
@@ -1973,14 +2606,26 @@ function BossokApp({ session, onLogout }) {
         db.get("note_partagee"),
         db.get("notes_personnelles"),
         db.get("consignes_manuelles"),
+        db.get("factures_diverses"),
+        db.get("frais_generaux_mensuels"),
+        db.get("prix_concurrents"),
+        db.get("ca_historique_pre_app"),
+        db.get("releves_chauffeurs_mensuels"),
+        db.get("creances_clients_snapshot"),
       ]);
       setClients(cls);
       setFactures(facts);
+      setFacturesDiverses(factDiv);
       setCommandes(cmds);
       const stockMap = {};
       stk.forEach(s => { stockMap[s.produit_id] = s.quantite; });
       setStock(stockMap);
-      setProduits([...prods].sort((a,b) => (a.categorie+a.nom).localeCompare(b.categorie+b.nom)));
+      // Ordre d'affichage : d'abord l'ordre manuel (colonne "ordre", modifiable
+      // dans l'app via les flèches ▲▼), sinon on retombe sur categorie+nom pour
+      // les produits qui n'en auraient pas encore.
+      setProduits([...prods].sort((a,b) =>
+        (a.ordre!=null && b.ordre!=null) ? a.ordre-b.ordre : (a.categorie+a.nom).localeCompare(b.categorie+b.nom)
+      ));
       setReceptionsStock(receps);
       setPertesStock(pertes);
       setEvenements(evts);
@@ -1988,15 +2633,20 @@ function BossokApp({ session, onLogout }) {
       setNotesPersonnelles(mesNotes);
       setMyNote(mesNotes.find(n=>n.user_email===session?.user?.email)?.contenu || "");
       setConsignesManuelles(consMan);
+      setFraisGeneraux(frais);
+      setRelevesChauffeurs(relevesChf);
+      setCreancesSnapshot(creancesSnap);
+      setPrixConcurrents(prixConc);
+      setCaHistoriquePreApp(caHistPre);
       setError(null);
     } catch (e) {
       setError("Erreur de connexion à la base de données. Vérifiez votre connexion internet.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [role]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { if (role) loadAll(); }, [role, loadAll]);
 
   // ── DERIVED ────────────────────────────────────────────────────
   const clientsActifs = clients.filter(c=>c.statut==="Actif");
@@ -2044,7 +2694,14 @@ function BossokApp({ session, onLogout }) {
           const pu = produit ? getClientPrix(produit, client) : 0;
           const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
           const nom = uneSeule ? p.nom : `${p.nom} (${cmd.date_commande||cmd.date_livraison||"?"})`;
-          lignes.push({ produitId: produit?.id||"", nom, qte: p.qte, pu, consigne });
+          const qteOfferte = Math.min(p.qteOfferte||0, p.qte);
+          const qtePayante = p.qte - qteOfferte;
+          if (qtePayante > 0) lignes.push({ produitId: produit?.id||"", nom, qte: qtePayante, pu, consigne });
+          if (qteOfferte > 0) lignes.push({ produitId: produit?.id||"", nom: nom + " (offert)", qte: qteOfferte, pu: 0, consigne, offert: true });
+        }
+        if (cmd.transport > 0) {
+          const nomTransport = uneSeule ? "Transport" : `Transport (${cmd.date_commande||cmd.date_livraison||"?"})`;
+          lignes.push({ produitId:"TRANSPORT_MANUEL", nom: nomTransport, qte:1, pu: cmd.transport, consigne:0 });
         }
       }
       const today = localDateStr();
@@ -2057,6 +2714,7 @@ function BossokApp({ session, onLogout }) {
         date: today, echeance: ech.toISOString().split("T")[0],
         lignes, statut: "Impayée", tva_pct: clientEstExonere(client) ? 0 : 3,
         notes: uneSeule ? `Commande #${cmdsAFacturer[0].id}` : "Facture groupée — " + cmdsAFacturer.map(c=>`Commande #${c.id}`).join(", "),
+        note_client: client.commentaire_facture || "",
         retours: []
       });
       await loadAll();
@@ -2192,6 +2850,28 @@ function BossokApp({ session, onLogout }) {
     finally { setSaving(false); }
   };
 
+  // Demandes de compte portail (clients.statut_compte === "en_attente")
+  // — inscriptions faites depuis hondro-distribution.com, à vérifier avant activation.
+  const activerDemandeCompte = (client) => {
+    askConfirm(`Activer le compte de "${client.nom}" ? Le client pourra se connecter et passer commande sur le portail.`, async () => {
+      try {
+        await db.update("clients", client.id, { statut_compte: "actif" });
+        await loadAll();
+        notifySuccess(`✅ Compte activé pour ${client.nom}.`);
+      } catch(e) { logError(e); }
+    });
+  };
+
+  const refuserDemandeCompte = (client) => {
+    askConfirm(`Refuser la demande de compte de "${client.nom}" ? Le client ne pourra pas se connecter au portail.`, async () => {
+      try {
+        await db.update("clients", client.id, { statut_compte: "refuse" });
+        await loadAll();
+        notifySuccess(`Demande de ${client.nom} refusée.`);
+      } catch(e) { logError(e); }
+    }, {danger:true});
+  };
+
   const geocoderClientsExistants = async () => {
     const aGeocoder = clients.filter(c => c.adresse && (!c.lat || !c.lng));
     if (aGeocoder.length === 0) { notifySuccess("Tous les clients avec une adresse sont déjà géolocalisés."); return; }
@@ -2256,7 +2936,11 @@ function BossokApp({ session, onLogout }) {
         await db.update("produits", editProduit.id, payload);
       } else {
         const newId = genererIdProduit(categorieReelle);
-        await db.insert("produits", {...payload, id: newId, statut: "Actif"});
+        // Nouveau produit : apparaît en dernier dans sa catégorie (ordre d'affichage) ;
+        // se déplace ensuite avec les flèches ▲▼ dans Catalogue produits.
+        const ordresCategorie = produits.filter(p=>p.categorie===categorieReelle).map(p=>p.ordre).filter(o=>o!=null);
+        const ordreDefaut = ordresCategorie.length>0 ? Math.max(...ordresCategorie)+1 : (produits.length+1)*1000000;
+        await db.insert("produits", {...payload, id: newId, statut: "Actif", ordre: ordreDefaut});
       }
       await loadAll();
       closeWorkTab("produit");
@@ -2290,6 +2974,29 @@ function BossokApp({ session, onLogout }) {
     setSaving(true);
     try {
       await db.update("produits", produit.id, {statut: nouveauStatut});
+      await loadAll();
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  // Déplace un produit dans l'ordre d'affichage (colonne "ordre"), en l'échangeant
+  // avec son voisin immédiat DANS LA MÊME CATÉGORIE (canettes, bouteilles...).
+  // `produits` est déjà trié par "ordre" (voir loadAll), donc les voisins ici
+  // sont bien les voisins visuels — pas de déplacement possible entre catégories,
+  // qui restent dans l'ordre fixe canettes → bouteilles → eaux → verre → energy.
+  const deplacerProduit = async (id, direction) => {
+    const p = produits.find(x=>x.id===id);
+    if (!p) return;
+    const memeCategorie = produits.filter(x=>x.categorie===p.categorie);
+    const idx = memeCategorie.findIndex(x=>x.id===id);
+    const swapIdx = direction==="up" ? idx-1 : idx+1;
+    if (swapIdx<0 || swapIdx>=memeCategorie.length) return;
+    const autre = memeCategorie[swapIdx];
+    const ordreP = p.ordre, ordreAutre = autre.ordre;
+    setSaving(true);
+    try {
+      await db.update("produits", p.id, {ordre: ordreAutre});
+      await db.update("produits", autre.id, {ordre: ordreP});
       await loadAll();
     } catch(e) { logError(e); }
     finally { setSaving(false); }
@@ -2460,6 +3167,7 @@ function BossokApp({ session, onLogout }) {
     setFactDate(f.date || new Date().toISOString().split("T")[0]);
     setFactNotes(f.notes || "");
     setFactNoteClient(f.note_client || "");
+    setFactTransportMontant("");
     setFactNumero(f.numero || "");
     setFactEcheance(f.echeance || "");
     setSearchFactClient("");
@@ -2475,18 +3183,26 @@ function BossokApp({ session, onLogout }) {
     setFactNumero(genererNumeroFacture(today));
     const echInit = new Date(today); echInit.setDate(echInit.getDate()+7);
     setFactEcheance(echInit.toISOString().split("T")[0]);
-    setFactNotes(""); setFactNoteClient("");
+    setFactNotes(""); setFactNoteClient(""); setFactTransportMontant("");
     openWorkTab({id:"facture", type:"facture", label:"Nouvelle facture", page:"factures"});
   };
 
   const saveFact = async () => {
     if (!factClientId) { notifyError("Choisis un client avant d'enregistrer la facture."); return; }
-    if (factLignes.length===0) { notifyError("Ajoute au moins un produit à la facture avant d'enregistrer."); return; }
+    // Si un montant de transport a été saisi mais pas encore validé avec son
+    // bouton "+ Ajouter", on l'ajoute automatiquement ici — pour ne pas obliger
+    // à cliquer deux fois, et pour permettre une facture avec transport seul.
+    const transportEnAttente = parseFloat(factTransportMontant)||0;
+    let lignesFinales = factLignes;
+    if (transportEnAttente > 0 && !factLignes.some(l=>l.produitId==="TRANSPORT_MANUEL")) {
+      lignesFinales = [...factLignes, {produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportEnAttente, consigne:0}];
+    }
+    if (lignesFinales.length===0) { notifyError("Ajoute au moins une ligne à la facture avant d'enregistrer (produit, transport ou consigne)."); return; }
     const client = clients.find(c=>c.id===factClientId);
     const num = factNumero || "F-" + Date.now().toString().slice(-6);
     const echDate = factEcheance || (() => { const e = new Date(factDate); e.setDate(e.getDate()+7); return e.toISOString().split("T")[0]; })();
     const ech = new Date(factDate); ech.setDate(ech.getDate()+7);
-    const contientCredit = factLignes.some(l => l.produitId === "CREDIT_CONSIGNES");
+    const contientCredit = lignesFinales.some(l => l.produitId === "CREDIT_CONSIGNES");
     setSaving(true);
     try {
       if (editingFacture) {
@@ -2496,7 +3212,7 @@ function BossokApp({ session, onLogout }) {
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
           date: factDate, echeance: echDate,
-          lignes: factLignes, notes: factNotes, note_client: factNoteClient,
+          lignes: lignesFinales, notes: factNotes, note_client: factNoteClient,
         });
         if (contientCredit) await marquerConsignesUtilisees(factClientId);
         await loadAll();
@@ -2508,17 +3224,17 @@ function BossokApp({ session, onLogout }) {
           client_nom: client?.nom||"", client_adresse: client?.adresse||"",
           client_tva: client?.tva||"",
           date: factDate, echeance: echDate,
-          lignes: factLignes, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: [],
+          lignes: lignesFinales, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: [],
           tva_pct: clientEstExonere(client) ? 0 : 3,
         });
         if (contientCredit) await marquerConsignesUtilisees(factClientId);
         await loadAll();
         const newFact = {numero:num, client_id:factClientId,
           client_nom:client?.nom||"", client_adresse:client?.adresse||"",
-          client_tva:client?.tva||"", date:factDate, lignes:factLignes, statut:"Impayée", note_client:factNoteClient};
+          client_tva:client?.tva||"", date:factDate, lignes:lignesFinales, statut:"Impayée", note_client:factNoteClient};
         setLastFacture({facture:newFact, client});
       }
-      setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactClientId(null);
+      setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactTransportMontant(""); setFactClientId(null);
       setFactNumero(""); setSearchFactClient(""); closeWorkTab("facture");
     } catch(e) { logError(e); }
     finally { setSaving(false); }
@@ -2528,14 +3244,22 @@ function BossokApp({ session, onLogout }) {
     if (!paiementFacture || !paiementForm.mode) return;
     setSaving(true);
     try {
-      await db.update("factures", paiementFacture.id, {
+      const champs = {
         statut: "Payée",
         mode_paiement: paiementForm.mode,
         date_paiement: paiementForm.date || new Date().toISOString().split("T")[0],
-      });
+      };
+      if (paiementLot && paiementLot.length) {
+        // Action groupée : même mode et même date pour toutes les factures cochées
+        for (const id of paiementLot) await db.update("factures", id, champs);
+        setFactSelected([]);
+      } else {
+        await db.update("factures", paiementFacture.id, champs);
+      }
       await loadAll();
       setShowPaiementForm(false);
       setPaiementFacture(null);
+      setPaiementLot(null);
       setPaiementForm({});
     } catch(e) { logError(e); }
     finally { setSaving(false); }
@@ -2548,6 +3272,335 @@ function BossokApp({ session, onLogout }) {
       setFactures(prev=>prev.map(f=>f.id===id?{...f,statut:"Impayée"}:f));
     } catch(e) { logError(e); }
     finally { setSaving(false); }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FACTURES DIVERSES — factures libres à des tiers non-clients (ex : reprise
+  // de palettes par un repreneur externe). Indépendant de clients/commandes :
+  // destinataire et lignes en texte libre, numérotation séparée (préfixe "D"),
+  // taux de TVA éditable par facture (pas de régime fixe comme les boissons).
+  // ═══════════════════════════════════════════════════════════════════
+  const totalFactDiverse = (lignes=[], tvaPct=0) => {
+    const sousTotal = lignes.reduce((s,l)=>s+l.qte*l.pu, 0);
+    const tva = sousTotal * (tvaPct||0) / 100;
+    return { sousTotal, tva, total: sousTotal + tva };
+  };
+
+  const genererNumeroFactureDiverse = (date) => {
+    const d = new Date(date);
+    const annee = d.getFullYear().toString().slice(-1);
+    const mois = (d.getMonth() + 1).toString();
+    const prefix = "D" + annee + mois;
+    const sameMonth = facturesDiverses
+      .map(f => f.numero)
+      .filter(n => n && n.toString().startsWith(prefix))
+      .map(n => parseInt(n.toString().slice(prefix.length)))
+      .filter(n => !isNaN(n));
+    const lastNum = sameMonth.length > 0 ? Math.max(...sameMonth) : 0;
+    const nextNum = String(lastNum + 1).padStart(3, "0");
+    return prefix + nextNum;
+  };
+
+  const openNewDiverseTab = () => {
+    const today = localDateStr();
+    setEditingDiverse(null);
+    setFdDestNom(""); setFdDestAdresse(""); setFdDestTva("");
+    setFdLignes([]);
+    setFdLigneDesc(""); setFdLigneQte("1"); setFdLignePu("");
+    setFdDate(today);
+    setFdNumero(genererNumeroFactureDiverse(today));
+    const echInit = new Date(today); echInit.setDate(echInit.getDate()+30);
+    setFdEcheance(echInit.toISOString().split("T")[0]);
+    setFdTvaPct(17);
+    setFdNotes("");
+    setFdFichiers([]);
+    setFdFichierEnAttente(null);
+    openWorkTab({id:"diverse", type:"diverse", label:"Nouvelle facture diverse", page:"diverses"});
+  };
+
+  const openEditDiverse = (f) => {
+    setEditingDiverse(f);
+    setFdDestNom(f.destinataire_nom||"");
+    setFdDestAdresse(f.destinataire_adresse||"");
+    setFdDestTva(f.destinataire_tva||"");
+    setFdLignes(f.lignes||[]);
+    setFdLigneDesc(""); setFdLigneQte("1"); setFdLignePu("");
+    setFdDate(f.date||localDateStr());
+    setFdEcheance(f.echeance||"");
+    setFdNumero(f.numero||"");
+    setFdTvaPct(f.tva_pct!=null?f.tva_pct:17);
+    setFdNotes(f.notes||"");
+    setFdFichiers(f.pieces_jointes||[]);
+    setFdFichierEnAttente(null);
+    openWorkTab({id:"diverse", type:"diverse", label:"Facture "+(f.numero||""), page:"diverses"});
+  };
+
+  const ajouterLigneDiverse = () => {
+    const qte = parseFloat(fdLigneQte)||0;
+    const pu = parseFloat(fdLignePu)||0;
+    if (!fdLigneDesc.trim() || !qte) return;
+    setFdLignes(prev=>[...prev, {description:fdLigneDesc.trim(), qte, pu}]);
+    setFdLigneDesc(""); setFdLigneQte("1"); setFdLignePu("");
+  };
+  const supprimerLigneDiverse = (i) => setFdLignes(prev=>prev.filter((_,idx)=>idx!==i));
+
+  const ajouterFichierDiverse = async (file) => {
+    if (!file) return;
+    setFdFichierEnAttente(file);
+    try {
+      const up = await uploadFichier(file, "factures-diverses");
+      setFdFichiers(prev=>[...prev, {chemin:up.chemin, nom:up.nom}]);
+    } catch(e) { logError(e); }
+    finally { setFdFichierEnAttente(null); }
+  };
+  const supprimerFichierDiverse = (i) => setFdFichiers(prev=>prev.filter((_,idx)=>idx!==i));
+  const consulterFichierDiverse = async (chemin) => {
+    try {
+      const url = await getUrlSigneeFichier(chemin);
+      window.open(url, "_blank");
+    } catch(e) { logError(e); }
+  };
+
+  const saveDiverse = async () => {
+    if (!fdDestNom.trim()) { notifyError("Indique le destinataire avant d'enregistrer."); return; }
+    if (fdLignes.length===0) { notifyError("Ajoute au moins une ligne à la facture avant d'enregistrer."); return; }
+    const num = fdNumero || "D-" + Date.now().toString().slice(-6);
+    setSaving(true);
+    try {
+      const payload = {
+        numero: num,
+        destinataire_nom: fdDestNom.trim(),
+        destinataire_adresse: fdDestAdresse.trim(),
+        destinataire_tva: fdDestTva.trim(),
+        date: fdDate, echeance: fdEcheance,
+        lignes: fdLignes, tva_pct: parseFloat(fdTvaPct)||0,
+        notes: fdNotes, pieces_jointes: fdFichiers,
+      };
+      if (editingDiverse) {
+        await db.update("factures_diverses", editingDiverse.id, payload);
+      } else {
+        await db.insert("factures_diverses", {...payload, statut:"Impayée"});
+      }
+      await loadAll();
+      setEditingDiverse(null); setFdNumero(""); closeWorkTab("diverse");
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  const saveModePaiementDiverse = async () => {
+    if (!paiementDiverse || !paiementDiverseForm.mode) return;
+    setSaving(true);
+    try {
+      await db.update("factures_diverses", paiementDiverse.id, {
+        statut: "Payée",
+        mode_paiement: paiementDiverseForm.mode,
+        date_paiement: paiementDiverseForm.date || localDateStr(),
+      });
+      await loadAll();
+      setShowPaiementDiverseForm(false);
+      setPaiementDiverse(null);
+      setPaiementDiverseForm({});
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  // Contrôle de gestion — charges de structure mensuelles
+  const saveFrais = async () => {
+    if (!fraisForm.mois) return;
+    setSaving(true);
+    try {
+      const payload = {
+        mois: fraisForm.mois,
+        masse_salariale: fraisForm.masse_salariale!==""&&fraisForm.masse_salariale!=null ? Number(fraisForm.masse_salariale) : null,
+        loyer: fraisForm.loyer!==""&&fraisForm.loyer!=null ? Number(fraisForm.loyer) : null,
+        carburant: fraisForm.carburant!==""&&fraisForm.carburant!=null ? Number(fraisForm.carburant) : null,
+        assurance_vehicules: fraisForm.assurance_vehicules!==""&&fraisForm.assurance_vehicules!=null ? Number(fraisForm.assurance_vehicules) : null,
+        entretien_vehicules: fraisForm.entretien_vehicules!==""&&fraisForm.entretien_vehicules!=null ? Number(fraisForm.entretien_vehicules) : null,
+        leasing_vehicule: fraisForm.leasing_vehicule!==""&&fraisForm.leasing_vehicule!=null ? Number(fraisForm.leasing_vehicule) : null,
+        frais_comptabilite: fraisForm.frais_comptabilite!==""&&fraisForm.frais_comptabilite!=null ? Number(fraisForm.frais_comptabilite) : null,
+        frais_bancaires: fraisForm.frais_bancaires!==""&&fraisForm.frais_bancaires!=null ? Number(fraisForm.frais_bancaires) : null,
+        telephone_mobile: fraisForm.telephone_mobile!==""&&fraisForm.telephone_mobile!=null ? Number(fraisForm.telephone_mobile) : null,
+        abonnement_box: fraisForm.abonnement_box!==""&&fraisForm.abonnement_box!=null ? Number(fraisForm.abonnement_box) : null,
+        autres: fraisForm.autres!==""&&fraisForm.autres!=null ? Number(fraisForm.autres) : null,
+        cout_horaire_chauffeur: fraisForm.cout_horaire_chauffeur!==""&&fraisForm.cout_horaire_chauffeur!=null ? Number(fraisForm.cout_horaire_chauffeur) : null,
+        prix_diesel_litre: fraisForm.prix_diesel_litre!==""&&fraisForm.prix_diesel_litre!=null ? Number(fraisForm.prix_diesel_litre) : null,
+        consommation_l_100km: fraisForm.consommation_l_100km!==""&&fraisForm.consommation_l_100km!=null ? Number(fraisForm.consommation_l_100km) : null,
+        notes: fraisForm.notes || null,
+      };
+      if (editFrais) await db.update("frais_generaux_mensuels", editFrais.id, payload);
+      else await db.insert("frais_generaux_mensuels", payload);
+      await loadAll();
+      setShowFraisForm(false); setEditFrais(null); setFraisForm({});
+      pushToast("Charges du mois enregistrées", "success");
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+  const openFraisForm = (row) => {
+    setEditFrais(row||null);
+    setFraisForm(row ? {...row} : {mois: new Date().toISOString().slice(0,7)+"-01",
+      cout_horaire_chauffeur: 27.64, prix_diesel_litre: 2.057, consommation_l_100km: 11});
+    setShowFraisForm(true);
+  };
+
+  // Contrôle de gestion — relevés mensuels chauffeurs (TrackFleet : km, heures de conduite)
+  const [showRelevChfForm, setShowRelevChfForm] = useState(false);
+  const [editRelevChf, setEditRelevChf] = useState(null);
+  const [relevChfForm, setRelevChfForm] = useState({});
+  const saveRelevChf = async () => {
+    if (!relevChfForm.mois || !relevChfForm.chauffeur) return;
+    setSaving(true);
+    try {
+      const payload = {
+        mois: relevChfForm.mois,
+        chauffeur: relevChfForm.chauffeur,
+        km: relevChfForm.km!==""&&relevChfForm.km!=null ? Number(relevChfForm.km) : null,
+        heures_conduite: relevChfForm.heures_conduite!==""&&relevChfForm.heures_conduite!=null ? Number(relevChfForm.heures_conduite) : null,
+        trajets: relevChfForm.trajets!==""&&relevChfForm.trajets!=null ? Number(relevChfForm.trajets) : null,
+        notes: relevChfForm.notes || null,
+      };
+      if (editRelevChf) await db.update("releves_chauffeurs_mensuels", editRelevChf.id, payload);
+      else await db.insert("releves_chauffeurs_mensuels", payload);
+      await loadAll();
+      setShowRelevChfForm(false); setEditRelevChf(null); setRelevChfForm({});
+      pushToast("Relevé chauffeur enregistré", "success");
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+  const openRelevChfForm = (row) => {
+    setEditRelevChf(row||null);
+    setRelevChfForm(row ? {...row} : {mois: new Date().toISOString().slice(0,7)+"-01", chauffeur:"Sefa"});
+    setShowRelevChfForm(true);
+  };
+
+  // Contrôle de gestion — prix relevés chez la concurrence
+  const savePrixConc = async () => {
+    if (!prixConcForm.produit_id || !prixConcForm.prix) return;
+    setSaving(true);
+    try {
+      await db.insert("prix_concurrents", {
+        produit_id: prixConcForm.produit_id,
+        concurrent: prixConcForm.concurrent || "Freshy",
+        prix: Number(prixConcForm.prix),
+        date_releve: prixConcForm.date_releve || localDateStr(),
+        notes: prixConcForm.notes || null,
+      });
+      await loadAll();
+      setShowPrixConcForm(false); setPrixConcForm({});
+      pushToast("Prix concurrent enregistré", "success");
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  // Contrôle de gestion — distance réelle (trajet routier) dépôt → client, via l'API
+  // publique OSRM (gratuite, pas de clé). Appelée manuellement (pas à chaque chargement)
+  // et met en cache le résultat dans clients.distance_route_km pour ne pas re-calculer
+  // à chaque fois. Se rabat sur la distance à vol d'oiseau si l'appel échoue.
+  const calculerDistancesReelles = async (forcerTout=false) => {
+    const aTraiter = clients.filter(c=>c.lat!=null && c.lng!=null && (forcerTout || c.distance_route_km==null));
+    if (aTraiter.length===0) { setCalcDistancesMsg("Toutes les distances sont déjà calculées."); return; }
+    setCalcDistancesLoading(true);
+    // Position exacte du dépôt (Hesperange) avant de calculer les trajets
+    setCalcDistancesMsg("Localisation du dépôt (Hesperange)...");
+    let posDepot = await geocodeAddress(DEPOT_ADRESSE);
+    if (!posDepot) posDepot = await geocodeAddress("Route de Thionville, Hesperange, Luxembourg");
+    if (!posDepot) {
+      setCalcDistancesMsg("Adresse du dépôt introuvable (service de localisation indisponible). Réessayez dans un moment.");
+      setCalcDistancesLoading(false);
+      return;
+    }
+    DEPOT.lat = posDepot.lat; DEPOT.lng = posDepot.lng;
+    setCalcDistancesMsg("Calcul en cours : 0 / "+aTraiter.length);
+    let ok=0, fail=0;
+    for (let i=0;i<aTraiter.length;i++) {
+      const c = aTraiter[i];
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${DEPOT.lng},${DEPOT.lat};${Number(c.lng)},${Number(c.lat)}?overview=false`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const distM = data?.routes?.[0]?.distance;
+        if (distM!=null) {
+          await db.update("clients", c.id, {distance_route_km: Math.round(distM/100)/10, distance_route_updated_at: new Date().toISOString()});
+          ok++;
+        } else fail++;
+      } catch(e) { fail++; }
+      setCalcDistancesMsg("Calcul en cours : "+(i+1)+" / "+aTraiter.length);
+      await new Promise(r=>setTimeout(r,300)); // ménage l'API publique gratuite
+    }
+    await loadAll();
+    setCalcDistancesMsg(ok+" distance(s) calculée(s)"+(fail>0?", "+fail+" échec(s) (gardent l'estimation à vol d'oiseau)":""));
+    setCalcDistancesLoading(false);
+  };
+
+  // Matrice des distances routières (km + minutes) dépôt ↔ clients géolocalisés du Luxembourg.
+  const MATRICE_LS = "bossok_matrice_routes_v1";
+  const chargerMatrice = async () => {
+    try {
+      const rows = await sb("distances_routieres?select=origine,destinations");
+      const m = {}; rows.forEach(r=>{ m[r.origine]=r.destinations||{}; });
+      if (Object.keys(m).length) { setMatriceDist(m); return; }
+    } catch(e) { /* table absente ou non accessible : repli navigateur */ }
+    try { const ls = JSON.parse(localStorage.getItem(MATRICE_LS)||"null"); if (ls) setMatriceDist(ls); } catch(e) {}
+  };
+  const calculerMatriceRoutes = async () => {
+    setMatriceLoading(true);
+    try {
+      setMatriceMsg("Localisation du dépôt (Hesperange)...");
+      let pos = await geocodeAddress(DEPOT_ADRESSE);
+      if (!pos) pos = await geocodeAddress("Route de Thionville, Hesperange, Luxembourg");
+      if (!pos) { setMatriceMsg("Adresse du dépôt introuvable. Réessayez dans un moment."); setMatriceLoading(false); return; }
+      DEPOT.lat = pos.lat; DEPOT.lng = pos.lng;
+      const etrangers = ["Belgique","France","Hollande","Allemagne"];
+      const noeuds = [{key:"depot", lat:DEPOT.lat, lng:DEPOT.lng},
+        ...clients.filter(c=>c.lat!=null && c.lng!=null && c.statut==="Actif" && (!c.pays||c.pays==="Luxembourg") && !etrangers.includes(c.region))
+                  .map(c=>({key:String(c.id), lat:Number(c.lat), lng:Number(c.lng)}))];
+      const TAILLE = 45, blocs = [];
+      for (let i=0;i<noeuds.length;i+=TAILLE) blocs.push(noeuds.slice(i,i+TAILLE));
+      const res = {}; noeuds.forEach(n=>{ res[n.key]={}; });
+      let fait = 0; const total = blocs.length*blocs.length;
+      for (let bi=0;bi<blocs.length;bi++) for (let bj=0;bj<blocs.length;bj++) {
+        setMatriceMsg(`Calcul des trajets routiers : ${fait}/${total} (${noeuds.length-1} clients)`);
+        const A = blocs[bi], B = blocs[bj];
+        const coords = bi===bj ? A : [...A, ...B];
+        const src = A.map((_,k)=>k), dst = bi===bj ? A.map((_,k)=>k) : B.map((_,k)=>A.length+k);
+        const t = await osrmTable(coords, src, dst);
+        A.forEach((a,ia)=>B.forEach((b,ib)=>{
+          const km = t.km?.[ia]?.[ib], mn = t.min?.[ia]?.[ib];
+          if (km!=null && a.key!==b.key) res[a.key][b.key] = [Math.round(km/100)/10, Math.round(mn/60*10)/10];
+        }));
+        fait++; await new Promise(r=>setTimeout(r,1100)); // ménage l'API publique gratuite
+      }
+      setMatriceDist(res);
+      try { localStorage.setItem(MATRICE_LS, JSON.stringify(res)); } catch(e) {}
+      let enBase = true;
+      try {
+        await sbUpsert("distances_routieres", Object.entries(res).map(([origine,destinations])=>({origine, destinations, updated_at:new Date().toISOString()})), "origine");
+      } catch(e) { enBase = false; }
+      setMatriceMsg(`✓ ${noeuds.length-1} clients — distances routières exactes calculées`+(enBase?"":" (enregistrées sur cet appareil seulement : table partagée non disponible)"));
+    } catch(e) {
+      setMatriceMsg("Échec du calcul : "+(e?.message||e)+". Réessayez.");
+    }
+    setMatriceLoading(false);
+  };
+  useEffect(()=>{ if (page==="planning") chargerMatrice(); }, [page]);
+
+  const marquerDiverseImpayee = async (id) => {
+    setSaving(true);
+    try {
+      await db.update("factures_diverses", id, {statut:"Impayée"});
+      setFacturesDiverses(prev=>prev.map(f=>f.id===id?{...f,statut:"Impayée"}:f));
+    } catch(e) { logError(e); }
+    finally { setSaving(false); }
+  };
+
+  const supprimerDiverse = (id, numero) => {
+    askConfirm(`Supprimer la facture ${numero} ? Cette action est irréversible.`, async () => {
+      setSaving(true);
+      try {
+        await db.delete("factures_diverses", id);
+        await loadAll();
+      } catch(e) { logError(e); }
+      finally { setSaving(false); }
+    }, {danger:true, confirmLabel:"Supprimer"});
   };
 
   const supprimerFacture = async (id, numero) => {
@@ -2663,6 +3716,7 @@ function BossokApp({ session, onLogout }) {
     setCmdClientId(cmd.client_id);
     setCmdProduits(cmd.produits||[]);
     setCmdNotes(cmd.notes||"");
+    setCmdTransport("");
     setSearchCmdClient("");
     openWorkTab({id:"commande", type:"commande", label:"Nouvelle commande", page:"commandes"});
   };
@@ -2672,6 +3726,7 @@ function BossokApp({ session, onLogout }) {
     setCmdClientId(cmd.client_id);
     setCmdProduits(cmd.produits||[]);
     setCmdNotes(cmd.notes||"");
+    setCmdTransport(cmd.transport ? String(cmd.transport) : "");
     setSearchCmdClient("");
     openWorkTab({id:"commande", type:"commande", label:"Commande — "+(cmd.client_nom||""), page:"commandes"});
   };
@@ -2680,6 +3735,7 @@ function BossokApp({ session, onLogout }) {
     setCmdClientId(null);
     setCmdProduits([]);
     setCmdNotes("");
+    setCmdTransport("");
     setSearchCmdClient("");
     setManualConsigneLignesCmd([]);
     openWorkTab({id:"commande", type:"commande", label:"Nouvelle commande", page:"commandes"});
@@ -2687,8 +3743,10 @@ function BossokApp({ session, onLogout }) {
 
   const saveCmd = async () => {
     if (!cmdClientId) { notifyError("Choisis un client avant d'enregistrer la commande."); return; }
-    if (cmdProduits.length===0) { notifyError("Ajoute au moins un produit à la commande avant d'enregistrer."); return; }
+    // Une commande "transport seul" (sans produit) est autorisée si un montant de transport est saisi.
+    if (cmdProduits.length===0 && !(parseFloat(cmdTransport)>0)) { notifyError("Ajoute au moins un produit, ou un montant de transport, avant d'enregistrer."); return; }
     const client = clients.find(c=>c.id===cmdClientId);
+    const etaitEdition = !!editingCmd;
     setSaving(true);
     try {
       if (editingCmd) {
@@ -2706,37 +3764,47 @@ function BossokApp({ session, onLogout }) {
           await updateStock(prod.id, Math.max(0, currentQte - delta));
         }
 
+        const transportMontant = parseFloat(cmdTransport)||0;
         await db.update("commandes", editingCmd.id, {
           client_id: cmdClientId, client_nom: client?.nom||"",
           client_adresse: client?.adresse||"", client_region: client?.region||"",
           client_tel: client?.telephone||"",
-          produits: cmdProduits, notes: cmdNotes,
-          chauffeur: getChauffeur(client?.region||""),
+          produits: cmdProduits, notes: cmdNotes, transport: transportMontant||null,
+          // Commande déjà livrée : on garde le chauffeur qui a réellement livré.
+          chauffeur: editingCmd.statut==="Livré" ? (editingCmd.chauffeur||getChauffeur(client?.region||"")) : getChauffeur(client?.region||""),
         });
 
         // Répercuter les nouvelles lignes sur la facture déjà créée pour cette commande
         const facture = findFactureForCommande(editingCmd.id);
         if (facture) {
-          const lignes = cmdProduits.map(p => {
+          const lignes = cmdProduits.flatMap(p => {
             const produit = findProduitByNom(produits, p.nom);
             const pu = produit ? getClientPrix(produit, client) : 0;
             const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
-            return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
+            const qteOfferte = Math.min(p.qteOfferte||0, p.qte);
+            const qtePayante = p.qte - qteOfferte;
+            const res = [];
+            if (qtePayante > 0) res.push({ produitId: produit?.id||"", nom: p.nom, qte: qtePayante, pu, consigne });
+            if (qteOfferte > 0) res.push({ produitId: produit?.id||"", nom: p.nom + " (offert)", qte: qteOfferte, pu: 0, consigne, offert: true });
+            return res;
           });
           manualConsigneLignesCmd.filter(l=>l.qte>0&&l.unitaire).forEach(l=>{
             const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
             lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: l.label || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
           });
-          await db.update("factures", facture.id, { lignes });
+          if (transportMontant > 0) lignes.push({ produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportMontant, consigne:0 });
+          const noteClientMaj = [client?.commentaire_facture, cmdNotes].filter(Boolean).join(" — ");
+          await db.update("factures", facture.id, { lignes, note_client: noteClientMaj });
         }
         setEditingCmd(null);
       } else {
         const suggested = getSuggestedDay(client?.region||"");
+        const transportMontant = parseFloat(cmdTransport)||0;
         const created = await db.insert("commandes", {
           client_id: cmdClientId, client_nom: client?.nom||"",
           client_adresse: client?.adresse||"", client_region: client?.region||"",
           client_tel: client?.telephone||"",
-          produits: cmdProduits, notes: cmdNotes, statut: "En attente",
+          produits: cmdProduits, notes: cmdNotes, transport: transportMontant||null, statut: "En attente",
           chauffeur: suggested.dayIdx <= 1 ? "A" : getChauffeur(client?.region||""),
           date_commande: today, date_livraison: suggested.date||tomorrow,
           jour_livraison: suggested.day,
@@ -2757,30 +3825,38 @@ function BossokApp({ session, onLogout }) {
         if (client?.mode_facturation !== "groupee") {
           const ech = new Date(); ech.setDate(ech.getDate()+7);
           const num = genererNumeroFacture(today);
-          const lignes = cmdProduits.map(p => {
+          const lignes = cmdProduits.flatMap(p => {
             const produit = findProduitByNom(produits, p.nom);
             const pu = produit ? getClientPrix(produit, client) : 0;
             const consigne = produit?.type_emballage==="VC" ? (CONSIGNE_PRIX[produit.consigne]||0) : 0;
-            return { produitId: produit?.id||"", nom: p.nom, qte: p.qte, pu, consigne };
+            const qteOfferte = Math.min(p.qteOfferte||0, p.qte);
+            const qtePayante = p.qte - qteOfferte;
+            const res = [];
+            if (qtePayante > 0) res.push({ produitId: produit?.id||"", nom: p.nom, qte: qtePayante, pu, consigne });
+            if (qteOfferte > 0) res.push({ produitId: produit?.id||"", nom: p.nom + " (offert)", qte: qteOfferte, pu: 0, consigne, offert: true });
+            return res;
           });
           manualConsigneLignesCmd.filter(l=>l.qte>0&&l.unitaire).forEach(l=>{
             const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
             lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: l.label || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
           });
+          if (transportMontant > 0) lignes.push({ produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportMontant, consigne:0 });
           await db.insert("factures", {
             numero: num, client_id: cmdClientId,
             client_nom: client?.nom||"", client_adresse: client?.adresse||"",
             client_tva: client?.tva||"",
             date: today, echeance: ech.toISOString().split("T")[0],
             lignes, statut: "Impayée", notes: `Commande #${newCmd.id}`, retours: [],
+            note_client: [client?.commentaire_facture, cmdNotes].filter(Boolean).join(" — "),
             tva_pct: clientEstExonere(client) ? 0 : 3,
           });
         }
       }
       await loadAll();
-      setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setSearchCmdClient("");
+      setCmdClientId(null); setCmdProduits([]); setCmdNotes(""); setCmdTransport(""); setSearchCmdClient("");
       setManualConsigneLignesCmd([]);
       closeWorkTab("commande");
+      notifySuccess(etaitEdition ? "✅ Commande mise à jour — modifications enregistrées." : "✅ Commande enregistrée.");
     } catch(e) { logError(e); }
     finally { setSaving(false); }
   };
@@ -2887,9 +3963,24 @@ function BossokApp({ session, onLogout }) {
     const pu = getClientPrix(prod, client);
     const consigne = prod.type_emballage==="VC" ? (CONSIGNE_PRIX[prod.consigne]||0) : 0;
     setFactLignes(prev=>{
-      const ex = prev.find(l=>l.produitId===prod.id);
-      if (ex) return prev.map(l=>l.produitId===prod.id?{...l,qte:l.qte+1}:l);
+      const ex = prev.find(l=>l.produitId===prod.id && !l.offert);
+      if (ex) return prev.map(l=>(l.produitId===prod.id && !l.offert)?{...l,qte:l.qte+1}:l);
       return [...prev,{produitId:prod.id,nom:prod.nom,qte:1,pu,consigne}];
+    });
+  };
+
+  // Bascule 1 unité d'une ligne de facture vers une ligne "offert" (gratuite,
+  // consigne inchangée) du même produit — permet d'offrir une partie d'une
+  // quantité (ex: 1 offert sur 5 commandés) sans tout passer à 0€.
+  const offrirUniteFact = (i) => {
+    setFactLignes(prev => {
+      const line = prev[i];
+      if (!line || line.qte<=0 || line.offert) return prev;
+      let next = prev.map((x,j)=>j===i?{...x,qte:x.qte-1}:x).filter(x=>x.qte>0);
+      const offertIdx = next.findIndex(x=>x.produitId===line.produitId && x.offert);
+      if (offertIdx>=0) next = next.map((x,j)=>j===offertIdx?{...x,qte:x.qte+1}:x);
+      else next = [...next, {produitId:line.produitId, nom: line.nom + " (offert)", qte:1, pu:0, consigne:line.consigne, offert:true}];
+      return next;
     });
   };
 
@@ -2916,10 +4007,12 @@ function BossokApp({ session, onLogout }) {
   const NAV = [
     {k:"calendrier",icon:"calendrier",label:"Calendrier"},
     {k:"dashboard",icon:"dashboard",label:"Dashboard"},
+    {k:"controle",icon:"barChart2",label:"Contrôle de gestion"},
     {k:"caisse",icon:"caisse",label:"Caisse"},
     {k:"clients",icon:"clients",label:"Clients"},
     {k:"carte",icon:"carte",label:"Carte"},
     {k:"factures",icon:"factures",label:"Factures"},
+    {k:"diverses",icon:"diverses",label:"Factures diverses"},
     {k:"commandes",icon:"commandes",label:"Commandes"},
     {k:"planning",icon:"planning",label:"Planning"},
     {k:"stock",icon:"stock",label:"Stock"},
@@ -2928,9 +4021,9 @@ function BossokApp({ session, onLogout }) {
     {k:"zones",icon:"zones",label:"Zones"},
   ];
 
-  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
+  const PAGE_TITLES = {calendrier:"Calendrier",dashboard:"Tableau de bord",controle:"Contrôle de gestion",caisse:"Caisse",clients:"Clients",carte:"Carte des clients",factures:"Factures",diverses:"Factures diverses",commandes:"Commandes",planning:"Planning livraisons",stock:"Stock",consignes:"Consignes verre",produits:"Catalogue produits",zones:"Zones & Clients"};
 
-  if (loading) return (
+  if ((loading || role===null) && !error) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8FAFC",fontFamily:"Inter,system-ui,sans-serif"}}>
       <div style={{textAlign:"center"}}>
         <div style={{fontSize:40,marginBottom:16}}>🍺</div>
@@ -3021,14 +4114,17 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
         <div style={{flex:1,padding:"12px 10px",overflowY:"auto"}}>
-          {NAV.map(n=>{
+          {(lectureSeule ? NAV.filter(n=>n.k==="factures") : NAV).map(n=>{
             const stockAlerteCount = n.k==="stock" ? produits.filter(p=>p.statut!=="Passif"&&(stock[p.id]||0)<=STOCK_BAS_SEUIL).length : 0;
+            const demandesCompteCount = n.k==="clients" ? clients.filter(c=>c.statut_compte==="en_attente").length : 0;
+            const commandesEnAttenteCount = n.k==="commandes" ? commandes.filter(c=>c.statut==="En attente").length : 0;
+            const badgeCount = stockAlerteCount || demandesCompteCount || commandesEnAttenteCount;
             return(
               <div key={n.k} className={page===n.k?"":"nav-hover"} style={S.navItem(page===n.k)} onClick={()=>{setSelClient(null);setPage(n.k);if(isMobile)setSidebarOpen(false);}}>
                 <span style={{display:"flex",color:page===n.k?"#1D4ED8":"#64748B"}}><Icon name={n.icon} size={16}/></span><span style={{flex:1}}>{n.label}</span>
-                {stockAlerteCount>0&&(
+                {badgeCount>0&&(
                   <span style={{background:"#DC2626",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>
-                    {stockAlerteCount}
+                    {badgeCount}
                   </span>
                 )}
               </div>
@@ -3037,7 +4133,8 @@ function BossokApp({ session, onLogout }) {
         </div>
         <div style={{padding:"14px 16px",borderTop:"1px solid #F1F5F9",fontSize:11,color:"#94A3B8"}}>
           {saving && <span style={{color:"#1D4ED8",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}><Icon name="refresh" size={11}/> Sauvegarde...</span>}
-          {!saving && <span>✅ {clientsActifs.length} clients actifs</span>}
+          {!saving && !lectureSeule && <span>✅ {clientsActifs.length} clients actifs</span>}
+          {!saving && lectureSeule && <span>🔒 Accès comptable — lecture seule</span>}
         </div>
         <div style={{padding:"10px 16px 16px",borderTop:"1px solid #F1F5F9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <span style={{fontSize:11,color:"#94A3B8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session?.user?.email}</span>
@@ -3056,7 +4153,8 @@ function BossokApp({ session, onLogout }) {
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
-            {page==="factures" && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewFactureTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
+            {page==="factures" && !lectureSeule && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewFactureTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
+            {page==="diverses" && !showDiverseForm && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewDiverseTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
             {page==="commandes" && (showCmdForm ? (
               <button style={{...S.btn("#fff","#1D4ED8"),opacity:saving?0.6:1}} onClick={saveCmd} disabled={saving}>{isMobile?"✅":"✅ Enregistrer"}</button>
             ) : (
@@ -3363,7 +4461,7 @@ function BossokApp({ session, onLogout }) {
           </div>
         </div>
         ) : (()=>{
-          const HOUR_START = 7, HOUR_END = 20, HOUR_HEIGHT = 64;
+          const HOUR_START = 7, HOUR_END = 20, HOUR_HEIGHT = 46;
           const hours = []; for (let h=HOUR_START; h<=HOUR_END; h++) hours.push(h);
           const gridHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
           const timeToY = (t) => { if(!t) return 0; const [h,m]=t.split(":").map(Number); return Math.max(0,((h-HOUR_START)+m/60)*HOUR_HEIGHT); };
@@ -3403,7 +4501,7 @@ function BossokApp({ session, onLogout }) {
               })}
             </div>
             {/* Grille horaire */}
-            <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",maxHeight:740,overflowY:"auto"}}>
+            <div style={{display:"grid",gridTemplateColumns:"48px repeat(7,1fr)",maxHeight:"calc(100vh - 340px)",overflowY:"auto"}}>
               <div>
                 {hours.map(h=>(
                   <div key={h} style={{height:HOUR_HEIGHT,textAlign:"right",paddingRight:5,fontSize:10,color:"#9CA3AF",position:"relative",top:-6}}>{h}:00</div>
@@ -3605,6 +4703,19 @@ function BossokApp({ session, onLogout }) {
   const sefaCmds = dashCmds.filter(c=>c.chauffeur==="A"&&c.statut==="Livré").length;
   const mikailCmds = dashCmds.filter(c=>c.chauffeur==="B"&&c.statut==="Livré").length;
 
+  // Packs offerts (gratuits) — lignes de facture marquées `offert` sur la période filtrée
+  const offertsMap = {};
+  let totalOfferts = 0;
+  factActives.forEach(f=>{
+    (f.lignes||[]).forEach(l=>{
+      if (!l.offert) return;
+      const nom = (l.nom||"").replace(/\s*\(offert\)$/,"");
+      offertsMap[nom] = (offertsMap[nom]||0) + l.qte;
+      totalOfferts += l.qte;
+    });
+  });
+  const offertsListe = Object.entries(offertsMap).map(([nom,qte])=>({nom,qte})).sort((a,b)=>b.qte-a.qte);
+
   // Rentabilité jour par jour — COGS basé sur le prix d'achat fixe du produit (pas le coût moyen pondéré)
   const rentabiliteParJourMap = {};
   factActives.forEach(f=>{
@@ -3752,6 +4863,7 @@ function BossokApp({ session, onLogout }) {
 
   return(
   <div>
+    <ExportDonneesBoutons isMobile={isMobile}/>
     {(()=>{
       const todayStr = localDateStr();
       const facturesEnRetard = factures.filter(f => f.statut==="Impayée" && f.echeance && f.echeance < todayStr);
@@ -3914,6 +5026,27 @@ function BossokApp({ session, onLogout }) {
       </div>
     )}
 
+    {totalOfferts>0&&(
+      <div style={{...S.card,marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:offertsListe.length?10:0}}>
+          <div style={{width:36,height:36,borderRadius:9,background:"#FFFBEB",color:"#B45309",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:17}}>🎁</div>
+          <div>
+            <div style={{fontSize:20,fontWeight:800,color:"#0F172A",letterSpacing:"-0.3px",lineHeight:1.1}}>{totalOfferts} <span style={{fontSize:13,fontWeight:600,color:"#6B7280"}}>caisses offertes</span></div>
+            <div style={{fontSize:11,color:"#94A3B8",fontWeight:600,marginTop:2}}>sur la période{dashClient?" · client sélectionné":""}</div>
+          </div>
+        </div>
+        {offertsListe.length>0&&(
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {offertsListe.map((o,i)=>(
+              <span key={i} style={{fontSize:12,background:"#FFFBEB",color:"#92400E",border:"1px solid #FDE68A",padding:"4px 10px",borderRadius:6,fontWeight:600}}>
+                {o.nom} · ×{o.qte}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    )}
+
     {(()=>{
       const nbRuptures = produits.filter(p=>p.statut!=="Passif"&&!(stock[p.id]>0)).length;
       const nbStockBas = produits.filter(p=>p.statut!=="Passif"&&stock[p.id]>0&&stock[p.id]<=STOCK_BAS_SEUIL).length;
@@ -4049,6 +5182,7 @@ function BossokApp({ session, onLogout }) {
       <DataTable
         isMobile={isMobile}
         rows={rentabiliteJours}
+        exportName="rentabilite_par_jour"
         pageSize={15}
         emptyIcon="€"
         emptyMessage="Aucune facture sur cette période"
@@ -4183,10 +5317,1407 @@ function BossokApp({ session, onLogout }) {
 }
 )()}
 
+{/* ══ CONTRÔLE DE GESTION ══════════════════════════════════════ */}
+{page==="controle" && (()=>{
+
+  const getPeriodDatesCG = (p) => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    if (p==="mois") {
+      return [y+"-"+String(m+1).padStart(2,"0")+"-01", now.toISOString().split("T")[0]];
+    } else if (p==="mois_dernier") {
+      const dm = new Date(now); dm.setDate(0); // dernier jour du mois précédent
+      const dm1 = new Date(dm.getFullYear(), dm.getMonth(), 1);
+      return [dm1.toISOString().split("T")[0], dm.toISOString().split("T")[0]];
+    } else if (p==="trimestre") {
+      const d3 = new Date(now); d3.setMonth(d3.getMonth()-3); d3.setDate(1);
+      return [d3.toISOString().split("T")[0], now.toISOString().split("T")[0]];
+    } else if (p==="annee") {
+      return [y+"-01-01", y+"-12-31"];
+    } else if (p==="12mois") {
+      const dFrom = new Date(now); dFrom.setMonth(dFrom.getMonth()-12);
+      return [dFrom.toISOString().split("T")[0], now.toISOString().split("T")[0]];
+    }
+    return [cgDateFrom, cgDateTo];
+  };
+
+  const [cgFrom, cgTo] = cgPeriod==="custom" ? [cgDateFrom, cgDateTo] : getPeriodDatesCG(cgPeriod);
+
+  const applyPeriodCG = (p) => {
+    setCgPeriod(p);
+    if (p!=="custom") {
+      const [f,t] = getPeriodDatesCG(p);
+      setCgDateFrom(f);
+      setCgDateTo(t);
+    }
+  };
+
+  // Factures actives sur la période (hors avoirs/annulées — même logique que le Dashboard)
+  const cgFacts = factures.filter(f=>{
+    if (!f.date) return false;
+    if (cgFrom && f.date < cgFrom) return false;
+    if (cgTo && f.date > cgTo) return false;
+    return f.statut!=="Avoir" && f.statut!=="Annulée";
+  });
+
+  // ── Agrégations par dimension : type de client, client, produit, zone ──
+  // Marge calculée ligne par ligne via calcMargeLigne (coût moyen pondéré des
+  // réceptions de stock en priorité, sinon prix d'achat produit, sinon estimation).
+  const parType = {}, parClient = {}, parProduit = {}, parZone = {};
+  let caGlobal=0, margeGlobal=0, ligneReellesGlobal=0, ligneTotalGlobal=0;
+
+  cgFacts.forEach(f=>{
+    const cl = clients.find(c=>c.id===f.client_id);
+    const {total} = totalFact(f.lignes, f.tva_pct);
+    const mFact = calcMargeFacture(f, produits, receptionsStock);
+    caGlobal += total; margeGlobal += mFact.marge;
+    ligneReellesGlobal += mFact.ligneReelles; ligneTotalGlobal += mFact.ligneTotal;
+
+    const typeKey = cl?.type || "Autre";
+    if (!parType[typeKey]) parType[typeKey] = {type:typeKey, ca:0, marge:0, nb:0, clientsSet:new Set()};
+    parType[typeKey].ca += total; parType[typeKey].marge += mFact.marge; parType[typeKey].nb++;
+    if (f.client_id) parType[typeKey].clientsSet.add(f.client_id);
+
+    const cid = f.client_id;
+    if (!parClient[cid]) parClient[cid] = {id:cid, nom:f.client_nom, type:cl?.type||"", zone:cl?.region||"", ca:0, marge:0, nb:0, dateMin:f.date, dateMax:f.date};
+    parClient[cid].ca += total; parClient[cid].marge += mFact.marge; parClient[cid].nb++;
+    if (f.date < parClient[cid].dateMin) parClient[cid].dateMin = f.date;
+    if (f.date > parClient[cid].dateMax) parClient[cid].dateMax = f.date;
+
+    const zoneKey = cl?.region || "Inconnu";
+    if (!parZone[zoneKey]) parZone[zoneKey] = {zone:zoneKey, ca:0, marge:0, nb:0};
+    parZone[zoneKey].ca += total; parZone[zoneKey].marge += mFact.marge; parZone[zoneKey].nb++;
+
+    (f.lignes||[]).filter(l=>!l.isCredit && l.produitId!=="CREDIT_CONSIGNES").forEach(l=>{
+      const nomProd = (l.nom||"").replace(/\s*\(offert\)$/,"");
+      const produitRef = produits.find(p=>p.id===l.produitId);
+      if (!parProduit[nomProd]) parProduit[nomProd] = {nom:nomProd, produitId:l.produitId, categorie:produitRef?.categorie||"—", qte:0, ca:0, marge:0, reel:0, total:0};
+      const r = calcMargeLigne(l, produits, receptionsStock);
+      parProduit[nomProd].qte += l.qte; parProduit[nomProd].ca += l.qte*l.pu; parProduit[nomProd].marge += r.marge;
+      parProduit[nomProd].total++; if (r.reel) parProduit[nomProd].reel++;
+    });
+  });
+
+  const listeType = Object.values(parType).map(t=>({...t, nbClients:t.clientsSet.size, cogs:t.ca-t.marge, margePct: t.ca>0?t.marge/t.ca*100:0}));
+  const listeClient = Object.values(parClient).map(c=>{
+    const spanJours = (new Date(c.dateMax)-new Date(c.dateMin))/86400000;
+    const freqJours = c.nb>1 ? spanJours/(c.nb-1) : null; // jours moyens entre 2 commandes
+    return {...c, cogs:c.ca-c.marge, margePct: c.ca>0?c.marge/c.ca*100:0, freqJours};
+  });
+
+  // Prix concurrent le plus récent par produit (plusieurs relevés possibles dans le temps)
+  const prixConcMap = {};
+  prixConcurrents.forEach(pc=>{
+    const cur = prixConcMap[pc.produit_id];
+    if (!cur || (pc.date_releve||"") > (cur.date_releve||"")) prixConcMap[pc.produit_id] = pc;
+  });
+  const listeProduit = Object.values(parProduit).map(p=>{
+    const prixVente = p.qte>0 ? p.ca/p.qte : 0;
+    const conc = prixConcMap[p.produitId];
+    const ecartPct = (conc && prixVente>0) ? (prixVente-conc.prix)/conc.prix*100 : null;
+    return {...p, cogs:p.ca-p.marge, margePct: p.ca>0?p.marge/p.ca*100:0, fiabilite: p.total>0?p.reel/p.total*100:100,
+      prixVente, prixConcurrent: conc?.prix ?? null, concurrentNom: conc?.concurrent || null, ecartPct};
+  });
+
+  // Distance moyenne au dépôt par zone — distance réelle de trajet (routing OSRM) quand
+  // elle a été calculée pour le client (clients.distance_route_km), sinon vol d'oiseau en
+  // repli (proxy). nbReel/nbTotal permet d'afficher la fiabilité de la moyenne par zone.
+  const distanceParZone = {};
+  const nbClientsAvecDistanceReelle = clients.filter(c=>c.distance_route_km!=null).length;
+  const nbClientsAvecCoords = clients.filter(c=>c.lat!=null && c.lng!=null).length;
+  clients.forEach(c=>{
+    const z = c.region || "Inconnu";
+    const reelle = c.distance_route_km!=null ? Number(c.distance_route_km) : null;
+    const d = reelle!=null ? reelle : distanceKm(DEPOT.lat, DEPOT.lng, Number(c.lat), Number(c.lng));
+    if (d==null) return;
+    if (!distanceParZone[z]) distanceParZone[z] = {sum:0, n:0, nReel:0};
+    distanceParZone[z].sum += d; distanceParZone[z].n++;
+    if (reelle!=null) distanceParZone[z].nReel++;
+  });
+  const listeZone = Object.values(parZone).map(z=>{
+    const dz = distanceParZone[z.zone];
+    return {...z, driver: ZONE_SCHEDULE[z.zone]?.driver || "?", cogs:z.ca-z.marge, margePct: z.ca>0?z.marge/z.ca*100:0,
+      distanceMoyenne: dz ? dz.sum/dz.n : null,
+      distanceSource: dz && dz.n>0 ? (dz.nReel===dz.n ? "route" : dz.nReel>0 ? "mixte" : "vol") : null};
+  });
+
+  // ── Coût de livraison réel (TrackFleet) : km + heures de conduite par chauffeur,
+  // relevés manuellement chaque mois, convertis en coût réel (carburant + temps
+  // chauffeur chargé) via les paramètres de "Charges du mois", puis alloués par zone
+  // au prorata d'une distance estimée (distance moyenne × 2 aller-retour × nb factures)
+  // au sein des zones d'un même chauffeur. Cette allocation sert à obtenir une marge
+  // NETTE par zone/client — elle ne vient PAS en déduction supplémentaire du "Résultat
+  // net" global ci-dessous, qui soustrait déjà masse_salariale et carburant au niveau
+  // de toute l'entreprise (double-compter serait faux).
+  const moisListCG = [];
+  { const d0 = new Date((cgFrom||"2000-01-01").slice(0,7)+"-01"), d1 = new Date((cgTo||cgFrom||"2000-01-01").slice(0,7)+"-01");
+    for (let d=new Date(d0); d<=d1; d.setMonth(d.getMonth()+1)) moisListCG.push(d.toISOString().slice(0,7)); }
+  const coutLivraisonParChauffeur = {}; // {Sefa:{cout,km,heures,moisRenseignes}, Mikail:{...}}
+  moisListCG.forEach(m=>{
+    const fg = fraisGeneraux.find(f=>(f.mois||"").slice(0,7)===m);
+    const prixDiesel = fg?.prix_diesel_litre!=null ? Number(fg.prix_diesel_litre) : 2.057;
+    const consoL100 = fg?.consommation_l_100km!=null ? Number(fg.consommation_l_100km) : 11;
+    const coutHoraire = fg?.cout_horaire_chauffeur!=null ? Number(fg.cout_horaire_chauffeur) : 27.64;
+    relevesChauffeurs.filter(r=>(r.mois||"").slice(0,7)===m).forEach(r=>{
+      const ch = r.chauffeur;
+      if (!coutLivraisonParChauffeur[ch]) coutLivraisonParChauffeur[ch] = {cout:0, km:0, heures:0, moisRenseignes:0};
+      const km = Number(r.km)||0, heures = Number(r.heures_conduite)||0;
+      coutLivraisonParChauffeur[ch].cout += km*(consoL100/100)*prixDiesel + heures*coutHoraire;
+      coutLivraisonParChauffeur[ch].km += km;
+      coutLivraisonParChauffeur[ch].heures += heures;
+      coutLivraisonParChauffeur[ch].moisRenseignes++;
+    });
+  });
+  const estKmParChauffeur = {};
+  listeZone.forEach(z=>{
+    if (z.driver==="?" || z.distanceMoyenne==null) return;
+    estKmParChauffeur[z.driver] = (estKmParChauffeur[z.driver]||0) + z.distanceMoyenne*2*z.nb;
+  });
+  const coutLivraisonParZone = {};
+  listeZone.forEach(z=>{
+    const cd = coutLivraisonParChauffeur[z.driver];
+    if (!cd || z.driver==="?" || z.distanceMoyenne==null) { coutLivraisonParZone[z.zone]=null; return; }
+    const totalEstKm = estKmParChauffeur[z.driver]||0;
+    coutLivraisonParZone[z.zone] = totalEstKm>0 ? (z.distanceMoyenne*2*z.nb/totalEstKm)*cd.cout : 0;
+  });
+  const listeZoneNette = listeZone.map(z=>{
+    const coutLivraison = coutLivraisonParZone[z.zone];
+    const margeNette = coutLivraison!=null ? z.marge-coutLivraison : null;
+    return {...z, coutLivraison, margeNette, margeNettePct: (margeNette!=null && z.ca>0) ? margeNette/z.ca*100 : null};
+  });
+  const coutLivraisonTotal = Object.values(coutLivraisonParChauffeur).reduce((s,c)=>s+c.cout,0);
+  const nbChauffeursRenseignes = Object.keys(coutLivraisonParChauffeur).length;
+  // Marge nette globale = null tant qu'au moins une zone n'a pas de coût de livraison
+  // calculé (chauffeur sans relevé TrackFleet sur la période) — pour ne jamais afficher
+  // un total net qui sous-estime les charges en silence.
+  const margeNetteGlobaleCalc = listeZoneNette.length>0 && listeZoneNette.every(z=>z.margeNette!=null)
+    ? margeGlobal - coutLivraisonTotal : null;
+  // Marge nette par client : coût de livraison de la zone du client réparti au prorata
+  // de son CA au sein de cette zone (un client qui pèse 20% du CA d'une zone porte
+  // ~20% du coût réel de livraison relevé pour cette zone).
+  // Panier moyen & évolution : comparaison avec la période précédente de même durée
+  // (ex. "mois" compare au mois d'avant), pour repérer un client qui réduit doucement
+  // ses commandes avant de devenir inactif.
+  const dureeJoursCG = (cgFrom && cgTo) ? Math.round((new Date(cgTo)-new Date(cgFrom))/86400000)+1 : null;
+  let cgFromPrec=null, cgToPrec=null;
+  if (dureeJoursCG) {
+    const toPrec = new Date(cgFrom); toPrec.setDate(toPrec.getDate()-1);
+    const fromPrec = new Date(toPrec); fromPrec.setDate(fromPrec.getDate()-dureeJoursCG+1);
+    cgToPrec = toPrec.toISOString().split("T")[0];
+    cgFromPrec = fromPrec.toISOString().split("T")[0];
+  }
+  const factsPrecCG = (cgFromPrec && cgToPrec) ? factures.filter(f=>f.date && f.date>=cgFromPrec && f.date<=cgToPrec && f.statut!=="Avoir" && f.statut!=="Annulée") : [];
+  const panierPrecParClient = {};
+  factsPrecCG.forEach(f=>{
+    if (!f.client_id) return;
+    const {total} = totalFact(f.lignes, f.tva_pct);
+    if (!panierPrecParClient[f.client_id]) panierPrecParClient[f.client_id] = {ca:0, nb:0};
+    panierPrecParClient[f.client_id].ca += total;
+    panierPrecParClient[f.client_id].nb++;
+  });
+  const listeClientNette = listeClient.map(c=>{
+    const z = listeZoneNette.find(zz=>zz.zone===(c.zone||"Inconnu"));
+    const panierMoyen = c.nb>0 ? c.ca/c.nb : 0;
+    const prec = panierPrecParClient[c.id];
+    const panierMoyenPrec = (prec && prec.nb>0) ? prec.ca/prec.nb : null;
+    const panierEvolutionPct = (panierMoyenPrec!=null && panierMoyenPrec>0) ? (panierMoyen-panierMoyenPrec)/panierMoyenPrec*100 : null;
+    if (!z || z.coutLivraison==null || z.ca<=0) return {...c, coutLivraison:null, margeNette:null, margeNettePct:null, panierMoyen, panierMoyenPrec, panierEvolutionPct};
+    const coutLivraison = (c.ca/z.ca)*z.coutLivraison;
+    const margeNette = c.marge-coutLivraison;
+    return {...c, coutLivraison, margeNette, margeNettePct: c.ca>0 ? margeNette/c.ca*100 : null, panierMoyen, panierMoyenPrec, panierEvolutionPct};
+  });
+
+  const caProduitsTotal = listeProduit.reduce((s,p)=>s+p.ca,0);
+  const margeProduitsTotal = listeProduit.reduce((s,p)=>s+p.marge,0);
+  const margePctGlobal = caGlobal>0 ? margeGlobal/caGlobal*100 : 0;
+  const fiabiliteGlobal = ligneTotalGlobal>0 ? ligneReellesGlobal/ligneTotalGlobal*100 : 100;
+  const cogsGlobal = caGlobal - margeGlobal;
+
+  // Nouveaux clients par mois (basé sur clients.created_at), sur la période sélectionnée —
+  // indicateur d'acquisition, séparé de la marge (un nouveau client n'a pas encore forcément facturé).
+  const nouveauxClientsParMois = {};
+  clients.forEach(c=>{
+    if (!c.created_at) return;
+    const m = c.created_at.slice(0,7);
+    if (cgFrom && m < cgFrom.slice(0,7)) return;
+    if (cgTo && m > cgTo.slice(0,7)) return;
+    if (!nouveauxClientsParMois[m]) nouveauxClientsParMois[m] = {nb:0, noms:[]};
+    nouveauxClientsParMois[m].nb++;
+    nouveauxClientsParMois[m].noms.push(c.nom);
+  });
+  const listeNouveauxClients = Object.entries(nouveauxClientsParMois).sort((a,b)=>a[0].localeCompare(b[0]));
+  const totalNouveauxClients = listeNouveauxClients.reduce((s,[,v])=>s+v.nb,0);
+
+  // ── Clients inactifs (30+ jours sans commande) ──────────────────────────
+  // Indicateur "live", indépendant du filtre de période ci-dessus : on regarde
+  // la vraie dernière facture de chaque client actif, sur TOUTE la base.
+  const AUJOURD_HUI_CG = localDateStr();
+  const derniereFactureParClient = {};
+  factures.forEach(f=>{
+    if (!f.client_id || !f.date) return;
+    if (f.statut==="Avoir" || f.statut==="Annulée") return;
+    if (!derniereFactureParClient[f.client_id] || f.date > derniereFactureParClient[f.client_id]) derniereFactureParClient[f.client_id] = f.date;
+  });
+  const clientsInactifs30j = clients.filter(c=>c.statut==="Actif").map(c=>{
+    const derniereDate = derniereFactureParClient[c.id] || null;
+    const joursDepuis = derniereDate ? Math.round((new Date(AUJOURD_HUI_CG)-new Date(derniereDate))/86400000) : null;
+    return {id:c.id, nom:c.nom, zone:c.region, derniereDate, joursDepuis};
+  }).filter(c=>c.joursDepuis==null || c.joursDepuis>30)
+    .sort((a,b)=>(b.joursDepuis??999999)-(a.joursDepuis??999999));
+
+  // ── Vieillissement des créances ─────────────────────────────────────────
+  // Référence externe (import ponctuel), pas recalculée en live — on affiche
+  // le dernier relevé (date_snapshot la plus récente).
+  const dateSnapshotRecente = creancesSnapshot.reduce((max,r)=>(!max||(r.date_snapshot||"")>max)?r.date_snapshot:max, null);
+  const creancesRecentes = creancesSnapshot.filter(r=>r.date_snapshot===dateSnapshotRecente);
+  const TRANCHES_CREANCES = ["0-30","30-60","60-90","90+"];
+  const vieillissementCreances = TRANCHES_CREANCES.map(tr=>{
+    const lignes = creancesRecentes.filter(r=>r.tranche_anciennete===tr);
+    return {tranche:tr, nb:lignes.length, montant:lignes.reduce((s,r)=>s+(Number(r.montant)||0),0)};
+  });
+  const totalCreances = vieillissementCreances.reduce((s,t)=>s+t.montant,0);
+
+  // ── Factures impayées à traiter (action quotidienne) ────────────────────
+  const facturesImpayeesCG = factures.filter(f=>f.statut==="Impayée").sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+
+  // ── Marge par facture ────────────────────────────────────────────────────
+  const margeParFacture = cgFacts.map(f=>{
+    const cl = clients.find(c=>c.id===f.client_id);
+    const {total} = totalFact(f.lignes, f.tva_pct);
+    const mFact = calcMargeFacture(f, produits, receptionsStock);
+    return {id:f.id, numero:f.numero, date:f.date, client:f.client_nom||cl?.nom||"", ca:total, marge:mFact.marge, margePct: total>0?mFact.marge/total*100:0};
+  }).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+
+  // ── Éligibilité "pack offert" ────────────────────────────────────────────
+  // Dès que la marge brute cumulée d'un client sur la période sélectionnée
+  // atteint le seuil (réglable, 150€ par défaut), on considère qu'on peut lui
+  // offrir une caisse. Logique simple : marge cumulée sur la période affichée,
+  // pas de suivi de "déjà offert / reset" pour l'instant — à affiner avec Fatih
+  // si besoin d'un suivi plus fin dans le temps.
+  const clientsEligiblesPack = listeClientNette.filter(c=>c.marge>=seuilPackOffert).sort((a,b)=>b.marge-a.marge);
+
+  // ── Taux de rétention mensuel ────────────────────────────────────────────
+  // % de clients actifs un mois donné qui recommandent le mois calendaire suivant.
+  // Calculé sur tout l'historique (indépendant du filtre période) pour avoir une
+  // vraie série dans le temps ; affiché sur les 12 derniers mois disponibles.
+  const moisActifsClients = {};
+  factures.forEach(f=>{
+    if (!f.client_id || !f.date) return;
+    if (f.statut==="Avoir" || f.statut==="Annulée") return;
+    const m = f.date.slice(0,7);
+    if (!moisActifsClients[m]) moisActifsClients[m] = new Set();
+    moisActifsClients[m].add(f.client_id);
+  });
+  const moisTriesRetention = Object.keys(moisActifsClients).sort();
+  const retentionMensuelle = [];
+  for (let i=0;i<moisTriesRetention.length-1;i++) {
+    const m0 = moisTriesRetention[i], m1 = moisTriesRetention[i+1];
+    const d0 = new Date(m0+"-01"); d0.setMonth(d0.getMonth()+1);
+    if (d0.toISOString().slice(0,7)!==m1) continue; // ignore les mois non consécutifs (trou de données)
+    const clientsM0 = moisActifsClients[m0], clientsM1 = moisActifsClients[m1];
+    const nbRecommande = [...clientsM0].filter(id=>clientsM1.has(id)).length;
+    retentionMensuelle.push({mois:m0, moisSuivant:m1, nbActifs:clientsM0.size, nbRecommande, taux: clientsM0.size>0?nbRecommande/clientsM0.size*100:0});
+  }
+  const retentionAffichee = retentionMensuelle.slice(-12);
+
+  // ── Concentration du CA (règle 80/20) ────────────────────────────────────
+  const clientsParCaDesc = [...listeClientNette].sort((a,b)=>b.ca-a.ca);
+  let cumulCaConcentration = 0;
+  const clientsAvec80PctCa = [];
+  for (const c of clientsParCaDesc) {
+    if (caGlobal>0 && cumulCaConcentration/caGlobal >= 0.8) break;
+    cumulCaConcentration += c.ca;
+    clientsAvec80PctCa.push(c);
+  }
+  const nbClientsTop20Pct = Math.max(1, Math.round(clientsParCaDesc.length*0.2));
+  const caTop20Pct = clientsParCaDesc.slice(0, nbClientsTop20Pct).reduce((s,c)=>s+c.ca,0);
+  const pctCaTop20Pct = caGlobal>0 ? caTop20Pct/caGlobal*100 : 0;
+
+  // ── DSO — délai moyen de paiement ────────────────────────────────────────
+  // Sur les factures payées de la période, nombre moyen de jours entre la date
+  // de facture et la date de paiement effective. Par client, pour repérer ceux
+  // qui glissent progressivement vers des paiements plus tardifs.
+  const facturesPayeesCG = cgFacts.filter(f=>f.statut==="Payée" && f.date_paiement);
+  const delaisPaiement = facturesPayeesCG.map(f=>Math.round((new Date(f.date_paiement)-new Date(f.date))/86400000)).filter(d=>d>=0);
+  const dsoGlobal = delaisPaiement.length>0 ? delaisPaiement.reduce((s,d)=>s+d,0)/delaisPaiement.length : null;
+  const dsoParClient = {};
+  facturesPayeesCG.forEach(f=>{
+    const d = Math.round((new Date(f.date_paiement)-new Date(f.date))/86400000);
+    if (d<0 || !f.client_id) return;
+    if (!dsoParClient[f.client_id]) dsoParClient[f.client_id] = {nom:f.client_nom, somme:0, nb:0};
+    dsoParClient[f.client_id].somme += d; dsoParClient[f.client_id].nb++;
+  });
+  const listeDsoParClient = Object.values(dsoParClient).map(d=>({nom:d.nom, nb:d.nb, dsoMoyen:d.somme/d.nb})).filter(d=>d.nb>=2).sort((a,b)=>b.dsoMoyen-a.dsoMoyen);
+
+  // ── Coût de livraison par chauffeur, mois par mois ───────────────────────
+  // Même logique que coutLivraisonParChauffeur ci-dessus, mais détaillée mois
+  // par mois (plutôt qu'agrégée sur toute la période) pour suivre la tendance
+  // (hausse carburant, dégradation d'une zone...).
+  const coutLivraisonParChauffeurParMois = moisListCG.map(m=>{
+    const fg = fraisGeneraux.find(f=>(f.mois||"").slice(0,7)===m);
+    const prixDiesel = fg?.prix_diesel_litre!=null ? Number(fg.prix_diesel_litre) : 2.057;
+    const consoL100 = fg?.consommation_l_100km!=null ? Number(fg.consommation_l_100km) : 11;
+    const coutHoraire = fg?.cout_horaire_chauffeur!=null ? Number(fg.cout_horaire_chauffeur) : 27.64;
+    const parChauffeur = {};
+    relevesChauffeurs.filter(r=>(r.mois||"").slice(0,7)===m).forEach(r=>{
+      const ch = r.chauffeur;
+      if (!parChauffeur[ch]) parChauffeur[ch] = {cout:0, km:0, heures:0};
+      const km = Number(r.km)||0, heures = Number(r.heures_conduite)||0;
+      parChauffeur[ch].cout += km*(consoL100/100)*prixDiesel + heures*coutHoraire;
+      parChauffeur[ch].km += km;
+      parChauffeur[ch].heures += heures;
+    });
+    return {mois:m, parChauffeur};
+  });
+
+  // ── Priorités d'action — regroupe en listes concrètes les signaux déjà calculés ──
+  // Relance prioritaire : client inactif 30j+ ET avec une créance en souffrance (60j+)
+  // — on traite la commande et le paiement en même temps plutôt que séparément.
+  const clientsIdAvecCreanceEnSouffrance = new Set(
+    facturesImpayeesCG.filter(f=>f.date && Math.round((new Date(AUJOURD_HUI_CG)-new Date(f.date))/86400000)>60 && f.client_id).map(f=>f.client_id)
+  );
+  const clientsRelancePrioritaire = clientsInactifs30j.filter(c=>clientsIdAvecCreanceEnSouffrance.has(c.id));
+  // Zones à marge nette négative (coût de livraison réel > marge brute de la zone).
+  const zonesMargeNetteNegative = listeZoneNette.filter(z=>z.margeNette!=null && z.margeNette<0).sort((a,b)=>a.margeNette-b.margeNette);
+  // Produits sans vrai prix d'achat renseigné (marge affichée = estimation par défaut).
+  const produitsFaibleFiabilite = listeProduit.filter(p=>p.fiabilite<80).sort((a,b)=>a.fiabilite-b.fiabilite);
+  // Produits vendus nettement moins cher que la concurrence (Freshy) — marge potentiellement
+  // sacrifiée sans raison, à vérifier au cas par cas.
+  const produitsEcartPrixNegatif = listeProduit.filter(p=>p.ecartPct!=null && p.ecartPct<-10).sort((a,b)=>a.ecartPct-b.ecartPct);
+
+  // ── Évolution mensuelle CA/marge (12 derniers mois) ──────────────────────
+  // Vue tendance dans le temps, indépendante du filtre de période choisi en haut
+  // de page (qui agrège tout en un seul total) — basée sur tout l'historique.
+  const evolutionMensuelle12Mois = (() => {
+    const parMois = {};
+    factures.filter(f=>f.date && f.statut!=="Avoir" && f.statut!=="Annulée").forEach(f=>{
+      const m = f.date.slice(0,7);
+      if (!parMois[m]) parMois[m] = {mois:m, ca:0, marge:0};
+      const {total} = totalFact(f.lignes, f.tva_pct);
+      const mF = calcMargeFacture(f, produits, receptionsStock);
+      parMois[m].ca += total; parMois[m].marge += mF.marge;
+    });
+    return Object.values(parMois).map(m=>({...m, margePct: m.ca>0?m.marge/m.ca*100:0})).sort((a,b)=>a.mois.localeCompare(b.mois)).slice(-12);
+  })();
+  const maxCaEvolution = Math.max(1, ...evolutionMensuelle12Mois.map(m=>m.ca));
+
+  // ── Rentabilité Professionnel vs Particulier ─────────────────────────────
+  const parNatureClient = {};
+  cgFacts.forEach(f=>{
+    const cl = clients.find(c=>c.id===f.client_id);
+    const nature = cl?.nature_client || "Professionnel";
+    const {total} = totalFact(f.lignes, f.tva_pct);
+    const mF = calcMargeFacture(f, produits, receptionsStock);
+    if (!parNatureClient[nature]) parNatureClient[nature] = {nature, ca:0, marge:0, nb:0, clientsSet:new Set()};
+    parNatureClient[nature].ca += total; parNatureClient[nature].marge += mF.marge; parNatureClient[nature].nb++;
+    if (f.client_id) parNatureClient[nature].clientsSet.add(f.client_id);
+  });
+  const listeNatureClient = Object.values(parNatureClient).map(n=>({...n, nbClients:n.clientsSet.size, margePct: n.ca>0?n.marge/n.ca*100:0, panierMoyen: n.nb>0?n.ca/n.nb:0}));
+
+  // ── Produits en déclin ────────────────────────────────────────────────────
+  // Quantité vendue sur la période vs la période précédente de même durée
+  // (réutilise cgFromPrec/cgToPrec déjà calculés pour le panier moyen client).
+  const qtePrecParProduit = {};
+  if (cgFromPrec && cgToPrec) {
+    factures.filter(f=>f.date && f.date>=cgFromPrec && f.date<=cgToPrec && f.statut!=="Avoir" && f.statut!=="Annulée").forEach(f=>{
+      (f.lignes||[]).filter(l=>!l.isCredit && l.produitId!=="CREDIT_CONSIGNES").forEach(l=>{
+        const nomProd = (l.nom||"").replace(/\s*\(offert\)$/,"");
+        qtePrecParProduit[nomProd] = (qtePrecParProduit[nomProd]||0) + l.qte;
+      });
+    });
+  }
+  const produitsEnDeclin = listeProduit.map(p=>{
+    const qtePrec = qtePrecParProduit[p.nom] || 0;
+    const evolutionQtePct = qtePrec>0 ? (p.qte-qtePrec)/qtePrec*100 : null;
+    return {...p, qtePrec, evolutionQtePct};
+  }).filter(p=>p.evolutionQtePct!=null && p.evolutionQtePct<-20 && p.qtePrec>=5) // seuil pour éviter le bruit sur petits volumes
+    .sort((a,b)=>a.evolutionQtePct-b.evolutionQtePct);
+
+  // ── Rentabilité des nouveaux clients (≤90j) vs clients établis ───────────
+  const clientsRecents90j = new Set(clients.filter(c=>c.created_at && (new Date(AUJOURD_HUI_CG)-new Date(c.created_at))/86400000<=90).map(c=>c.id));
+  const statsNouveauxVsAnciens = ["Nouveaux (≤90j)","Clients établis"].map(label=>{
+    const subset = listeClientNette.filter(c=> label.startsWith("Nouveaux") ? clientsRecents90j.has(c.id) : !clientsRecents90j.has(c.id));
+    const ca = subset.reduce((s,c)=>s+c.ca,0);
+    const marge = subset.reduce((s,c)=>s+c.marge,0);
+    const nb = subset.reduce((s,c)=>s+c.nb,0);
+    return {label, nbClients:subset.length, ca, marge, margePct: ca>0?marge/ca*100:0, panierMoyen: nb>0?ca/nb:0};
+  });
+
+  // ── Score de risque client combiné ───────────────────────────────────────
+  // Cumule 3 signaux déjà calculés par ailleurs : inactif 30j+, panier en baisse
+  // de 15%+ vs période précédente, créance en souffrance (60j+). On ne garde que
+  // les clients avec au moins 2 signaux sur 3, pour prioriser sans croiser les tableaux à la main.
+  const clientsScoreRisque = listeClientNette.map(c=>{
+    let signaux = 0;
+    const joursDepuis = derniereFactureParClient[c.id] ? Math.round((new Date(AUJOURD_HUI_CG)-new Date(derniereFactureParClient[c.id]))/86400000) : null;
+    if (joursDepuis==null || joursDepuis>30) signaux++;
+    if (c.panierEvolutionPct!=null && c.panierEvolutionPct<-15) signaux++;
+    if (clientsIdAvecCreanceEnSouffrance.has(c.id)) signaux++;
+    return {...c, joursDepuisScore:joursDepuis, signauxRisque:signaux};
+  }).filter(c=>c.signauxRisque>=2).sort((a,b)=>b.signauxRisque-a.signauxRisque);
+
+  // ── Prévision de trésorerie simple ───────────────────────────────────────
+  // Échéance standard supposée à 30 jours (pas de champ d'échéance dédié en base) —
+  // sépare les impayés "normaux" (pas encore échus) des vrais retards, et compare
+  // au montant des charges fixes déjà connues pour le mois prochain.
+  const DELAI_PAIEMENT_STANDARD_CG = 30;
+  const facturesNonEcheuesCG = facturesImpayeesCG.filter(f=>{
+    if (!f.date) return false;
+    const echeance = new Date(f.date); echeance.setDate(echeance.getDate()+DELAI_PAIEMENT_STANDARD_CG);
+    return echeance >= new Date(AUJOURD_HUI_CG);
+  });
+  const facturesEnRetardCG = facturesImpayeesCG.filter(f=>!facturesNonEcheuesCG.includes(f));
+  const montantNonEcheuesCG = facturesNonEcheuesCG.reduce((s,f)=>s+totalFact(f.lignes,f.tva_pct).total,0);
+  const montantEnRetardCG = facturesEnRetardCG.reduce((s,f)=>s+totalFact(f.lignes,f.tva_pct).total,0);
+  const moisProchainCG = (() => { const d=new Date(AUJOURD_HUI_CG); d.setMonth(d.getMonth()+1); return d.toISOString().slice(0,7); })();
+  const fraisMoisProchainCG = fraisGeneraux.find(f=>(f.mois||"").slice(0,7)===moisProchainCG);
+  const CHAMPS_CHARGES_FIXES = ["masse_salariale","loyer","carburant","assurance_vehicules","entretien_vehicules","leasing_vehicule","frais_comptabilite","frais_bancaires","telephone_mobile","abonnement_box","autres"];
+  const chargesFixesMoisProchainCG = fraisMoisProchainCG ? CHAMPS_CHARGES_FIXES.reduce((s,ch)=>s+(Number(fraisMoisProchainCG[ch])||0),0) : null;
+
+  // CA historique pré-app — référence uniquement (montant global, sans marge ni détail
+  // client/produit disponibles), pour les mois antérieurs à la mise en service du système (10/09/2026).
+  const caHistPreAppPeriode = caHistoriquePreApp.filter(h=>{
+    const m = (h.mois||"").slice(0,7);
+    return m && (!cgFrom || m>=cgFrom.slice(0,7)) && (!cgTo || m<=cgTo.slice(0,7));
+  }).sort((a,b)=>(a.mois||"").localeCompare(b.mois||""));
+
+  // Export CSV — s'ouvre directement dans Excel (point-virgule + BOM UTF-8 pour les accents),
+  // même principe que les exports déjà en place sur le Dashboard (Factures/Commandes/Stock).
+  const downloadCSV = (filename, rows) => {
+    const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\n");
+    const blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  const dateSuffix = () => cgFrom+"_a_"+cgTo;
+  const exportCGType = () => downloadCSV("controle_gestion_par_type_"+dateSuffix()+".csv",
+    [["Type","Clients","Factures","CA","COGS","Marge","Marge %"],
+     ...listeType.map(t=>[t.type,t.nbClients,t.nb,t.ca.toFixed(2),t.cogs.toFixed(2),t.marge.toFixed(2),Math.round(t.margePct)+"%"])]);
+  const exportCGClient = () => downloadCSV("controle_gestion_par_client_"+dateSuffix()+".csv",
+    [["Client","Type","Zone","Factures","Fréquence (j)","CA","COGS","Marge","Marge %","Coût livraison réel","Marge nette","Marge nette %"],
+     ...listeClientNette.map(c=>[c.nom,c.type,c.zone,c.nb,c.freqJours!=null?Math.round(c.freqJours):"",c.ca.toFixed(2),c.cogs.toFixed(2),c.marge.toFixed(2),Math.round(c.margePct)+"%",c.coutLivraison!=null?c.coutLivraison.toFixed(2):"",c.margeNette!=null?c.margeNette.toFixed(2):"",c.margeNettePct!=null?Math.round(c.margeNettePct)+"%":""])]);
+  const exportCGProduit = () => downloadCSV("controle_gestion_par_produit_"+dateSuffix()+".csv",
+    [["Produit","Catégorie","Qté vendue","CA","COGS","Marge","Fiabilité %"],
+     ...listeProduit.map(p=>[p.nom,p.categorie,p.qte,p.ca.toFixed(2),p.cogs.toFixed(2),p.marge.toFixed(2),Math.round(p.fiabilite)+"%"])]);
+  const exportCGZone = () => downloadCSV("controle_gestion_par_zone_"+dateSuffix()+".csv",
+    [["Zone","Chauffeur","Factures","CA","COGS","Marge","Marge %","Coût livraison réel","Marge nette","Marge nette %"],
+     ...listeZoneNette.map(z=>[z.zone,z.driver,z.nb,z.ca.toFixed(2),z.cogs.toFixed(2),z.marge.toFixed(2),Math.round(z.margePct)+"%",z.coutLivraison!=null?z.coutLivraison.toFixed(2):"",z.margeNette!=null?z.margeNette.toFixed(2):"",z.margeNettePct!=null?Math.round(z.margeNettePct)+"%":""])]);
+
+  return (
+  <div>
+    <ExportDonneesBoutons isMobile={isMobile}/>
+    {/* ── Filtre période ── */}
+    <div style={{...S.card,marginBottom:14,padding:"12px 16px"}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        {[["mois","Mois"],["mois_dernier","Mois dernier"],["trimestre","Trimestre"],["annee","Année"],["12mois","12 mois"]].map(([k,l])=>(
+          <button key={k} onClick={()=>applyPeriodCG(k)}
+            style={{...S.btn(cgPeriod===k?"#1D4ED8":"#F1F5F9",cgPeriod===k?"#fff":"#374151"),padding:"5px 12px",fontSize:12,fontWeight:cgPeriod===k?700:400}}>
+            {l}
+          </button>
+        ))}
+        <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:8}}>
+          <input type="date" value={cgDateFrom} onChange={e=>{setCgDateFrom(e.target.value);setCgPeriod("custom");}}
+            style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
+          <span style={{color:"#9CA3AF",fontSize:12}}>→</span>
+          <input type="date" value={cgDateTo} onChange={e=>{setCgDateTo(e.target.value);setCgPeriod("custom");}}
+            style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",borderTop:"1px solid #F1F5F9",paddingTop:10,marginTop:10}}>
+        <span style={{fontSize:11,color:"#9CA3AF",fontWeight:600,marginRight:4}}>Exporter (Excel) :</span>
+        <button onClick={exportCGType} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="barChart2" size={12}/> Par type</button>
+        <button onClick={exportCGClient} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="clients" size={12}/> Par client</button>
+        <button onClick={exportCGProduit} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="produits" size={12}/> Par produit</button>
+        <button onClick={exportCGZone} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 12px",fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}><Icon name="carte" size={12}/> Par zone</button>
+      </div>
+    </div>
+
+    {/* ── KPIs globaux ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(5,1fr)",gap:10,marginBottom:8}}>
+      {[
+        {l:"Chiffre d'affaires",v:fmtFull(caGlobal),c:"#334155"},
+        {l:"COGS (coût produits)",v:fmtFull(cogsGlobal),c:"#334155"},
+        {l:"Marge brute",v:fmtFull(margeGlobal),c:"#059669"},
+        {l:"Marge %",v:Math.round(margePctGlobal)+"%",c:"#059669"},
+        {l:"Fiabilité du calcul",v:Math.round(fiabiliteGlobal)+"%",c:fiabiliteGlobal>=80?"#059669":"#D97706"},
+      ].map((k,i)=>(
+        <div key={i} style={S.kpi(k.c)}>
+          <div style={{fontSize:18,fontWeight:800,color:k.c}}>{k.v}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>{k.l}</div>
+        </div>
+      ))}
+    </div>
+    <div style={{fontSize:11,color:"#9CA3AF",marginBottom:16}}>
+      Marge = coût moyen pondéré des réceptions de stock en priorité, sinon prix d'achat produit, sinon estimation à {Math.round((1-COUT_RATIO_FALLBACK)*100)}% de marge par défaut si aucune donnée de coût n'existe pour ce produit. La "fiabilité" indique la part du chiffre d'affaires reposant sur un vrai coût plutôt que sur l'estimation par défaut — un chiffre bas signale des produits sans prix d'achat renseigné.
+    </div>
+
+    {/* ── Factures impayées à traiter (action quotidienne) ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+        <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="warning" size={14} style={{color:"#DC2626"}}/> Factures impayées à traiter ({facturesImpayeesCG.length})</div>
+      </div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Toutes les factures au statut "Impayée", tous clients confondus, triées de la plus ancienne à la plus récente — indépendant du filtre de période ci-dessus.</div>
+      {facturesImpayeesCG.length===0 ? (
+        <div style={{textAlign:"center",color:"#059669",padding:"12px 0",fontSize:12,fontWeight:600}}>Aucune facture impayée. 👍</div>
+      ) : (
+        <div style={{maxHeight:320,overflowY:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+              <th style={{padding:"4px"}}>N°</th><th style={{padding:"4px"}}>Date</th><th style={{padding:"4px"}}>Client</th>
+              <th style={{padding:"4px",textAlign:"right"}}>Montant</th><th style={{padding:"4px",textAlign:"right"}}>Jours</th><th style={{padding:"4px"}}></th>
+            </tr></thead>
+            <tbody>
+              {facturesImpayeesCG.map(f=>{
+                const {total} = totalFact(f.lignes, f.tva_pct);
+                const jours = f.date ? Math.round((new Date(AUJOURD_HUI_CG)-new Date(f.date))/86400000) : null;
+                return (
+                  <tr key={f.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                    <td style={{padding:"5px 4px",fontWeight:600}}>{f.numero}</td>
+                    <td style={{padding:"5px 4px"}}>{f.date}</td>
+                    <td style={{padding:"5px 4px"}}>{f.client_nom}</td>
+                    <td style={{padding:"5px 4px",textAlign:"right",fontWeight:600}}>{fmtFull(total)}</td>
+                    <td style={{padding:"5px 4px",textAlign:"right",color:jours>60?"#DC2626":jours>30?"#D97706":"#9CA3AF"}}>{jours!=null?jours+"j":"—"}</td>
+                    <td style={{padding:"5px 4px",textAlign:"right"}}>
+                      <button onClick={()=>{setPaiementFacture(f);setPaiementForm({mode:"",date:today});setShowPaiementForm(true);}}
+                        style={{...S.btn("#ECFDF5","#059669"),padding:"4px 10px",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>✓ Marquer payée</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+    {/* ── Vieillissement des créances & clients inactifs ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> Vieillissement des créances</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>
+          {dateSnapshotRecente ? "Dernier relevé : "+dateSnapshotRecente+" — référence externe, non recalculée en direct." : "Aucun relevé de créances importé."}
+        </div>
+        {vieillissementCreances.every(t=>t.nb===0) ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Pas de données.</div>
+        ) : (
+        <>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {vieillissementCreances.map(t=>(
+                <tr key={t.tranche} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600,color:t.tranche==="90+"?"#DC2626":t.tranche==="60-90"?"#D97706":"#374151"}}>{t.tranche} jours</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{t.nb} facture{t.nb>1?"s":""}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",fontWeight:600}}>{fmtFull(t.montant)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{textAlign:"right",fontWeight:800,fontSize:13,marginTop:6,paddingTop:6,borderTop:"1px solid #F1F5F9"}}>Total : {fmtFull(totalCreances)}</div>
+        </>
+        )}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Clients inactifs (+30 jours sans commande)</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{clientsInactifs30j.length} client(s) actif(s) sans facture depuis plus de 30 jours (ou jamais facturés) — toute la base, indépendant du filtre de période.</div>
+        {clientsInactifs30j.length===0 ? (
+          <div style={{textAlign:"center",color:"#059669",padding:"12px 0",fontSize:12,fontWeight:600}}>Tous les clients actifs ont commandé récemment. 👍</div>
+        ) : (
+          <div style={{maxHeight:260,overflowY:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <tbody>
+                {clientsInactifs30j.map(c=>(
+                  <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                    <td style={{padding:"5px 4px",fontWeight:600}}>{c.nom}</td>
+                    <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{c.zone}</td>
+                    <td style={{padding:"5px 4px",textAlign:"right",color:c.joursDepuis==null?"#9CA3AF":c.joursDepuis>90?"#DC2626":"#D97706"}}>
+                      {c.joursDepuis==null ? "Jamais facturé" : c.joursDepuis+"j"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {/* ── Acquisition clients & CA historique pré-app ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Nouveaux clients par mois</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Basé sur la date de création de la fiche client — {totalNouveauxClients} nouveau(x) client(s) sur la période.</div>
+        {listeNouveauxClients.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucun nouveau client sur cette période.</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {listeNouveauxClients.map(([m,v])=>(
+                <tr key={m} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600,verticalAlign:"top",whiteSpace:"nowrap"}}>{m}</td>
+                  <td style={{padding:"5px 4px"}}>
+                    <div style={{textAlign:"right",marginBottom:2}}>{v.nb} nouveau{v.nb>1?"x":""}</div>
+                    <div style={{color:"#6B7280",fontSize:11}}>{v.noms.join(", ")}</div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> CA historique (pré-app)</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Montant global uniquement (pas de détail client/produit, pas de marge calculable) — mois antérieurs à la mise en service du système le 10/09/2026. Référence, non inclus dans les totaux ci-dessus.</div>
+        {caHistPreAppPeriode.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucune donnée pré-app sur cette période.</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {caHistPreAppPeriode.map(h=>(
+                <tr key={h.mois} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{h.mois}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(h.ca_total)}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{h.nb_commandes?h.nb_commandes+" cmd":""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+
+    {/* ── Charges de structure & résultat net ── */}
+    {(()=>{
+      const moisFrom = (cgFrom||"").slice(0,7), moisTo = (cgTo||"").slice(0,7);
+      const fraisPeriode = fraisGeneraux.filter(fg=>{
+        const m = (fg.mois||"").slice(0,7);
+        return m && (!moisFrom || m>=moisFrom) && (!moisTo || m<=moisTo);
+      }).sort((a,b)=>(a.mois||"").localeCompare(b.mois||""));
+      const sumChamp = (champ) => fraisPeriode.reduce((s,f)=>s+(Number(f[champ])||0),0);
+      const masseSalariale = sumChamp("masse_salariale");
+      const loyerTotal = sumChamp("loyer");
+      const carburantTotal = sumChamp("carburant");
+      const assuranceTotal = sumChamp("assurance_vehicules");
+      const entretienTotal = sumChamp("entretien_vehicules");
+      const leasingTotal = sumChamp("leasing_vehicule");
+      const comptaTotal = sumChamp("frais_comptabilite");
+      const bancairesTotal = sumChamp("frais_bancaires");
+      const telephoneTotal = sumChamp("telephone_mobile");
+      const boxTotal = sumChamp("abonnement_box");
+      const autresTotal = sumChamp("autres");
+      const totalCharges = masseSalariale+loyerTotal+carburantTotal+assuranceTotal+entretienTotal+leasingTotal+comptaTotal+bancairesTotal+telephoneTotal+boxTotal+autresTotal;
+      const resultatNet = margeGlobal - totalCharges;
+      const resultatNetPct = caGlobal>0 ? resultatNet/caGlobal*100 : 0;
+      const moisSansMasse = fraisPeriode.filter(f=>f.masse_salariale==null).length;
+      return (
+      <div style={{...S.card,marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> Charges de structure & résultat net</div>
+          <button onClick={()=>openFraisForm(null)} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 10px",fontSize:11,whiteSpace:"nowrap"}}>+ Charges d'un mois</button>
+        </div>
+        {fraisPeriode.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"16px 0",fontSize:12}}>Aucune charge renseignée sur cette période — clique sur "+ Charges d'un mois" pour en ajouter.</div>
+        ) : (
+        <>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:12}}>
+            {[
+              {l:"Masse salariale",v:fmtFull(masseSalariale),c:"#334155"},
+              {l:"Loyer + véhicules + autres",v:fmtFull(loyerTotal+assuranceTotal+entretienTotal+leasingTotal+comptaTotal+bancairesTotal+telephoneTotal+boxTotal+autresTotal),c:"#334155"},
+              {l:"Carburant",v:fmtFull(carburantTotal),c:"#334155"},
+              {l:"Total charges",v:fmtFull(totalCharges),c:"#334155"},
+            ].map((k,i)=>(
+              <div key={i} style={S.kpi(k.c)}>
+                <div style={{fontSize:16,fontWeight:800,color:k.c}}>{k.v}</div>
+                <div style={{fontSize:11,color:"#6B7280"}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{...S.kpi(resultatNet>=0?"#059669":"#DC2626"),marginBottom:10}}>
+            <div style={{fontSize:20,fontWeight:800,color:resultatNet>=0?"#059669":"#DC2626"}}>{fmtFull(resultatNet)} <span style={{fontSize:13,fontWeight:600}}>({Math.round(resultatNetPct)}%)</span></div>
+            <div style={{fontSize:11,color:"#6B7280"}}>Résultat net estimé de la période (marge brute − charges de structure)</div>
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5,marginBottom:8}}>
+            <thead><tr style={{borderBottom:"1px solid #E5E7EB"}}>
+              {["Mois","Masse salariale","Loyer","Carburant","Assurance","Entretien","Charges fixes",""].map(h=>(
+                <th key={h} style={{padding:"5px 8px",textAlign:h==="Mois"?"left":"right",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {fraisPeriode.map(f=>(
+                <tr key={f.id} style={{borderBottom:"1px solid #F9FAFB",cursor:"pointer"}} onClick={()=>openFraisForm(f)}>
+                  <td style={{padding:"5px 8px",fontWeight:600}}>{f.mois}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.masse_salariale!=null?fmtFull(f.masse_salariale):<span style={{color:"#D97706"}}>?</span>}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.loyer!=null?fmtFull(f.loyer):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.carburant!=null?fmtFull(f.carburant):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.assurance_vehicules!=null?fmtFull(f.assurance_vehicules):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{f.entretien_vehicules!=null?fmtFull(f.entretien_vehicules):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right"}}>{(()=>{
+                    const vals=[f.leasing_vehicule,f.frais_comptabilite,f.frais_bancaires,f.telephone_mobile,f.abonnement_box,f.autres];
+                    const some=vals.some(v=>v!=null);
+                    return some ? fmtFull(vals.reduce((s,v)=>s+(Number(v)||0),0)) : "—";
+                  })()}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",color:"#9CA3AF"}}>✎</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {moisSansMasse>0 && <div style={{fontSize:11,color:"#D97706"}}>⚠ {moisSansMasse} mois de la période sans masse salariale renseignée — le résultat net est sous-estimé en charges (donc surestimé) pour ces mois.</div>}
+        </>
+        )}
+      </div>
+      );
+    })()}
+
+    {/* ── Marge par type de client ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="barChart2" size={14} style={{color:"#5D6B82"}}/> Marge par type de client</div>
+      <DataTable
+        isMobile={isMobile}
+        rows={listeType}
+        exportName="marge_par_type_client"
+        pageSize={15}
+        emptyMessage="Aucune donnée sur cette période"
+        initialSort={{key:"marge",dir:"desc"}}
+        footer={isMobile ? (
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Total</span>
+            <span>{fmtFull(caGlobal)} · marge {fmtFull(margeGlobal)}</span>
+          </div>
+        ) : (
+          <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+            <td style={{padding:"8px 12px"}}>Total</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeType.reduce((s,t)=>s+t.nbClients,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeType.reduce((s,t)=>s+t.nb,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(cogsGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{Math.round(margePctGlobal)}%</td>
+          </tr>
+        )}
+        columns={[
+          {key:"type", label:"Type", mobilePrimary:true, sortValue:r=>r.type, render:r=>{const {bg,text}=tc(r.type); return <span style={S.badge(bg,text)}>{r.type}</span>;}},
+          {key:"nbClients", label:"Clients", align:"right", mobileShow:true, sortValue:r=>r.nbClients},
+          {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", mobileShow:true, sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+        ]}
+      />
+    </div>
+
+    {/* ── Marge par client ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Marge par client</div>
+      <DataTable
+        isMobile={isMobile}
+        rows={listeClientNette}
+        exportName="marge_par_client"
+        pageSize={20}
+        emptyMessage="Aucune donnée sur cette période"
+        initialSort={{key:"marge",dir:"desc"}}
+        footer={isMobile ? (
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Total ({listeClientNette.length} clients)</span>
+            <span>{fmtFull(caGlobal)} · marge {fmtFull(margeGlobal)}</span>
+          </div>
+        ) : (
+          <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+            <td style={{padding:"8px 12px"}}>Total ({listeClientNette.length} clients)</td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeClientNette.reduce((s,c)=>s+c.nb,0)}</td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(cogsGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{Math.round(margePctGlobal)}%</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{coutLivraisonTotal>0?fmtFull(coutLivraisonTotal):"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{margeNetteGlobaleCalc!=null?fmtFull(margeNetteGlobaleCalc):"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{(margeNetteGlobaleCalc!=null&&caGlobal>0)?Math.round(margeNetteGlobaleCalc/caGlobal*100)+"%":"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeClientNette.reduce((s,c)=>s+c.nb,0)>0?fmtFull(caGlobal/listeClientNette.reduce((s,c)=>s+c.nb,0)):"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{clientsEligiblesPack.length}</td>
+          </tr>
+        )}
+        columns={[
+          {key:"nom", label:"Client", mobilePrimary:true, sortValue:r=>r.nom},
+          {key:"type", label:"Type", sortValue:r=>r.type},
+          {key:"zone", label:"Zone", mobileShow:true, sortValue:r=>r.zone},
+          {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
+          {key:"freqJours", label:"Fréquence", align:"right", sortValue:r=>r.freqJours??999999, render:r=>r.freqJours!=null?"~"+Math.round(r.freqJours)+"j":<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
+          {key:"marge", label:"Marge", align:"right", sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+          {key:"coutLivraison", label:"Coût livraison réel", align:"right", sortValue:r=>r.coutLivraison??-1, render:r=>r.coutLivraison!=null?fmtFull(r.coutLivraison):<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"margeNette", label:"Marge nette", align:"right", mobileShow:true, sortValue:r=>r.margeNette??-Infinity, render:r=>r.margeNette!=null?<span style={{color:r.margeNette>=0?"#059669":"#DC2626",fontWeight:600}}>{fmtFull(r.margeNette)}</span>:<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"margeNettePct", label:"Marge nette %", align:"right", sortValue:r=>r.margeNettePct??-Infinity, render:r=>r.margeNettePct!=null?<span style={{color:r.margeNettePct>=0?"#059669":"#DC2626",fontWeight:600}}>{Math.round(r.margeNettePct)}%</span>:<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"panierMoyen", label:"Panier moyen", align:"right", sortValue:r=>r.panierMoyen, render:r=>(
+            <span>{fmtFull(r.panierMoyen)}{r.panierEvolutionPct!=null && (
+              <span style={{marginLeft:5,fontSize:11,fontWeight:700,color:r.panierEvolutionPct>=0?"#059669":"#DC2626"}}>{r.panierEvolutionPct>=0?"▲":"▼"}{Math.abs(Math.round(r.panierEvolutionPct))}%</span>
+            )}</span>
+          )},
+          {key:"pack", label:"🎁 Pack offert", align:"right", sortValue:r=>r.marge>=seuilPackOffert?1:0, render:r=>r.marge>=seuilPackOffert?<span style={{color:"#059669",fontWeight:700}}>🎁 Éligible</span>:<span style={{color:"#CBD5E1"}}>—</span>},
+        ]}
+      />
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Fréquence = nombre moyen de jours entre deux commandes sur la période (nécessite au moins 2 factures) — un chiffre bas signale un client régulier, un chiffre élevé ou "—" un client occasionnel ou ponctuel. Marge nette = marge − coût de livraison réel alloué (voir bloc "Coût de livraison réel" ci-dessous) ; "—" quand le chauffeur de la zone n'a pas de relevé TrackFleet sur la période. "Pack offert" = marge brute cumulée sur la période ≥ seuil réglable ci-dessous. "Panier moyen" = CA / nb factures sur la période, avec l'évolution ▲▼ vs la période précédente de même durée (— si pas de données sur la période précédente).</div>
+    </div>
+
+    {/* ── Clients éligibles à un pack offert ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:4}}>
+        <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="trophy" size={14} style={{color:"#D97706"}}/> Clients éligibles à un pack offert</div>
+        <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+          <span style={{color:"#6B7280"}}>Seuil de marge brute (sur la période) :</span>
+          <input type="number" value={seuilPackOffert} onChange={e=>setSeuilPackOffert(Number(e.target.value)||0)}
+            style={{width:80,padding:"4px 8px",border:"1px solid #E5E7EB",borderRadius:6,fontSize:12}}/>
+          <span style={{color:"#6B7280"}}>€</span>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Dès que la marge brute cumulée d'un client sur la période sélectionnée atteint ce seuil, on peut lui offrir une caisse (ex. un pack de Coca). Basé sur la période du filtre en haut de page — pas de suivi "déjà offert" pour l'instant.</div>
+      {clientsEligiblesPack.length===0 ? (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucun client n'atteint le seuil sur cette période.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <tbody>
+            {clientsEligiblesPack.map(c=>(
+              <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>🎁 {c.nom}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{c.zone}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",fontWeight:700,color:"#059669"}}>{fmtFull(c.marge)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+
+    {/* ── Taux de rétention mensuel & Concentration du CA ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="trendingUp" size={14} style={{color:"#5D6B82"}}/> Taux de rétention mensuel</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>% des clients actifs un mois qui recommandent le mois suivant — calculé sur tout l'historique, indépendant du filtre de période.</div>
+        {retentionAffichee.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Pas assez d'historique (2 mois consécutifs minimum).</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+              <th style={{padding:"4px"}}>Mois → suivant</th><th style={{padding:"4px",textAlign:"right"}}>Actifs</th><th style={{padding:"4px",textAlign:"right"}}>Recommandé</th><th style={{padding:"4px",textAlign:"right"}}>Taux</th>
+            </tr></thead>
+            <tbody>
+              {retentionAffichee.map(r=>(
+                <tr key={r.mois} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{r.mois} → {r.moisSuivant}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{r.nbActifs}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{r.nbRecommande}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",fontWeight:700,color:r.taux>=60?"#059669":r.taux>=40?"#D97706":"#DC2626"}}>{Math.round(r.taux)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="barChart2" size={14} style={{color:"#5D6B82"}}/> Concentration du CA (règle 80/20)</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Sur la période sélectionnée — plus le nombre de clients ci-dessous est petit, plus la dépendance à une poignée de clients est élevée.</div>
+        <div style={{display:"flex",gap:10,marginBottom:10}}>
+          <div style={{...S.kpi("#334155"),flex:1}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{clientsAvec80PctCa.length} / {clientsParCaDesc.length}</div>
+            <div style={{fontSize:11,color:"#6B7280"}}>clients font 80% du CA</div>
+          </div>
+          <div style={{...S.kpi("#334155"),flex:1}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{Math.round(pctCaTop20Pct)}%</div>
+            <div style={{fontSize:11,color:"#6B7280"}}>du CA fait par les {nbClientsTop20Pct} plus gros clients (top 20%)</div>
+          </div>
+        </div>
+        {clientsAvec80PctCa.length>0 && (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {clientsAvec80PctCa.slice(0,10).map(c=>(
+                <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{c.nom}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(c.ca)}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{caGlobal>0?Math.round(c.ca/caGlobal*100):0}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+
+    {/* ── DSO — délai moyen de paiement ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> DSO — délai moyen de paiement</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Jours moyens entre la date de facture et la date de paiement effective, sur les factures payées de la période.</div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:10}}>
+        <div style={S.kpi("#334155")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{dsoGlobal!=null?Math.round(dsoGlobal)+"j":"—"}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>DSO global</div>
+        </div>
+        <div style={S.kpi("#334155")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{facturesPayeesCG.length}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>factures payées sur la période</div>
+        </div>
+      </div>
+      {listeDsoParClient.length===0 ? (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"8px 0",fontSize:12}}>Pas assez de factures payées (2 minimum par client) pour un détail par client.</div>
+      ) : (
+        <>
+          <div style={{fontSize:11,color:"#9CA3AF",fontWeight:600,marginBottom:4}}>Clients qui paient le plus tard (≥2 factures payées) :</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {listeDsoParClient.slice(0,10).map(d=>(
+                <tr key={d.nom} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{d.nom}</td>
+                  <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{d.nb} factures</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",fontWeight:700,color:d.dsoMoyen>45?"#DC2626":d.dsoMoyen>20?"#D97706":"#059669"}}>{Math.round(d.dsoMoyen)}j</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+
+    {/* ── Coût de livraison par chauffeur, mois par mois ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> Coût de livraison par chauffeur — tendance mensuelle</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Basé sur les relevés TrackFleet (km + heures de conduite) saisis mois par mois — "—" quand aucun relevé n'existe pour ce mois.</div>
+      {coutLivraisonParChauffeurParMois.length===0 ? (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucun mois dans la période sélectionnée.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+            <th style={{padding:"4px"}}>Mois</th>
+            {["Sefa","Mikail"].map(ch=><th key={ch} style={{padding:"4px",textAlign:"right"}}>{ch}</th>)}
+          </tr></thead>
+          <tbody>
+            {coutLivraisonParChauffeurParMois.map(m=>(
+              <tr key={m.mois} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{m.mois}</td>
+                {["Sefa","Mikail"].map(ch=>{
+                  const cd = m.parChauffeur[ch];
+                  return <td key={ch} style={{padding:"5px 4px",textAlign:"right"}}>{cd ? fmtFull(cd.cout)+" ("+Math.round(cd.km)+"km)" : <span style={{color:"#CBD5E1"}}>—</span>}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+
+    {/* ── Priorités d'action ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="bulb" size={14} style={{color:"#D97706"}}/> Priorités d'action</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:12}}>Croisement des indicateurs ci-dessus en listes concrètes à traiter.</div>
+
+      <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>📞 Relance prioritaire ({clientsRelancePrioritaire.length}) — inactif 30j+ ET créance 60j+</div>
+      {clientsRelancePrioritaire.length===0 ? (
+        <div style={{color:"#9CA3AF",fontSize:12,marginBottom:14}}>Aucun client dans ce cas actuellement.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
+          <tbody>
+            {clientsRelancePrioritaire.map(c=>(
+              <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{c.nom}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{c.zone}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#DC2626"}}>{c.joursDepuis==null?"Jamais facturé":c.joursDepuis+"j sans commande"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>📉 Zones à marge nette négative ({zonesMargeNetteNegative.length})</div>
+      {zonesMargeNetteNegative.length===0 ? (
+        <div style={{color:"#9CA3AF",fontSize:12,marginBottom:14}}>Aucune zone en marge nette négative sur la période.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
+          <tbody>
+            {zonesMargeNetteNegative.map(z=>(
+              <tr key={z.zone} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{z.zone}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{z.driver}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#DC2626",fontWeight:700}}>{fmtFull(z.margeNette)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>❓ Produits sans prix d'achat fiable ({produitsFaibleFiabilite.length})</div>
+      {produitsFaibleFiabilite.length===0 ? (
+        <div style={{color:"#9CA3AF",fontSize:12,marginBottom:14}}>Tous les produits ont une marge fiable (≥80%).</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
+          <tbody>
+            {produitsFaibleFiabilite.slice(0,10).map(p=>(
+              <tr key={p.nom} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{p.nom}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{p.categorie}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#D97706",fontWeight:700}}>{Math.round(p.fiabilite)}% fiable</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>💸 Produits vendus bien moins cher que Freshy ({produitsEcartPrixNegatif.length})</div>
+      {produitsEcartPrixNegatif.length===0 ? (
+        <div style={{color:"#9CA3AF",fontSize:12}}>Aucun écart de prix négatif important détecté.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <tbody>
+            {produitsEcartPrixNegatif.map(p=>(
+              <tr key={p.nom} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{p.nom}</td>
+                <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{fmtFull(p.prixVente)} vs {fmtFull(p.prixConcurrent)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#DC2626",fontWeight:700}}>{Math.round(p.ecartPct)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+
+    {/* ── Évolution mensuelle CA / marge (12 mois) ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="trendingUp" size={14} style={{color:"#5D6B82"}}/> Évolution mensuelle CA / marge (12 derniers mois)</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Tendance dans le temps, indépendante du filtre de période choisi en haut de page.</div>
+      {evolutionMensuelle12Mois.length===0 ? (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Pas de données.</div>
+      ) : (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <tbody>
+            {evolutionMensuelle12Mois.map(m=>(
+              <tr key={m.mois} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600,whiteSpace:"nowrap"}}>{m.mois}</td>
+                <td style={{padding:"5px 4px",width:"40%"}}>
+                  <div style={{background:"#EEF2FF",borderRadius:4,height:14,width:(m.ca/maxCaEvolution*100)+"%",minWidth:2}}/>
+                </td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(m.ca)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#059669",fontWeight:600}}>{fmtFull(m.marge)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#059669"}}>{Math.round(m.margePct)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+
+    {/* ── Rentabilité Pro vs Particulier & Nouveaux vs établis ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Professionnel vs Particulier</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Sur la période sélectionnée.</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+            <th style={{padding:"4px"}}></th><th style={{padding:"4px",textAlign:"right"}}>Clients</th><th style={{padding:"4px",textAlign:"right"}}>CA</th><th style={{padding:"4px",textAlign:"right"}}>Marge %</th><th style={{padding:"4px",textAlign:"right"}}>Panier moyen</th>
+          </tr></thead>
+          <tbody>
+            {listeNatureClient.map(n=>(
+              <tr key={n.nature} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{n.nature}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{n.nbClients}</td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(n.ca)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#059669",fontWeight:600}}>{Math.round(n.margePct)}%</td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(n.panierMoyen)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="sparkle" size={14} style={{color:"#5D6B82"}}/> Nouveaux clients vs clients établis</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>"Nouveaux" = fiche créée il y a ≤90 jours — marge sur la période sélectionnée.</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{textAlign:"left",color:"#9CA3AF",fontSize:11}}>
+            <th style={{padding:"4px"}}></th><th style={{padding:"4px",textAlign:"right"}}>Clients</th><th style={{padding:"4px",textAlign:"right"}}>CA</th><th style={{padding:"4px",textAlign:"right"}}>Marge %</th><th style={{padding:"4px",textAlign:"right"}}>Panier moyen</th>
+          </tr></thead>
+          <tbody>
+            {statsNouveauxVsAnciens.map(n=>(
+              <tr key={n.label} style={{borderBottom:"1px solid #F9FAFB"}}>
+                <td style={{padding:"5px 4px",fontWeight:600}}>{n.label}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#9CA3AF"}}>{n.nbClients}</td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(n.ca)}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#059669",fontWeight:600}}>{Math.round(n.margePct)}%</td>
+                <td style={{padding:"5px 4px",textAlign:"right"}}>{fmtFull(n.panierMoyen)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {/* ── Produits en déclin & Score de risque clients ── */}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:16}}>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="produits" size={14} style={{color:"#5D6B82"}}/> Produits en déclin ({produitsEnDeclin.length})</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Quantité vendue en baisse de 20%+ vs la période précédente de même durée (≥5 unités vendues avant, pour éviter le bruit).</div>
+        {produitsEnDeclin.length===0 ? (
+          <div style={{textAlign:"center",color:"#9CA3AF",padding:"12px 0",fontSize:12}}>Aucun produit en déclin marqué sur cette période.</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {produitsEnDeclin.map(p=>(
+                <tr key={p.nom} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{p.nom}</td>
+                  <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{p.qtePrec} → {p.qte}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#DC2626",fontWeight:700}}>{Math.round(p.evolutionQtePct)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={S.card}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="danger" size={14} style={{color:"#DC2626"}}/> Score de risque clients ({clientsScoreRisque.length})</div>
+        <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Clients cumulant au moins 2 signaux sur 3 : inactif 30j+, panier en baisse de 15%+, créance en souffrance (60j+).</div>
+        {clientsScoreRisque.length===0 ? (
+          <div style={{textAlign:"center",color:"#059669",padding:"12px 0",fontSize:12,fontWeight:600}}>Aucun client à risque élevé actuellement. 👍</div>
+        ) : (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <tbody>
+              {clientsScoreRisque.map(c=>(
+                <tr key={c.id} style={{borderBottom:"1px solid #F9FAFB"}}>
+                  <td style={{padding:"5px 4px",fontWeight:600}}>{c.nom}</td>
+                  <td style={{padding:"5px 4px",color:"#9CA3AF"}}>{c.zone}</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",fontWeight:700,color:c.signauxRisque>=3?"#DC2626":"#D97706"}}>{"🚩".repeat(c.signauxRisque)} {c.signauxRisque}/3</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+
+    {/* ── Prévision de trésorerie simple ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><Icon name="money" size={14} style={{color:"#5D6B82"}}/> Prévision de trésorerie simple</div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>Échéance standard supposée à 30 jours (pas de date d'échéance dédiée en base) — à prendre comme un ordre de grandeur, pas un calcul comptable précis.</div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10}}>
+        <div style={S.kpi("#334155")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{fmtFull(montantNonEcheuesCG)}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>Impayés pas encore échus ({facturesNonEcheuesCG.length} factures)</div>
+        </div>
+        <div style={S.kpi("#DC2626")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#DC2626"}}>{fmtFull(montantEnRetardCG)}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>Impayés en retard ({facturesEnRetardCG.length} factures)</div>
+        </div>
+        <div style={S.kpi("#334155")}>
+          <div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{chargesFixesMoisProchainCG!=null?fmtFull(chargesFixesMoisProchainCG):"—"}</div>
+          <div style={{fontSize:11,color:"#6B7280"}}>Charges fixes connues pour {moisProchainCG}{chargesFixesMoisProchainCG==null?" (non renseignées)":""}</div>
+        </div>
+      </div>
+    </div>
+
+    {/* ── Marge par facture ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="factures" size={14} style={{color:"#5D6B82"}}/> Marge par facture</div>
+      <DataTable
+        isMobile={isMobile}
+        rows={margeParFacture}
+        exportName="marge_par_facture"
+        pageSize={20}
+        emptyMessage="Aucune facture sur cette période"
+        initialSort={{key:"date",dir:"desc"}}
+        columns={[
+          {key:"numero", label:"N°", mobilePrimary:true, sortValue:r=>r.numero},
+          {key:"date", label:"Date", mobileShow:true, sortValue:r=>r.date},
+          {key:"client", label:"Client", mobileShow:true, sortValue:r=>r.client},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:r.marge<0?"#DC2626":"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", sortValue:r=>r.margePct, render:r=><span style={{color:r.marge<0?"#DC2626":"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+        ]}
+      />
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>En rouge : les factures dont la marge est négative.</div>
+    </div>
+
+    {/* ── Marge par produit ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="produits" size={14} style={{color:"#5D6B82"}}/> Marge par produit</div>
+      <DataTable
+        isMobile={isMobile}
+        rows={listeProduit}
+        exportName="marge_par_produit"
+        pageSize={20}
+        emptyMessage="Aucune donnée sur cette période"
+        initialSort={{key:"marge",dir:"desc"}}
+        footer={isMobile ? (
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Total ({listeProduit.length} produits)</span>
+            <span>{fmtFull(caProduitsTotal)} · marge {fmtFull(margeProduitsTotal)}</span>
+          </div>
+        ) : (
+          <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+            <td style={{padding:"8px 12px"}}>Total ({listeProduit.length} produits)</td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeProduit.reduce((s,p)=>s+p.qte,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caProduitsTotal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caProduitsTotal-margeProduitsTotal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeProduitsTotal)}</td>
+            <td style={{padding:"8px 12px"}}></td>
+          </tr>
+        )}
+        columns={[
+          {key:"nom", label:"Produit", mobilePrimary:true, sortValue:r=>r.nom},
+          {key:"categorie", label:"Catégorie", sortValue:r=>r.categorie},
+          {key:"qte", label:"Qté vendue", align:"right", mobileShow:true, sortValue:r=>r.qte},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
+          {key:"marge", label:"Marge", align:"right", mobileShow:true, sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"prixConcurrent", label:"Prix Freshy", align:"right", sortValue:r=>r.prixConcurrent??-1, render:r=>r.prixConcurrent!=null?fmtFull(r.prixConcurrent):<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"ecartPct", label:"Écart", align:"right", sortValue:r=>r.ecartPct??-999, render:r=>r.ecartPct==null?<span style={{color:"#CBD5E1"}}>—</span>:
+            <span style={{color:r.ecartPct>0?"#DC2626":"#059669",fontWeight:600}}>{r.ecartPct>0?"+":""}{Math.round(r.ecartPct)}%</span>},
+          {key:"fiabilite", label:"Fiabilité", align:"right", sortValue:r=>r.fiabilite, render:r=><span style={{color:r.fiabilite>=80?"#059669":"#D97706",fontSize:11}}>{Math.round(r.fiabilite)}%</span>},
+        ]}
+      />
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+        <div style={{fontSize:11,color:"#9CA3AF"}}>Prix Freshy relevé manuellement — {prixConcurrents.length} prix enregistrés. Écart = (prix moyen vendu − prix Freshy) / prix Freshy.</div>
+        <button onClick={()=>{setPrixConcForm({produit_id:"",concurrent:"Freshy",prix:"",date_releve:localDateStr()});setShowPrixConcForm(true);}}
+          style={{...S.btn("#F1F5F9","#374151"),padding:"5px 10px",fontSize:11,whiteSpace:"nowrap"}}>+ Prix concurrent</button>
+      </div>
+    </div>
+
+    {/* ── Marge par zone ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:4}}>
+        <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> Marge par zone</div>
+        <button onClick={()=>calculerDistancesReelles(false)} disabled={calcDistancesLoading} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 10px",fontSize:11,whiteSpace:"nowrap",opacity:calcDistancesLoading?0.5:1}}>
+          {calcDistancesLoading?"Calcul...":"📍 Calculer distances réelles"}
+        </button>
+      </div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:4}}>
+        Distance = trajet routier réel (dépôt → client) quand il a été calculé ({nbClientsAvecDistanceReelle}/{nbClientsAvecCoords} clients géolocalisés), sinon distance à vol d'oiseau par défaut (proxy, pas un vrai trajet). Clique sur "Calculer distances réelles" pour compléter les clients manquants (calcul via un service de routage public, peut prendre quelques minutes selon le nombre de clients).
+      </div>
+      {calcDistancesMsg && <div style={{fontSize:11,color:"#1D4ED8",marginBottom:8}}>{calcDistancesMsg}</div>}
+      <DataTable
+        isMobile={isMobile}
+        rows={listeZoneNette}
+        exportName="marge_par_zone"
+        pageSize={15}
+        emptyMessage="Aucune donnée sur cette période"
+        initialSort={{key:"marge",dir:"desc"}}
+        footer={isMobile ? (
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span>Total</span>
+            <span>{fmtFull(caGlobal)} · marge {fmtFull(margeGlobal)}</span>
+          </div>
+        ) : (
+          <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
+            <td style={{padding:"8px 12px"}}>Total</td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px"}}></td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{listeZoneNette.reduce((s,z)=>s+z.nb,0)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(caGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(cogsGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{fmtFull(margeGlobal)}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:"#059669"}}>{Math.round(margePctGlobal)}%</td>
+            <td style={{padding:"8px 12px",textAlign:"right"}}>{coutLivraisonTotal>0?fmtFull(coutLivraisonTotal):"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{margeNetteGlobaleCalc!=null?fmtFull(margeNetteGlobaleCalc):"—"}</td>
+            <td style={{padding:"8px 12px",textAlign:"right",color:margeNetteGlobaleCalc!=null&&margeNetteGlobaleCalc>=0?"#059669":"#DC2626"}}>{(margeNetteGlobaleCalc!=null&&caGlobal>0)?Math.round(margeNetteGlobaleCalc/caGlobal*100)+"%":"—"}</td>
+          </tr>
+        )}
+        columns={[
+          {key:"zone", label:"Zone", mobilePrimary:true, sortValue:r=>r.zone},
+          {key:"driver", label:"Chauffeur", mobileShow:true, sortValue:r=>r.driver},
+          {key:"distanceMoyenne", label:"Distance moy.", align:"right", sortValue:r=>r.distanceMoyenne??-1, render:r=>r.distanceMoyenne!=null?
+            <span>{Math.round(r.distanceMoyenne)} km {r.distanceSource==="route"?<span title="Trajet réel" style={{color:"#059669"}}>●</span>:r.distanceSource==="mixte"?<span title="Partiellement réel" style={{color:"#D97706"}}>●</span>:<span title="Vol d'oiseau (estimé)" style={{color:"#CBD5E1"}}>●</span>}</span>
+            :<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"nb", label:"Factures", align:"right", sortValue:r=>r.nb},
+          {key:"ca", label:"CA", align:"right", mobileShow:true, sortValue:r=>r.ca, render:r=>fmtFull(r.ca)},
+          {key:"cogs", label:"COGS", align:"right", sortValue:r=>r.cogs, render:r=>fmtFull(r.cogs)},
+          {key:"marge", label:"Marge", align:"right", sortValue:r=>r.marge, render:r=><span style={{color:"#059669",fontWeight:600}}>{fmtFull(r.marge)}</span>},
+          {key:"margePct", label:"Marge %", align:"right", sortValue:r=>r.margePct, render:r=><span style={{color:"#059669",fontWeight:600}}>{Math.round(r.margePct)}%</span>},
+          {key:"coutLivraison", label:"Coût livraison réel", align:"right", mobileShow:true, sortValue:r=>r.coutLivraison??-1, render:r=>r.coutLivraison!=null?fmtFull(r.coutLivraison):<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"margeNette", label:"Marge nette", align:"right", mobileShow:true, sortValue:r=>r.margeNette??-Infinity, render:r=>r.margeNette!=null?<span style={{color:r.margeNette>=0?"#059669":"#DC2626",fontWeight:600}}>{fmtFull(r.margeNette)}</span>:<span style={{color:"#CBD5E1"}}>—</span>},
+          {key:"margeNettePct", label:"Marge nette %", align:"right", sortValue:r=>r.margeNettePct??-Infinity, render:r=>r.margeNettePct!=null?<span style={{color:r.margeNettePct>=0?"#059669":"#DC2626",fontWeight:600}}>{Math.round(r.margeNettePct)}%</span>:<span style={{color:"#CBD5E1"}}>—</span>},
+        ]}
+      />
+      <div style={{fontSize:11,color:"#9CA3AF",marginTop:8}}>Coût livraison réel = carburant + temps chauffeur chargé, calculé à partir des relevés TrackFleet (km, heures de conduite) du/des chauffeur(s) de la zone, réparti entre zones au prorata d'une distance estimée. "—" = pas de relevé TrackFleet sur la période pour ce chauffeur.</div>
+    </div>
+
+    {/* ── Coût de livraison réel (TrackFleet) ── */}
+    <div style={{...S.card,marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+        <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> Coût de livraison réel — relevés chauffeurs (TrackFleet)</div>
+        <button onClick={()=>openRelevChfForm(null)} style={{...S.btn("#F1F5F9","#374151"),padding:"5px 10px",fontSize:11,whiteSpace:"nowrap"}}>+ Relevé chauffeur</button>
+      </div>
+      <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>
+        Un relevé par chauffeur et par mois (km parcourus + heures de conduite, depuis le rapport "Résumé" TrackFleet), converti en coût réel via les paramètres définis dans "+ Charges d'un mois" (coût horaire chauffeur, prix diesel, consommation). Sert à calculer la marge nette par zone/client ci-dessus.
+      </div>
+      {["Sefa","Mikail"].map(ch=>{
+        const cd = coutLivraisonParChauffeur[ch];
+        return (
+          <div key={ch} style={{...S.kpi(cd?"#334155":"#D97706"),display:"inline-block",marginRight:10,marginBottom:10,minWidth:150}}>
+            <div style={{fontSize:16,fontWeight:800,color:cd?"#334155":"#D97706"}}>{cd?fmtFull(cd.cout):"? aucun relevé"}</div>
+            <div style={{fontSize:11,color:"#6B7280"}}>{ch} {cd?`· ${Math.round(cd.km)} km · ${cd.heures.toFixed(1)}h`:""}</div>
+          </div>
+        );
+      })}
+      {nbChauffeursRenseignes===0 && moisListCG.length>0 && (
+        <div style={{fontSize:11,color:"#D97706",marginBottom:8}}>⚠ Aucun relevé chauffeur sur la période — ajoute les relevés du rapport TrackFleet pour activer la marge nette par zone/client.</div>
+      )}
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
+        <thead><tr style={{borderBottom:"1px solid #E5E7EB"}}>
+          {["Mois","Chauffeur","Km","Heures conduite","Trajets",""].map(h=>(
+            <th key={h} style={{padding:"5px 8px",textAlign:h==="Mois"||h==="Chauffeur"?"left":"right",color:"#6B7280",fontWeight:600,fontSize:10}}>{h}</th>
+          ))}
+        </tr></thead>
+        <tbody>
+          {relevesChauffeurs.filter(r=>moisListCG.includes((r.mois||"").slice(0,7))).sort((a,b)=>(b.mois||"").localeCompare(a.mois||"")||(a.chauffeur||"").localeCompare(b.chauffeur||"")).map(r=>(
+            <tr key={r.id} style={{borderBottom:"1px solid #F9FAFB",cursor:"pointer"}} onClick={()=>openRelevChfForm(r)}>
+              <td style={{padding:"5px 8px",fontWeight:600}}>{(r.mois||"").slice(0,7)}</td>
+              <td style={{padding:"5px 8px"}}>{r.chauffeur}</td>
+              <td style={{padding:"5px 8px",textAlign:"right"}}>{r.km!=null?Math.round(r.km)+" km":"—"}</td>
+              <td style={{padding:"5px 8px",textAlign:"right"}}>{r.heures_conduite!=null?r.heures_conduite+"h":"—"}</td>
+              <td style={{padding:"5px 8px",textAlign:"right"}}>{r.trajets??"—"}</td>
+              <td style={{padding:"5px 8px",textAlign:"right",color:"#9CA3AF"}}>✎</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {relevesChauffeurs.filter(r=>moisListCG.includes((r.mois||"").slice(0,7))).length===0 && (
+        <div style={{textAlign:"center",color:"#9CA3AF",padding:"16px 0",fontSize:12}}>Aucun relevé chauffeur sur cette période — clique sur "+ Relevé chauffeur" pour en ajouter.</div>
+      )}
+    </div>
+  </div>
+  );
+})()}
+
 {/* ══ CLIENTS ══════════════════════════════════════════════════ */}
 {page==="clients" && !selClient && (
   <div>
     {workTabStrip()}
+    {clients.filter(c=>c.statut_compte==="en_attente").length>0 && (
+      <div style={{...S.card,marginBottom:14,border:"1px solid #FDE68A",background:"#FFFBEB"}}>
+        <div style={{fontWeight:700,fontSize:14,color:"#92400E",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+          🌐 Demandes de compte portail — {clients.filter(c=>c.statut_compte==="en_attente").length} en attente
+        </div>
+        <div style={{display:"grid",gap:8}}>
+          {clients.filter(c=>c.statut_compte==="en_attente").map(c=>(
+            <div key={c.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",background:"#fff",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 12px"}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:13}}>{c.nom}</div>
+                <div style={{fontSize:11,color:"#6B7280"}}>
+                  {c.type||"—"} · {c.adresse||"adresse non renseignée"}
+                  {c.tva ? ` · TVA ${c.tva}` : ""}{c.rcs ? ` · RCS ${c.rcs}` : ""}
+                </div>
+                <div style={{fontSize:11,color:"#6B7280"}}>{c.contact||""} {c.email?`· ${c.email}`:""} {c.telephone?`· ${c.telephone}`:""}</div>
+              </div>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>activerDemandeCompte(c)} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>✓ Activer</button>
+                <button onClick={()=>refuserDemandeCompte(c)} style={{...S.btn("#FEE2E2","#DC2626"),padding:"6px 12px",fontSize:12}}>✕ Refuser</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:10,marginBottom:14}}>
       {[
         {l:"Total",v:clients.length,c:"#334155"},
@@ -4246,6 +6777,7 @@ function BossokApp({ session, onLogout }) {
     <DataTable
       isMobile={isMobile}
       rows={filteredClients}
+      exportName="clients"
       onRowClick={c=>openClientTab(c,"info")}
       emptyIcon="👥"
       emptyMessage={clients.length===0?"Aucun client — clique sur '+ Nouveau client'":"Aucun résultat pour ces filtres"}
@@ -4309,9 +6841,53 @@ function BossokApp({ session, onLogout }) {
   const totalImpaye = factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
   const totalFiltre = ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
 
+  // ── Sélection multiple (actions groupées) ──
+  const selFact = ff.filter(f=>factSelected.includes(f.id));
+  const selImpayees = selFact.filter(f=>f.statut==="Impayée");
+  const selPayees = selFact.filter(f=>f.statut==="Payée");
+  const toggleFactRow = (f) => setFactSelected(prev=>prev.includes(f.id)?prev.filter(x=>x!==f.id):[...prev,f.id]);
+  const toggleFactAll = (rows) => setFactSelected(prev=>{
+    const ids = rows.map(r=>r.id);
+    return ids.every(id=>prev.includes(id)) ? prev.filter(id=>!ids.includes(id)) : Array.from(new Set([...prev,...ids]));
+  });
+  const payerLot = () => {
+    if (!selImpayees.length) return;
+    setPaiementLot(selImpayees.map(f=>f.id));
+    setPaiementFacture({numero:"", client_nom:""});
+    setPaiementForm({mode:"", date:new Date().toISOString().split("T")[0]});
+    setShowPaiementForm(true);
+  };
+  const impayeeLot = () => {
+    if (!selPayees.length) return;
+    askConfirm(`Remettre ${selPayees.length} facture(s) en « Impayée » ?`, async () => {
+      setSaving(true);
+      try {
+        for (const f of selPayees) await db.update("factures", f.id, {statut:"Impayée"});
+        setFactSelected([]);
+        await loadAll();
+      } catch(e) { logError(e); }
+      finally { setSaving(false); }
+    }, {confirmLabel:"Remettre impayées"});
+  };
+
+  // Impression groupée : toutes les factures cochées dans UNE seule fenêtre, une facture par page
+  const imprimerLot = () => {
+    if (!selFact.length) return;
+    const triees = [...selFact].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")) || String(a.numero||"").localeCompare(String(b.numero||"")));
+    const htmls = triees.map((f,k)=>{
+      const c = clients.find(x=>x.id===f.client_id);
+      // Comptable : copie "propre" de la facture, sans encadrés consignes/impayés (données non accessibles)
+      const imp = lectureSeule ? [] : factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);
+      const detail = lectureSeule ? [] : soldeConsignes(f.client_id);
+      const solde = detail.reduce((s,r)=>s+r.solde*r.consigne,0);
+      return generatePDF(f, c, imp, solde, detail, {retour:true, qrId:"qrcode"+k});
+    });
+    ouvrirEtImprimer(assemblerFacturesPDF(htmls), "Factures_selection.html");
+  };
+
   const exportExcel = () => {
     const rows = [["N°","Date","Client","Montant HT","Consignes","Total TTC","Statut","Notes"]];
-    ff.forEach(f=>{
+    (selFact.length ? selFact : ff).forEach(f=>{
       const {prod,cons,total}=totalFact(f.lignes, f.tva_pct);
       rows.push([f.numero,f.date,f.client_nom,prod.toFixed(2),cons.toFixed(2),total.toFixed(2),f.statut,f.notes||""]);
     });
@@ -4330,6 +6906,7 @@ function BossokApp({ session, onLogout }) {
     setFactLignes(f.lignes||[]);
     setFactDate(new Date().toISOString().split("T")[0]);
     setFactNotes(f.notes||"");
+    setFactNoteClient(clients.find(c=>c.id===f.client_id)?.commentaire_facture || "");
     setFactNumero(genererNumeroFacture(new Date().toISOString().split("T")[0]));
     setSearchFactClient("");
     openWorkTab({id:"facture", type:"facture", label:"Nouvelle facture", page:"factures"});
@@ -4392,19 +6969,37 @@ function BossokApp({ session, onLogout }) {
           <button onClick={()=>{setFactFilterStatut("Tous");setFactFilterSearch("");setFactFilterMois("Tous");setFactFilterClient("");setFactFilterDateFrom("");setFactFilterDateTo("");}}
             style={{...S.btn("#F3F4F6","#374151"),padding:"6px 12px",fontSize:12}}>✕ Réinitialiser</button>
         )}
-        <button onClick={exportExcel} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>📥 Export CSV</button>
+        <button onClick={exportExcel} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>📥 Export CSV{selFact.length>0?` (${selFact.length} sélection)`:""}</button>
         <span style={{fontSize:12,color:"#6B7280",marginLeft:"auto",fontWeight:600}}>
           {ff.length} résultat(s) · {fmtFull(totalFiltre)}
         </span>
       </div>
     </div>
 
+    {/* Barre d'actions groupées */}
+    {selFact.length>0&&(
+      <div style={{position:"sticky",top:0,zIndex:40,background:"#1E3A8A",color:"#fff",borderRadius:10,padding:"10px 12px",marginBottom:10,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",boxShadow:"0 4px 14px rgba(15,23,42,0.25)"}}>
+        <span style={{fontSize:13,fontWeight:700}}>{selFact.length} sélectionnée(s) · {fmtFull(selFact.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0))}</span>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
+          {!lectureSeule&&selImpayees.length>0&&<button onClick={payerLot} style={{...S.btn("#059669"),padding:"6px 12px",fontSize:12}}>✓ Marquer payées ({selImpayees.length})</button>}
+          {!lectureSeule&&selPayees.length>0&&<button onClick={impayeeLot} style={{...S.btn("#D97706"),padding:"6px 12px",fontSize:12}}>↺ Remettre impayées ({selPayees.length})</button>}
+          <button onClick={imprimerLot} style={{...S.btn("#fff","#1E3A8A"),padding:"6px 12px",fontSize:12}}>🖨️ Imprimer PDF ({selFact.length})</button>
+          <button onClick={exportExcel} style={{...S.btn("#0EA5E9"),padding:"6px 12px",fontSize:12}}>📥 Export CSV</button>
+          <button onClick={()=>setFactSelected([])} style={{...S.btn("#fff","#1E3A8A"),padding:"6px 12px",fontSize:12}}>✕ Désélectionner</button>
+        </div>
+      </div>
+    )}
+
     {/* Tableau */}
     <DataTable
       isMobile={isMobile}
       rows={ff}
+      exportName="factures"
       pageSize={FACT_PER_PAGE}
-      onRowClick={f=>openEditFacture(f)}
+      selectedIds={factSelected}
+      onToggleRow={toggleFactRow}
+      onToggleAll={toggleFactAll}
+      onRowClick={lectureSeule ? undefined : (f=>openEditFacture(f))}
       emptyIcon="🧾"
       emptyMessage="Aucune facture trouvée"
       initialSort={{key:"date",dir:"desc"}}
@@ -4415,7 +7010,7 @@ function BossokApp({ session, onLogout }) {
         </div>
       ) : (
         <tr style={{borderTop:"2px solid #E3E7ED",background:"#F8FAFC",fontWeight:700,fontSize:12}}>
-          <td colSpan={3} style={{padding:"8px 12px"}}>Total ({ff.length} factures)</td>
+          <td colSpan={4} style={{padding:"8px 12px"}}>Total ({ff.length} factures)</td>
           <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).prod,0))}</td>
           <td style={{padding:"8px 12px",textAlign:"right",color:"#7C3AED"}}>{fmtFull(ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).cons,0))}</td>
           <td style={{padding:"8px 12px",textAlign:"right"}}>{fmtFull(totalFiltre)}</td>
@@ -4452,7 +7047,12 @@ function BossokApp({ session, onLogout }) {
           const sl = f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":"⚠ Impayée";
           return <span style={S.badge(sc,st)}>{sl}</span>;
         }},
-        {key:"actions", label:"", sortable:false, render:f=>(
+        {key:"actions", label:"", sortable:false, render:f=> lectureSeule ? (
+          <div onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>{const c=clients.find(x=>x.id===f.client_id);generatePDF(f,c,[],0,[]);}}
+              style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:12,fontWeight:600}}>🖨️ PDF</button>
+          </div>
+        ) : (
           <div style={{position:"relative",display:"inline-block"}} onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setOpenFactureMenu(openFactureMenu===f.id?null:f.id)}
               style={{...S.btn("#F3F4F6","#374151"),padding:"4px 10px",fontSize:14,fontWeight:700}}>⋯</button>
@@ -4546,7 +7146,7 @@ function BossokApp({ session, onLogout }) {
                   .filter(c=>searchCmdClient.trim()===""||c.nom?.toLowerCase().includes(searchCmdClient.trim().toLowerCase()))
                   .sort((a,b)=>a.nom.localeCompare(b.nom))
                   .map(c=>(
-                  <div key={c.id} onMouseDown={()=>{setCmdClientId(c.id);setSearchCmdClient("");}}
+                  <div key={c.id} onMouseDown={()=>{setCmdClientId(c.id);setSearchCmdClient("");if(!editingCmd&&!cmdNotes)setCmdNotes(c.commentaire_bl||"");}}
                     style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#F0F9FF"}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -4568,10 +7168,13 @@ function BossokApp({ session, onLogout }) {
 
       {/* PRODUITS - grille rapide */}
       <div style={{marginBottom:12}}>
-        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Produits * <span style={{color:"#9CA3AF"}}>(entrez les quantités)</span></label>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Produits * <span style={{color:"#9CA3AF"}}>(entrez les quantités — 🎁 = nombre offert gratuit sur la quantité)</span></label>
         
         {/* Grouped by category */}
-        {[...new Set(produits.filter(p=>p.statut!=="Passif").map(p=>p.categorie))].sort().map(cat=>{
+        {/* Catégories dans l'ordre défini par la colonne "ordre" des produits
+            (canettes, bouteilles, eaux... — réglable depuis Catalogue produits),
+            pas alphabétique. */}
+        {[...new Set(produits.filter(p=>p.statut!=="Passif").map(p=>p.categorie))].map(cat=>{
           const prods = produits.filter(p=>p.categorie===cat&&p.statut!=="Passif");
           return(
             <div key={cat} style={{marginBottom:8}}>
@@ -4603,6 +7206,18 @@ function BossokApp({ session, onLogout }) {
                           else setCmdProduits(prev=>[...prev,{nom:p.nom,qte:1}]);
                         }} style={{width:22,height:22,border:"1px solid #E5E7EB",borderRadius:4,background:"#F0FDF4",cursor:"pointer",fontSize:12,fontWeight:700,color:"#16A34A",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                       </div>
+                      {qte>0&&(
+                        <div style={{display:"flex",alignItems:"center",gap:3}} title="Nombre offert (gratuit) sur cette quantité">
+                          <span style={{fontSize:11}}>🎁</span>
+                          <input type="number" min="0" max={qte} value={existing?.qteOfferte||""} placeholder="0"
+                            onChange={e=>{
+                              let v=parseInt(e.target.value)||0;
+                              if(v<0) v=0; if(v>qte) v=qte;
+                              setCmdProduits(prev=>prev.map(x=>x.nom===p.nom?{...x,qteOfferte:v||undefined}:x));
+                            }}
+                            style={{width:30,textAlign:"center",padding:"2px 0",border:"1px solid #FDE68A",borderRadius:4,fontSize:11,outline:"none",background:existing?.qteOfferte?"#FFFBEB":"#fff",color:"#B45309",fontWeight:existing?.qteOfferte?700:400}}/>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -4620,7 +7235,7 @@ function BossokApp({ session, onLogout }) {
             <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
               {cmdProduits.map((p,i)=>(
                 <span key={i} style={{fontSize:10,background:"#DCFCE7",color:"#166534",padding:"2px 6px",borderRadius:4,fontWeight:500}}>
-                  {p.nom} ×{p.qte}
+                  {p.nom} ×{p.qte}{p.qteOfferte>0?` (dont ${p.qteOfferte} 🎁 offert${p.qteOfferte>1?"s":""})`:""}
                 </span>
               ))}
             </div>
@@ -4677,9 +7292,16 @@ function BossokApp({ session, onLogout }) {
         </button>
       </div>
 
-      <div style={{marginBottom:12}}>
-        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
-        <input value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} placeholder="Instructions spéciales..." style={S.input}/>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <textarea value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} placeholder="Instructions spéciales..." rows={3}
+            style={{...S.input,resize:"vertical",fontFamily:"inherit"}}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>🚚 Transport <span style={{color:"#9CA3AF"}}>(optionnel — TVA {TVA_TRANSPORT_PCT}%)</span></label>
+          <input type="number" min="0" step="0.01" value={cmdTransport} onChange={e=>setCmdTransport(e.target.value)} placeholder="Laisser vide si aucun" style={S.input}/>
+        </div>
       </div>
 
       <button onClick={saveCmd} disabled={saving}
@@ -4697,6 +7319,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
       {[["attente","⏳ En attente",commandes.filter(c=>c.statut==="En attente").length],
         ["livrees","✅ Livrées",commandes.filter(c=>c.statut==="Livré").length],
+        ["web","🌐 Commandes en ligne",commandes.filter(c=>c.source==="web").length],
         ["toutes","📋 Toutes",commandes.length]
       ].map(([k,l,n])=>(
         <button key={k} onClick={()=>setCmdView(k)}
@@ -4710,20 +7333,28 @@ function BossokApp({ session, onLogout }) {
         ? commandes.filter(c=>c.statut==="En attente")
         : cmdView==="livrees"
         ? [...commandes].filter(c=>c.statut==="Livré")
+        : cmdView==="web"
+        ? commandes.filter(c=>c.source==="web")
         : [...commandes];
       return (
         <DataTable
           isMobile={isMobile}
           rows={cmdList}
+          exportName="commandes"
           pageSize={50}
-          onRowClick={c=>c.statut!=="Livré" ? openEditCmd(c) : null}
+          onRowClick={c=>openEditCmd(c)}
           emptyIcon="📋"
           emptyMessage="Aucune commande"
           initialSort={{key:"date",dir:"desc"}}
           columns={[
             {key:"client", label:"Client", mobilePrimary:true, sortValue:c=>c.client_nom||"", render:c=>(
               <div>
-                <div style={{fontWeight:600}}>{c.client_nom}</div>
+                <div style={{fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                  {c.client_nom}
+                  {c.source==="web"&&(
+                    <span title="Commande passée depuis le portail client" style={{background:"#EFF6FF",color:"#1D4ED8",fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99,flexShrink:0}}>🌐 Web</span>
+                  )}
+                </div>
                 <div style={{fontSize:11,color:"#94A3B8"}}>{c.client_adresse}</div>
               </div>
             )},
@@ -4759,10 +7390,8 @@ function BossokApp({ session, onLogout }) {
                         className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer facture</button>
                       <button onClick={()=>{setOpenCmdMenu(null);imprimerBonLivraison(c);}}
                         className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#7C3AED"}}>📦 Bon de livraison</button>
-                      {c.statut!=="Livré"&&(
-                        <button onClick={()=>{setOpenCmdMenu(null);openEditCmd(c);}}
-                          className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
-                      )}
+                      <button onClick={()=>{setOpenCmdMenu(null);openEditCmd(c);}}
+                        className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#1D4ED8"}}>✏️ Modifier</button>
                       <button onClick={()=>{setOpenCmdMenu(null);dupliquerCommande(c);}}
                         className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
                       {c.statut!=="Livré"&&(
@@ -4798,6 +7427,7 @@ function BossokApp({ session, onLogout }) {
   const isPastWeek = planningWeekOffset < 0;
   const weekLabel = planningWeekOffset === 0 ? "Semaine courante" :
     planningWeekOffset === -1 ? "Semaine dernière" :
+    planningWeekOffset === 1 ? "Semaine prochaine" :
     `Semaine du ${weekStart.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'})}`;
 
   const getWeekDate = (dayIdx) => {
@@ -4813,68 +7443,210 @@ function BossokApp({ session, onLogout }) {
 
   const selectedDate = getDayDate(selectedDay);
 
+  const zonesFor = (i) => {
+    const z = DAILY_ZONES[i] || {A:[],B:[]};
+    return { A: z.A||[], B: z.B||[] };
+  };
+  const driverOfCmd = (c,i) => {
+    const z = zonesFor(i);
+    if (z.A.includes(c.client_region)) return 'A';
+    if (z.B.includes(c.client_region)) return 'B';
+    if (c.chauffeur==='A'||c.chauffeur==='B') return c.chauffeur;
+    return c.client_region ? getChauffeur(c.client_region) : null;
+  };
+  // Jour (0-4) où une commande non datée est planifiée : 1er jour de sa zone à partir d'aujourd'hui
+  const pendingDayIdx = (c) => {
+    if (planningWeekOffset !== 0) return -1;
+    if (!c.client_region) return todayDow<=4?todayDow:0;
+    for (let i=Math.min(todayDow,4); i<5; i++){ const z=zonesFor(i); if([...z.A,...z.B].includes(c.client_region)) return i; }
+    for (let i=0;i<5;i++){ const z=zonesFor(i); if([...z.A,...z.B].includes(c.client_region)) return i; }
+    return -1;
+  };
+  const cmdsForDayIdx = (i) => {
+    const dDate = getDayDate(i);
+    if (isPastWeek) return commandes.filter(c=>c.statut==='Livré' && (c.date_livraison===dDate || (!c.date_livraison && c.jour_livraison===days[i])));
+    return commandes.filter(c=>{
+      if (c.date_livraison) return c.date_livraison===dDate;
+      if (c.statut==='Livré') return false;
+      return pendingDayIdx(c)===i;
+    });
+  };
+
+  // ── Clients "attendus" d'après leur fréquence de commande historique ──
+  const DAY_MS = 86400000;
+  const toT = (str)=>new Date(String(str).slice(0,10)+"T12:00:00").getTime();
+  const predByDay = {0:[],1:[],2:[],3:[],4:[]};
+  if (!isPastWeek) {
+    const hist = {};
+    commandes.forEach(c=>{
+      if(!c.client_id) return;
+      const d = c.date_livraison || c.date_commande; if(!d) return;
+      (hist[c.client_id] = hist[c.client_id] || []).push(String(d).slice(0,10));
+    });
+    const enCours = new Set(commandes.filter(c=>c.statut!=='Livré').map(c=>c.client_id));
+    const dejaSemaine = new Set();
+    for (let i=0;i<5;i++) cmdsForDayIdx(i).forEach(c=>dejaSemaine.add(c.client_id));
+    clients.forEach(cl=>{
+      if (cl.statut!=="Actif" || !cl.region) return;
+      if (cl.pays && cl.pays!=="Luxembourg") return; // Luxembourg uniquement
+      if (enCours.has(cl.id) || dejaSemaine.has(cl.id)) return;
+      const ds = [...new Set([...(hist[cl.id]||[]), ...String(HISTORIQUE_CMD_MAI_AOUT[normNomClient(cl.nom)]||"").split(",").filter(Boolean)])].sort();
+      if (ds.length<3) return;
+      const ints=[]; for(let k=1;k<ds.length;k++) ints.push((toT(ds[k])-toT(ds[k-1]))/DAY_MS);
+      const rec = ints.slice(-6).sort((a,b)=>a-b);
+      const med = rec.length%2 ? rec[(rec.length-1)/2] : (rec[rec.length/2-1]+rec[rec.length/2])/2;
+      if (med>PLANNING_FREQ_MAX) return;
+      const last = ds[ds.length-1];
+      if ((Date.now()-toT(last))/DAY_MS > Math.max(60, med*4)) return; // client probablement perdu
+      const nextT = toT(last) + Math.max(1,Math.round(med))*DAY_MS;
+      for (let i=0;i<5;i++){
+        if (planningWeekOffset===0 && i<todayDow) continue;
+        const z = zonesFor(i);
+        const drv = z.A.includes(cl.region)?'A':z.B.includes(cl.region)?'B':null;
+        if (!drv) continue;
+        const dT = toT(getDayDate(i));
+        if (dT >= nextT - DAY_MS) {
+          predByDay[i].push({client:cl, drv, med:Math.round(med), last, retard:Math.round((dT-nextT)/DAY_MS)});
+          break;
+        }
+      }
+    });
+  }
+
   const getCmdMontant = (cmd) => {
     const fact = findFactureForCommande(cmd.id);
     return fact ? totalFact(fact.lignes, fact.tva_pct).total : null;
   };
 
-  const dayCommandes = isPastWeek
-    ? commandes.filter(c => c.statut === 'Livré' &&
-        (c.date_livraison === selectedDate || (!c.date_livraison && c.jour_livraison === days[selectedDay])))
-    : commandes.filter(c => {
-        if (c.date_livraison) {
-          return c.date_livraison === selectedDate || c.jour_livraison === days[selectedDay];
-        }
-        if (c.statut === 'Livré') return false;
-        const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
-        const allZones = [...(zones.A||[]), ...(zones.B||[])];
-        return allZones.includes(c.client_region) || !c.client_region;
-      });
+  const dayCommandes = cmdsForDayIdx(selectedDay);
 
   const buildSchedule = (driver) => {
     if (isPastWeek) {
       const driverCmds = dayCommandes.filter(c => c.chauffeur === driver || getChauffeur(c.client_region) === driver);
       return { schedule: driverCmds, retDist: 0, totalKm: 0 };
     }
-    const zones = DAILY_ZONES[selectedDay] || DAILY_ZONES[0];
+    const zones = zonesFor(selectedDay);
     const driverZones = zones[driver] || [];
-    const driverCmds = dayCommandes.filter(c => driverZones.includes(c.client_region));
+    const driverCmds = dayCommandes.filter(c => driverOfCmd(c,selectedDay) === driver);
 
-    const cvCmds = driverCmds.filter(c => c.client_region === 'Centre-ville');
-    const otherCmds = driverCmds.filter(c => c.client_region !== 'Centre-ville');
-    const zoneOrder = driverZones.filter(z => z !== 'Centre-ville');
-
-    const sortedOthers = [...otherCmds].sort((a,b) => {
-      const ai = zoneOrder.indexOf(a.client_region);
-      const bi = zoneOrder.indexOf(b.client_region);
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    // Tournée optimisée : ordre des arrêts qui minimise les km (Held-Karp exact ≤11 arrêts,
+    // sinon heuristique 2-opt), distances routières exactes si la matrice est calculée,
+    // découpe en rotations si la charge dépasse la capacité du camion.
+    const clientById = {}; clients.forEach(c=>{ clientById[c.id]=c; });
+    const keyOfCmd = (cmd) => { const cl = clientById[cmd.client_id]; return (cl && cl.lat!=null && cl.lng!=null) ? String(cl.id) : "z:"+(cmd.client_region||"?"); };
+    const coordsOfKey = (key, cmd) => {
+      if (key==="depot") return DEPOT;
+      if (key.startsWith("z:")) return REGION_COORDS[key.slice(2)] || DEPOT;
+      const cl = clientById[key]; return cl ? {lat:Number(cl.lat), lng:Number(cl.lng)} : DEPOT;
+    };
+    const legInfo = (ka, kb) => {
+      if (ka===kb) return {km:0, min:0, exact:true};
+      const m = matriceDist?.[ka]?.[kb];
+      if (m) return {km:m[0], min:m[1], exact:true};
+      const km = distKm(coordsOfKey(ka), coordsOfKey(kb)) * 1.3;
+      return {km, min:km/45*60, exact:false};
+    };
+    const items = driverCmds.map(c=>({cmd:c, key:keyOfCmd(c), charge:(c.produits||[]).reduce((t,p)=>t+(p.qte||0),0)}));
+    const rots = optimiserTournee(items, (a,b)=>legInfo(a,b).km);
+    let schedule = [], totalKm = 0, totalMin = 0, retDist = 0, exactAll = true; const rotInfo = [];
+    rots.forEach((idxs,ri)=>{
+      let prev = "depot", rKm = 0, rCharge = 0;
+      idxs.forEach(k=>{
+        const it = items[k], leg = legInfo(prev, it.key);
+        rKm += leg.km; totalMin += leg.min; if (!leg.exact) exactAll = false; rCharge += it.charge;
+        schedule.push({...it.cmd, dist:Math.round(leg.km*10)/10, isCv: it.cmd.client_region==='Centre-ville', rot:ri, exact:leg.exact});
+        prev = it.key;
+      });
+      const back = legInfo(prev, "depot"); rKm += back.km; totalMin += back.min; if (!back.exact) exactAll = false;
+      retDist = Math.round(back.km*10)/10; totalKm += rKm;
+      rotInfo.push({n:idxs.length, km:Math.round(rKm*10)/10, charge:rCharge});
     });
+    totalKm = Math.round(totalKm*10)/10;
+    totalMin += schedule.length*STOP_TIME;
+    const dureeTxt = schedule.length ? `${Math.floor(totalMin/60)}h${String(Math.round(totalMin%60)).padStart(2,"0")}` : "";
 
-    const ordered = [...cvCmds, ...sortedOthers];
-    let schedule = [], prevRegion = null, totalKm = 0;
-
-    for (const cmd of ordered) {
-      const region = cmd.client_region;
-      const coords = REGION_COORDS[region] || DEPOT;
-      const prevCoords = prevRegion ? (REGION_COORDS[prevRegion] || DEPOT) : DEPOT;
-      const dist = Math.round(distKm(prevCoords, coords));
-      totalKm += dist;
-      schedule.push({...cmd, dist, isCv: region === 'Centre-ville'});
-      prevRegion = region;
-    }
-
-    const lastRegion = ordered.length > 0 ? ordered[ordered.length-1].client_region : null;
-    const lastCoords = lastRegion ? (REGION_COORDS[lastRegion] || DEPOT) : DEPOT;
-    const retDist = Math.round(distKm(lastCoords, DEPOT));
-    totalKm += retDist;
-
-    return { schedule, retDist, totalKm };
+    return { schedule, retDist, totalKm, rotInfo, exactAll, dureeTxt };
   };
 
   const scheduleA = buildSchedule('A');
   const scheduleB = buildSchedule('B');
   const totalCaisses = dayCommandes.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0);
   const totalCA = isPastWeek ? dayCommandes.reduce((s,c)=>s+(getCmdMontant(c)||0),0) : 0;
+
+  // ── Vue semaine : noms des clients par jour et par chauffeur ──
+  const weekTotalCmds = days.reduce((t,_,i)=>t+cmdsForDayIdx(i).length,0);
+  const weekTotalPred = days.reduce((t,_,i)=>t+predByDay[i].length,0);
+  const fmtShort = (str)=>{ const d=new Date(String(str).slice(0,10)+"T12:00:00"); return d.toLocaleDateString('fr-LU',{day:'2-digit',month:'2-digit'}); };
+  const weekView = (
+    <div>
+      <div style={{fontSize:11,color:"#6B7280",marginBottom:10,lineHeight:1.5}}>
+        {isPastWeek
+          ? `${weekTotalCmds} livraison(s) effectuée(s) cette semaine.`
+          : <>{weekTotalCmds} commande(s) enregistrée(s) · <b>{weekTotalPred} client(s) attendu(s)</b> d'après leur fréquence de commande habituelle.
+</>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(5,minmax(0,1fr))",gap:10,alignItems:"start"}}>
+        {days.map((day,i)=>{
+          const list = cmdsForDayIdx(i);
+          const preds = predByDay[i];
+          const z = zonesFor(i);
+          const zonesLabel = [...z.A,...z.B].filter(r=>r!=="Nord-est").join(" · ");
+          const groups = [
+            {k:'A',name:'Sefa',col:'#0EA5E9',bg:'#E0F2FE'},
+            {k:'B',name:'Mikail',col:'#8B5CF6',bg:'#EDE9FE'},
+            {k:null,name:'Sans zone',col:'#9CA3AF',bg:'#F3F4F6'},
+          ].map(g=>({...g,
+            cmds:list.filter(c=>driverOfCmd(c,i)===g.k).sort((a,b)=>(a.client_region||"").localeCompare(b.client_region||"")||(a.client_nom||"").localeCompare(b.client_nom||"")),
+            preds:preds.filter(p=>p.drv===g.k).sort((a,b)=>(a.client.region||"").localeCompare(b.client.region||"")||(a.client.nom||"").localeCompare(b.client.nom||"")),
+          })).filter(g=>g.cmds.length+g.preds.length>0);
+          const isToday = i===todayDow && isCurrentWeek;
+          return (
+            <div key={i} style={{...S.card,padding:10,borderTop:"4px solid "+(isToday?"#1D4ED8":"#E5E7EB"),background:isToday?"#F8FBFF":"#fff"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+                <div style={{fontWeight:800,fontSize:14,color:isToday?"#1D4ED8":"#111827"}}>{day}</div>
+                <div style={{fontSize:11,color:"#9CA3AF"}}>{getWeekDate(i)}</div>
+              </div>
+              <div style={{fontSize:10,color:"#6B7280",marginBottom:2,minHeight:14}}>{zonesLabel||"Pas de tournée"}</div>
+              <div style={{fontSize:10,color:"#9CA3AF",marginBottom:8}}>
+                {list.length} {isPastWeek?"livraison":"commande"}{list.length>1?"s":""}{preds.length>0?` · ${preds.length} attendu${preds.length>1?"s":""}`:""}
+              </div>
+              {groups.length===0 && <div style={{fontSize:11,color:"#9CA3AF",textAlign:"center",padding:"14px 0"}}>Rien de prévu</div>}
+              {groups.map(g=>(
+                <div key={String(g.k)} style={{marginBottom:8}}>
+                  <div style={{fontSize:10,fontWeight:700,color:g.col,background:g.bg,padding:"2px 6px",borderRadius:4,marginBottom:4}}>
+                    🚚 {g.name} · {g.cmds.length+g.preds.length}
+                  </div>
+                  {g.cmds.map(c=>{
+                    const caisses=(c.produits||[]).reduce((t,p)=>t+(p.qte||0),0);
+                    return (
+                      <div key={c.id} onClick={()=>{setSelectedDay(i);setPlanningView("jour");}}
+                        style={{padding:"4px 6px",borderBottom:"1px solid #F3F4F6",cursor:"pointer"}}>
+                        <div style={{fontSize:12,fontWeight:600,color:"#111827",display:"flex",justifyContent:"space-between",gap:6}}>
+                          <span>{c.statut==='Livré'?"✅ ":""}{c.client_nom}</span>
+                          <span style={{fontSize:10,color:"#6B7280",fontWeight:500,whiteSpace:"nowrap"}}>📦 {caisses}</span>
+                        </div>
+                        <div style={{fontSize:10,color:"#9CA3AF"}}>{c.client_region||"—"}</div>
+                      </div>
+                    );
+                  })}
+                  {g.preds.map(p=>(
+                    <div key={"p"+p.client.id} style={{padding:"4px 6px",margin:"3px 0",border:"1px dashed #CBD5E1",borderRadius:6,background:"#FAFAFA"}}>
+                      <div style={{fontSize:12,fontWeight:600,color:"#475569"}}>🔄 {p.client.nom}</div>
+                      <div style={{fontSize:10,color:"#94A3B8"}}>
+                        {p.client.region} · ~tous les {p.med} j · dernière {fmtShort(p.last)}
+                        {p.retard>=3&&<span style={{color:"#D97706",fontWeight:600}}> · en retard</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      {!isPastWeek && <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>🔄 = client attendu (pas encore de commande) : calculé sur sa fréquence médiane de commande et sa dernière commande. Seuls les clients actifs avec ≥3 commandes et une fréquence ≤{PLANNING_FREQ_MAX} jours sont proposés.</div>}
+    </div>
+  );
 
   return(
   <div>
@@ -4890,23 +7662,35 @@ function BossokApp({ session, onLogout }) {
           {isPastWeek&&<span style={{color:"#D97706",fontWeight:600,marginLeft:6}}>Mode historique</span>}
         </div>
       </div>
-      <button onClick={()=>setPlanningWeekOffset(w=>Math.min(0,w+1))}
-        disabled={isCurrentWeek}
-        style={{...S.btn(isCurrentWeek?"#F9FAFB":"#F1F5F9",isCurrentWeek?"#D1D5DB":"#374151"),padding:"6px 14px",fontSize:13,opacity:isCurrentWeek?0.5:1}}>
+      <button onClick={()=>setPlanningWeekOffset(w=>Math.min(2,w+1))}
+        disabled={planningWeekOffset>=2}
+        style={{...S.btn(planningWeekOffset>=2?"#F9FAFB":"#F1F5F9",planningWeekOffset>=2?"#D1D5DB":"#374151"),padding:"6px 14px",fontSize:13,opacity:planningWeekOffset>=2?0.5:1}}>
         Semaine suiv. ›
       </button>
     </div>
 
+    <div style={{display:"flex",gap:6,marginBottom:12}}>
+      {[["semaine","📅 Vue semaine"],["jour","🚚 Détail du jour"]].map(([k,l])=>(
+        <button key={k} onClick={()=>setPlanningView(k)}
+          style={{...S.btn(planningView===k?"#1D4ED8":"#F1F5F9",planningView===k?"#fff":"#374151"),padding:"6px 14px",fontSize:12}}>{l}</button>
+      ))}
+    </div>
+
+    <div style={{...S.card,padding:"8px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <button onClick={calculerMatriceRoutes} disabled={matriceLoading}
+        style={{...S.btn("#0F766E"),padding:"6px 12px",fontSize:12,opacity:matriceLoading?0.6:1}}>
+        {matriceLoading?"📐 Calcul en cours...":"📐 Calculer les distances routières exactes"}
+      </button>
+      <div style={{fontSize:11,color:"#6B7280",flex:1,minWidth:180}}>
+        {matriceMsg || (Object.keys(matriceDist).length>0 ? `Distances routières disponibles pour ${Object.keys(matriceDist).length-1} clients.` : "Les tournées sont optimisées (ordre des arrêts + camion plein). Calcule les distances routières pour des km exacts.")}
+      </div>
+    </div>
+
+    {planningView==="semaine" ? weekView : (<>
     <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
       {days.map((day,i)=>{
         const dDate = getDayDate(i);
-        const cmdsDay = isPastWeek
-          ? commandes.filter(c=>c.statut==='Livré' && (c.date_livraison===dDate || (!c.date_livraison && c.jour_livraison===day)))
-          : commandes.filter(c=>{
-              if(c.statut==='Livré') return false;
-              const zones = DAILY_ZONES[i]||DAILY_ZONES[0];
-              return [...(zones.A||[]),...(zones.B||[])].includes(c.client_region)||!c.client_region;
-            });
+        const cmdsDay = cmdsForDayIdx(i);
         const isToday = i === todayDow && isCurrentWeek;
         const isSelected = i === selectedDay;
         return(
@@ -4966,13 +7750,14 @@ function BossokApp({ session, onLogout }) {
                 <div style={{fontSize:11,color:"#6B7280"}}>
                   {isPastWeek
                     ? `${schedule.schedule.length} livraison(s) effectuée(s)`
-                    : `Départ Aspelt 8h00 · ${schedule.schedule.length} arrêt(s) · ${schedule.retDist}km retour`}
+                    : `Départ Hesperange 8h00 · ${schedule.schedule.length} arrêt(s) · ${schedule.retDist}km retour`}
                 </div>
               </div>
               {!isPastWeek&&(
                 <div style={{textAlign:"right"}}>
                   <div style={{fontSize:11,color:"#6B7280"}}>Distance totale</div>
-                  <div style={{fontWeight:700,color:col,fontSize:14}}>~{schedule.totalKm} km</div>
+                  <div style={{fontWeight:700,color:col,fontSize:14}}>{schedule.exactAll?"":"~"}{schedule.totalKm} km{schedule.dureeTxt?` · ${schedule.dureeTxt}`:""}</div>
+                  <div style={{fontSize:9,color:schedule.exactAll?"#059669":"#D97706"}}>{schedule.exactAll?"distances routières exactes":"estimé — calculer les distances routières"}</div>
                 </div>
               )}
             </div>
@@ -5018,12 +7803,17 @@ function BossokApp({ session, onLogout }) {
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,position:"relative"}}>
                     <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>🏠</div>
                     <div style={{flex:1,padding:"6px 10px",background:"#F8FAFC",borderRadius:6}}>
-                      <div style={{fontWeight:600,fontSize:11,color:col}}>🏠 Départ — Aspelt</div>
+                      <div style={{fontWeight:600,fontSize:11,color:col}}>🏠 Départ — Hesperange</div>
                     </div>
                   </div>
 
                   {schedule.schedule.map((stop,idx)=>(
                     <div key={stop.id} style={{marginBottom:10,position:"relative"}}>
+                      {stop.rot>0 && schedule.schedule[idx-1]?.rot!==stop.rot && (
+                        <div style={{margin:"0 0 8px",padding:"5px 8px",background:"#FEF3C7",border:"1px solid #FCD34D",borderRadius:6,fontSize:10,fontWeight:600,color:"#92400E"}}>
+                          🔁 Camion plein (200 colis) — retour au dépôt, puis rotation {stop.rot+1}
+                        </div>
+                      )}
                       <div style={{position:"absolute",left:-22,top:0,bottom:-10,width:2,background:"#E5E7EB"}}/>
                       <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:col,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700}}>{idx+1}</div>
                       <div style={{padding:"8px 10px",background:stop.isCv?"#FFF7ED":"#F8FAFC",borderRadius:8,border:(stop.isCv?"1px solid #FED7AA":"1px solid #E5E7EB")}}>
@@ -5032,7 +7822,7 @@ function BossokApp({ session, onLogout }) {
                             <span style={{fontWeight:700,color:col,fontSize:11}}>Arrêt #{idx+1}</span>
                             {stop.isCv&&<span style={{fontSize:9,background:"#FED7AA",color:"#92400E",padding:"1px 4px",borderRadius:3}}>⏰ Centre-ville en 1er</span>}
                           </div>
-                          <span style={{fontSize:9,color:"#9CA3AF"}}>~{stop.dist}km depuis étape précédente</span>
+                          <span style={{fontSize:9,color:"#9CA3AF"}}>{stop.dist} km depuis {idx===0||schedule.schedule[idx-1]?.rot!==stop.rot?"le dépôt":"l'arrêt précédent"} {stop.exact?"(route)":"(estimé)"}</span>
                         </div>
                         <div style={{fontWeight:600,fontSize:12,marginBottom:2}}>{stop.client_nom}</div>
                         <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>📍 {stop.client_adresse}</div>
@@ -5060,14 +7850,14 @@ function BossokApp({ session, onLogout }) {
                   <div style={{display:"flex",alignItems:"center",gap:8,position:"relative"}}>
                     <div style={{position:"absolute",left:-32,width:20,height:20,borderRadius:"50%",background:"#059669",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9}}>🏠</div>
                     <div style={{flex:1,padding:"6px 10px",background:"#F0FDF4",borderRadius:6,border:"1px solid #86EFAC"}}>
-                      <div style={{fontWeight:600,fontSize:11,color:"#059669"}}>🏠 Retour Aspelt (~{schedule.retDist}km)</div>
+                      <div style={{fontWeight:600,fontSize:11,color:"#059669"}}>🏠 Retour Hesperange (~{schedule.retDist}km)</div>
                     </div>
                   </div>
                 </div>
 
                 <div style={{borderTop:"1px solid #E5E7EB",marginTop:12,paddingTop:8,display:"flex",justifyContent:"space-between",fontSize:11,color:"#6B7280"}}>
                   <span>📦 {schedule.schedule.reduce((s,c)=>s+(c.produits||[]).reduce((ss,p)=>ss+p.qte,0),0)} caisses</span>
-                  <span>🗺️ Total : ~{schedule.totalKm} km</span>
+                  <span>🗺️ Total : {schedule.exactAll?"":"~"}{schedule.totalKm} km{schedule.rotInfo.length>1?` · ${schedule.rotInfo.length} rotations`:""}</span>
                 </div>
               </div>
             )}
@@ -5075,6 +7865,7 @@ function BossokApp({ session, onLogout }) {
         ))}
       </div>
     )}
+    </>)}
   </div>
   );
 })()}
@@ -5220,6 +8011,7 @@ function BossokApp({ session, onLogout }) {
     <DataTable
       isMobile={isMobile}
       rows={produits.filter(p=>stockCat==="Tous"||p.categorie===stockCat)}
+      exportName="stock"
       pageSize={50}
       emptyIcon="📦"
       emptyMessage="Aucun produit dans cette catégorie"
@@ -5338,6 +8130,7 @@ function BossokApp({ session, onLogout }) {
           <DataTable
             isMobile={isMobile}
             rows={clientsAvecSolde}
+            exportName="consignes_clients"
             pageSize={50}
             onRowClick={c=>openClientTab(c,"consignes")}
             emptyIcon="♻️"
@@ -5378,6 +8171,7 @@ function BossokApp({ session, onLogout }) {
               <DataTable
                 isMobile={isMobile}
                 rows={consignesManuelles.filter(c=>!c.utilise)}
+                exportName="consignes_retours_en_attente"
                 pageSize={50}
                 emptyIcon="📋"
                 emptyMessage="Aucun retour en attente"
@@ -5426,14 +8220,42 @@ function BossokApp({ session, onLogout }) {
       ))}
     </div>
 
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+      <button onClick={()=>setShowReorderProduits(v=>!v)} style={S.btn(showReorderProduits?"#1D4ED8":"#F1F5F9",showReorderProduits?"#fff":"#374151")}>
+        {showReorderProduits ? "✓ Terminer la réorganisation" : "🔀 Réorganiser l'ordre d'affichage"}
+      </button>
+    </div>
+
+    {showReorderProduits ? (
+      <div style={S.card}>
+        <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
+          Cet ordre est utilisé partout où la liste des produits s'affiche (commandes, factures, catalogue). Les flèches ne déplacent un produit qu'à l'intérieur de sa catégorie — l'ordre des catégories elles-mêmes (canettes → bouteilles → eaux...) reste fixe.
+        </div>
+        {[...new Set(produits.map(p=>p.categorie))].map(cat=>{
+          const prods = produits.filter(p=>p.categorie===cat);
+          return (
+            <div key={cat} style={{marginBottom:18}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6,borderBottom:"1px solid #F1F5F9",paddingBottom:4}}>{cat}</div>
+              {prods.map((p,i)=>(
+                <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 4px",borderBottom:i<prods.length-1?"1px solid #F8FAFC":"none"}}>
+                  <span style={{flex:1,fontSize:13,color:p.statut==="Passif"?"#9CA3AF":"#111"}}>{p.nom}{p.statut==="Passif"&&" (désactivé)"}</span>
+                  <button onClick={()=>deplacerProduit(p.id,"up")} disabled={i===0||saving} style={{...S.btn("#F1F5F9","#374151"),padding:"3px 9px",fontSize:12,opacity:i===0?0.3:1}}>▲</button>
+                  <button onClick={()=>deplacerProduit(p.id,"down")} disabled={i===prods.length-1||saving} style={{...S.btn("#F1F5F9","#374151"),padding:"3px 9px",fontSize:12,opacity:i===prods.length-1?0.3:1}}>▼</button>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    ) : (
     <DataTable
       isMobile={isMobile}
       rows={produitsFiltres}
+      exportName="catalogue_produits"
       pageSize={50}
       onRowClick={openEditProduitTab}
       emptyIcon="🍺"
       emptyMessage="Aucun produit dans cette vue"
-      initialSort={{key:"nom",dir:"asc"}}
       columns={[
         {key:"nom", label:"Produit", mobilePrimary:true, sortValue:p=>p.nom||"", render:p=><span style={{fontWeight:600}}>{p.nom}</span>},
         {key:"categorie", label:"Cat.", mobileShow:true, sortValue:p=>p.categorie||"", render:p=><span style={{color:"#475569"}}>{p.categorie}</span>},
@@ -5464,6 +8286,7 @@ function BossokApp({ session, onLogout }) {
         )},
       ]}
     />
+    )}
   </div>
   );
 })()}
@@ -5492,10 +8315,34 @@ function BossokApp({ session, onLogout }) {
             </div>
           </div>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
-            <button onClick={()=>{openNewFactureTab();setFactClientId(selClient.id);}} style={S.btn()}>+ Facture</button>
+            <button onClick={()=>{openNewFactureTab();setFactClientId(selClient.id);setFactNoteClient(selClient.commentaire_facture||"");}} style={S.btn()}>+ Facture</button>
             <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);}} style={S.btn("#F1F5F9","#334155")}>✏️</button>
           </div>
         </div>
+        {selClient.code_activation&&(
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:selClient.auth_user_id?"#F0FDF4":"#EFF6FF",border:"1px solid "+(selClient.auth_user_id?"#BBF7D0":"#BFDBFE"),borderRadius:10,padding:"9px 12px",marginBottom:14}}>
+            <span style={{fontSize:12,fontWeight:600,color:selClient.auth_user_id?"#166534":"#1D4ED8"}}>
+              {selClient.auth_user_id?"✅ Portail activé":"🔑 Code d'activation portail"}
+            </span>
+            {!selClient.auth_user_id&&(
+              <>
+                <span style={{fontFamily:"monospace",fontSize:14,fontWeight:700,letterSpacing:1,color:"#0F172A",background:"#fff",border:"1px solid #E3E7ED",borderRadius:6,padding:"2px 8px"}}>
+                  {selClient.code_activation}
+                </span>
+                <button
+                  onClick={async()=>{
+                    try{
+                      await navigator.clipboard.writeText(selClient.code_activation);
+                      notifySuccess("Code copié dans le presse-papiers.");
+                    }catch(e){logError(e);}
+                  }}
+                  style={S.btn("#F1F5F9","#334155")}
+                >📋 Copier</button>
+                <span style={{fontSize:11,color:"#64748B"}}>À communiquer au client pour qu'il active son compte sur hondro-distribution.com</span>
+              </>
+            )}
+          </div>
+        )}
         <div style={{display:"flex",gap:2}}>
           {[["info","Infos"],["factures","Factures"],["visites","Visites"],["consignes","Consignes"],["prix","Prix perso"]].map(([k,l])=>(
             <button key={k} style={S.tab(clientTab===k)} onClick={()=>setClientTab(k)}>{l}</button>
@@ -5744,7 +8591,7 @@ function BossokApp({ session, onLogout }) {
               {searchFactClient&&(
                 <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #E5E7EB",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,.1)",zIndex:50,maxHeight:200,overflowY:"auto"}}>
                   {clientsActifs.filter(c=>c.nom?.toLowerCase().includes(searchFactClient.toLowerCase())).slice(0,6).map(c=>(
-                    <div key={c.id} onClick={()=>{setFactClientId(c.id);setSearchFactClient("");setTimeout(()=>addCreditConsignes(c.id),100);}} style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9"}}
+                    <div key={c.id} onClick={()=>{setFactClientId(c.id);setSearchFactClient("");if(!editingFacture)setFactNoteClient(c.commentaire_facture||"");setTimeout(()=>addCreditConsignes(c.id),100);}} style={{padding:"8px 12px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #F1F5F9"}}
                       onMouseEnter={e=>e.currentTarget.style.background="#F9FAFB"}
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                       {c.nom}
@@ -5829,11 +8676,14 @@ function BossokApp({ session, onLogout }) {
       {factLignes.length>0&&(
         <div style={{marginBottom:12,border:"1px solid #E5E7EB",borderRadius:8,overflow:"hidden"}}>
           {factLignes.map((l,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderBottom:"1px solid #F1F5F9",fontSize:12}}>
-              <span style={{flex:1}}>{l.nom}</span>
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderBottom:"1px solid #F1F5F9",fontSize:12,background:l.offert?"#FFFBEB":"transparent"}}>
+              <span style={{flex:1,color:l.offert?"#B45309":"inherit",fontStyle:l.offert?"italic":"normal"}}>{l.nom}</span>
               <input type="number" min="1" value={l.qte} onChange={e=>setFactLignes(prev=>prev.map((x,j)=>j===i?{...x,qte:parseInt(e.target.value)||1}:x))} style={{width:48,padding:"2px 6px",border:"1px solid #E5E7EB",borderRadius:6,fontSize:12}}/>
               <span style={{width:64,textAlign:"right"}}>{fmtFull(l.qte*l.pu)}</span>
               {l.consigne>0&&<span style={{width:64,textAlign:"right",color:"#7C3AED"}}>+{fmtFull(l.qte*l.consigne)}</span>}
+              {!l.offert&&l.produitId!=="CONSIGNE_MANUELLE"&&l.produitId!=="CREDIT_CONSIGNES"&&!l.isCredit&&(
+                <button onClick={()=>offrirUniteFact(i)} title="Offrir 1 unité de cette ligne (gratuit)" style={{background:"none",border:"none",color:"#D97706",cursor:"pointer",fontSize:13}}>🎁</button>
+              )}
               <button onClick={()=>setFactLignes(prev=>prev.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#EF4444",cursor:"pointer"}}>✕</button>
             </div>
           ))}
@@ -5883,6 +8733,25 @@ function BossokApp({ session, onLogout }) {
           setManualConsigneLabel(""); setManualConsigneQte("1"); setManualConsigneUnitaire(""); setManualConsigneSens("plus");
         }} disabled={!manualConsigneQte||!manualConsigneUnitaire} style={{...S.btn("#F5F3FF","#7C3AED"),padding:"9px 14px",opacity:(manualConsigneQte&&manualConsigneUnitaire)?1:0.5}}>+ Ajouter</button>
       </div>
+      {factLignes.some(l=>l.produitId==="TRANSPORT_MANUEL") ? (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,marginBottom:12,fontSize:12}}>
+          <span>🚚 Transport : <b>{fmtFull(factLignes.find(l=>l.produitId==="TRANSPORT_MANUEL")?.pu||0)}</b> <span style={{color:"#6B7280"}}>(TVA {TVA_TRANSPORT_PCT}% incluse au total)</span></span>
+          <button onClick={()=>setFactLignes(prev=>prev.filter(l=>l.produitId!=="TRANSPORT_MANUEL"))} style={{background:"none",border:"none",color:"#EF4444",cursor:"pointer"}}>✕</button>
+        </div>
+      ) : (
+        <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"end"}}>
+          <div style={{flex:1}}>
+            <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:2}}>🚚 Transport <span style={{color:"#D1D5DB"}}>(optionnel — TVA {TVA_TRANSPORT_PCT}%)</span></label>
+            <input type="number" min="0" step="0.01" value={factTransportMontant} onChange={e=>setFactTransportMontant(e.target.value)} placeholder="Montant en €" style={S.input}/>
+          </div>
+          <button onClick={()=>{
+            const montant = parseFloat(factTransportMontant)||0;
+            if (!montant) return;
+            setFactLignes(prev=>[...prev, {produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:montant, consigne:0}]);
+            setFactTransportMontant("");
+          }} disabled={!factTransportMontant} style={{...S.btn("#EFF6FF","#1D4ED8"),padding:"9px 14px",opacity:factTransportMontant?1:0.5}}>+ Ajouter</button>
+        </div>
+      )}
       <div style={{marginBottom:12}}>
         <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes internes</label>
         <input value={factNotes} onChange={e=>setFactNotes(e.target.value)} placeholder="Notes optionnelles, non visibles par le client..." style={S.input}/>
@@ -5895,6 +8764,187 @@ function BossokApp({ session, onLogout }) {
         <button onClick={()=>{closeWorkTab("facture");setEditingFacture(null);setFactNumero("");setFactEcheance("");}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveFact} disabled={saving} style={{...S.btn(),flex:2,opacity:saving?0.6:1}}>
           {saving?"Sauvegarde...":editingFacture?"Enregistrer les modifications":"Créer la facture"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* ══ FACTURES DIVERSES (liste) ═════════════════════════════════ */}
+{page==="diverses" && !showDiverseForm && (()=>{
+  const fd = facturesDiverses.filter(f=>{
+    const matchStatut = fdFilterStatut==="Tous" || f.statut===fdFilterStatut;
+    const matchSearch = !fdFilterSearch || f.destinataire_nom?.toLowerCase().includes(fdFilterSearch.toLowerCase()) || String(f.numero||"").toLowerCase().includes(fdFilterSearch.toLowerCase());
+    return matchStatut && matchSearch;
+  });
+  const totalImpaye = facturesDiverses.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFactDiverse(f.lignes,f.tva_pct).total,0);
+
+  return (
+  <div>
+    {workTabStrip()}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:10,marginBottom:14}}>
+      {[
+        {l:"Total",v:facturesDiverses.length,c:"#1D4ED8",s:"Tous"},
+        {l:"Impayées",v:facturesDiverses.filter(f=>f.statut==="Impayée").length,c:"#DC2626",s:"Impayée",sub:fmtFull(totalImpaye)},
+        {l:"Payées",v:facturesDiverses.filter(f=>f.statut==="Payée").length,c:"#059669",s:"Payée"},
+      ].map((k,i)=>(
+        <div key={i} style={{...S.kpi(k.c),cursor:"pointer",outline:fdFilterStatut===k.s?"2px solid "+k.c:"none"}} onClick={()=>setFdFilterStatut(k.s)}>
+          <div style={{fontSize:22,fontWeight:800,color:k.c}}>{k.v}</div>
+          <div style={{fontSize:11,color:"#374151",fontWeight:600}}>{k.l}</div>
+          {k.sub&&<div style={{fontSize:11,color:k.c,fontWeight:700}}>{k.sub}</div>}
+        </div>
+      ))}
+    </div>
+
+    <div style={{...S.card,marginBottom:12,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+      <input value={fdFilterSearch} onChange={e=>setFdFilterSearch(e.target.value)} placeholder="🔍 Rechercher destinataire ou N°..." style={{...S.input,flex:1,minWidth:180}}/>
+      <select value={fdFilterStatut} onChange={e=>setFdFilterStatut(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,background:"#F9FAFB"}}>
+        <option value="Tous">Tous les statuts</option>
+        <option value="Impayée">⚠ Impayées</option>
+        <option value="Payée">✓ Payées</option>
+      </select>
+    </div>
+
+    <DataTable
+      isMobile={isMobile}
+      rows={fd}
+      exportName="factures_diverses"
+      onRowClick={openEditDiverse}
+      pageSize={20}
+      emptyIcon="🧾"
+      emptyMessage="Aucune facture diverse"
+      initialSort={{key:"date",dir:"desc"}}
+      columns={[
+        {key:"numero", label:"N°", mobilePrimary:true, render:f=><strong>{f.numero}</strong>},
+        {key:"destinataire_nom", label:"Destinataire", mobileShow:true, sortValue:f=>f.destinataire_nom||""},
+        {key:"date", label:"Date", mobileShow:true},
+        {key:"montant", label:"Montant", align:"right", mobileShow:true, sortValue:f=>totalFactDiverse(f.lignes,f.tva_pct).total,
+          render:f=>fmtFull(totalFactDiverse(f.lignes,f.tva_pct).total)},
+        {key:"statut", label:"Statut", mobileShow:true, render:f=>(
+          <span style={S.badge(f.statut==="Payée"?"#DCFCE7":"#FEE2E2", f.statut==="Payée"?"#166534":"#DC2626")}>{f.statut}</span>
+        )},
+        {key:"pj", label:"📎", align:"center", sortable:false, render:f=>(f.pieces_jointes||[]).length||""},
+        {key:"actions", label:"", align:"right", sortable:false, render:f=>(
+          <>
+            <button title="Imprimer" onClick={e=>{e.stopPropagation();generatePDFDiverse(f);}} style={{...S.btn("#374151"),padding:"2px 8px",fontSize:11,marginRight:6}}>🖨️</button>
+            {f.statut==="Impayée" ? (
+              <button title="Marquer payée" onClick={e=>{e.stopPropagation();setPaiementDiverse(f);setPaiementDiverseForm({date:localDateStr()});setShowPaiementDiverseForm(true);}} style={{...S.btn("#DCFCE7","#166534"),padding:"2px 8px",fontSize:11,marginRight:6}}>💰</button>
+            ) : (
+              <button title="Marquer impayée" onClick={e=>{e.stopPropagation();marquerDiverseImpayee(f.id);}} style={{...S.btn("#FEE2E2","#DC2626"),padding:"2px 8px",fontSize:11,marginRight:6}}>↩</button>
+            )}
+            <button title="Supprimer" onClick={e=>{e.stopPropagation();supprimerDiverse(f.id,f.numero);}} style={{...S.btn("#FEE2E2","#DC2626"),padding:"2px 8px",fontSize:11}}>🗑️</button>
+          </>
+        )},
+      ]}
+    />
+  </div>
+  );
+})()}
+
+{/* ══ FACTURES DIVERSES (formulaire) ═════════════════════════════ */}
+{page==="diverses" && showDiverseForm&&(
+  <div className="page-transition">
+    {workTabStrip()}
+    <div style={{...S.card,maxWidth:680}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>{editingDiverse ? "Modifier la facture" : "Nouvelle facture diverse"}</h2>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>N° Facture</label>
+          <input value={fdNumero} onChange={e=>setFdNumero(e.target.value)} placeholder="Auto-généré selon la date" style={{...S.input, fontWeight:600, color:"#1D4ED8"}}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date</label>
+          <input type="date" value={fdDate} onChange={e=>{
+            const newDate = e.target.value;
+            setFdDate(newDate);
+            if(!editingDiverse && !fdNumero) setFdNumero(genererNumeroFactureDiverse(newDate));
+          }} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Échéance</label>
+          <input type="date" value={fdEcheance} onChange={e=>setFdEcheance(e.target.value)} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>TVA (%)</label>
+          <input type="number" min="0" max="100" step="0.1" value={fdTvaPct} onChange={e=>setFdTvaPct(e.target.value)} style={S.input}/>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Destinataire (nom / société) *</label>
+          <input value={fdDestNom} onChange={e=>setFdDestNom(e.target.value)} placeholder="Ex: Logico Sàrl" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>N° TVA (optionnel)</label>
+          <input value={fdDestTva} onChange={e=>setFdDestTva(e.target.value)} placeholder="Ex: LU12345678" style={S.input}/>
+        </div>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Adresse</label>
+        <input value={fdDestAdresse} onChange={e=>setFdDestAdresse(e.target.value)} placeholder="Adresse complète" style={S.input}/>
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:4}}>Lignes</label>
+        {fdLignes.length>0&&(
+          <div style={{border:"1px solid #E5E7EB",borderRadius:8,marginBottom:8,overflow:"hidden"}}>
+            {fdLignes.map((l,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderBottom:i<fdLignes.length-1?"1px solid #F1F5F9":"none",fontSize:13}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.description}</div>
+                  <div style={{color:"#6B7280",fontSize:11}}>{l.qte} × {fmtFull(l.pu)} = {fmtFull(l.qte*l.pu)}</div>
+                </div>
+                <button onClick={()=>supprimerLigneDiverse(i)} style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:4}}><Icon name="close" size={14}/></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr 1fr auto",gap:8}}>
+          <input value={fdLigneDesc} onChange={e=>setFdLigneDesc(e.target.value)} placeholder="Description (ex: Palette EUR qualité 1)" style={S.input}/>
+          <input type="number" min="0" step="0.01" value={fdLigneQte} onChange={e=>setFdLigneQte(e.target.value)} placeholder="Qté" style={S.input}/>
+          <input type="number" min="0" step="0.01" value={fdLignePu} onChange={e=>setFdLignePu(e.target.value)} placeholder="Prix unit." style={S.input}/>
+          <button onClick={ajouterLigneDiverse} disabled={!fdLigneDesc.trim()||!parseFloat(fdLigneQte)} style={{...S.btn("#EFF6FF","#1D4ED8"),opacity:(!fdLigneDesc.trim()||!parseFloat(fdLigneQte))?0.5:1}}>+ Ajouter</button>
+        </div>
+        {fdLignes.length>0&&(
+          <div style={{textAlign:"right",marginTop:8,fontSize:13,fontWeight:700,color:"#1D4ED8"}}>
+            Total TTC : {fmtFull(totalFactDiverse(fdLignes, fdTvaPct).total)}
+          </div>
+        )}
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes internes</label>
+        <input value={fdNotes} onChange={e=>setFdNotes(e.target.value)} placeholder="Notes optionnelles..." style={S.input}/>
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Documents joints</label>
+        {fdFichiers.length>0&&(
+          <div style={{marginBottom:8}}>
+            {fdFichiers.map((doc,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,fontSize:13,marginBottom:6}}>
+                <span onClick={()=>consulterFichierDiverse(doc.chemin)} style={{color:"#166534",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",flex:1}}>📎 {doc.nom}</span>
+                <button onClick={()=>supprimerFichierDiverse(i)} style={{background:"none",border:"none",color:"#166534",cursor:"pointer",flexShrink:0}}><Icon name="close" size={14}/></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <label style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",border:"1px dashed #CBD5E1",borderRadius:8,cursor:fdFichierEnAttente?"default":"pointer",fontSize:13,color:"#64748B",background:"#F8FAFC"}}>
+          <Icon name="produits" size={16} style={{color:"#94A3B8"}}/>
+          {fdFichierEnAttente ? "Envoi en cours..." : "Ajouter une photo ou un PDF (le document reçu, etc.)"}
+          <input type="file" accept="image/*,application/pdf" multiple style={{display:"none"}} disabled={!!fdFichierEnAttente}
+            onChange={e=>{ const files=[...(e.target.files||[])]; files.forEach(f=>ajouterFichierDiverse(f)); e.target.value=""; }}/>
+        </label>
+      </div>
+
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>{closeWorkTab("diverse");setEditingDiverse(null);setFdNumero("");}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveDiverse} disabled={saving} style={{...S.btn(),flex:2,opacity:saving?0.6:1}}>
+          {saving?"Sauvegarde...":editingDiverse?"Enregistrer les modifications":"Créer la facture"}
         </button>
       </div>
     </div>
@@ -6080,6 +9130,17 @@ function BossokApp({ session, onLogout }) {
             </div>
           </div>
         </label>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Commentaire facture (par défaut)</label>
+            <textarea value={clientForm.commentaire_facture||""} onChange={e=>setClientForm(p=>({...p,commentaire_facture:e.target.value}))} placeholder="Affiché sous l'échéance sur les factures de ce client (modifiable à chaque facture)" style={{...S.input,minHeight:70,resize:"vertical",fontFamily:"inherit"}}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Commentaire BL (par défaut)</label>
+            <textarea value={clientForm.commentaire_bl||""} onChange={e=>setClientForm(p=>({...p,commentaire_bl:e.target.value}))} placeholder="Affiché sur les bons de livraison de ce client (modifiable à chaque BL)" style={{...S.input,minHeight:70,resize:"vertical",fontFamily:"inherit"}}/>
+          </div>
+        </div>
       </div>
       <div style={{display:"flex",gap:8,marginTop:16}}>
         <button onClick={()=>setShowClientForm(false)} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
@@ -6478,14 +9539,16 @@ function BossokApp({ session, onLogout }) {
 
   {/* ══ MODAL MODE DE PAIEMENT ══════════════════════════════════════ */}
   {showPaiementForm&&paiementFacture&&(
-  <div style={S.modal} onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}}>
+  <div style={S.modal} onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);setPaiementLot(null);}}>
     <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
         <h2 style={{margin:0,fontSize:16,fontWeight:700}}>💰 Moyen de paiement</h2>
-        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);setPaiementLot(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
       </div>
       <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>
-        Facture {paiementFacture.numero} — {paiementFacture.client_nom}
+        {paiementLot && paiementLot.length
+          ? <>{paiementLot.length} facture(s) sélectionnée(s) — le même moyen et la même date seront appliqués à toutes</>
+          : <>Facture {paiementFacture.numero} — {paiementFacture.client_nom}</>}
       </div>
 
       <div style={{display:"grid",gap:10}}>
@@ -6511,10 +9574,211 @@ function BossokApp({ session, onLogout }) {
       </div>
 
       <div style={{display:"flex",gap:8,marginTop:18}}>
-        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);setPaiementLot(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
         <button onClick={saveModePaiement} disabled={saving||!paiementForm.mode}
           style={{...S.btn(),flex:2,opacity:(saving||!paiementForm.mode)?0.5:1}}>
           {saving?"Enregistrement...":"✅ Confirmer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL PAIEMENT FACTURE DIVERSE ═══════════════════════════ */}
+  {showPaiementDiverseForm&&paiementDiverse&&(
+  <div style={S.modal} onClick={()=>{setShowPaiementDiverseForm(false);setPaiementDiverse(null);}}>
+    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>💰 Moyen de paiement</h2>
+        <button onClick={()=>{setShowPaiementDiverseForm(false);setPaiementDiverse(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:13,color:"#6B7280",marginBottom:14}}>
+        Facture {paiementDiverse.numero} — {paiementDiverse.destinataire_nom}
+      </div>
+
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Payé par *</label>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+            {[["Espèces","💵"],["Carte","💳"],["Virement","🏦"]].map(([m,icon])=>(
+              <button key={m} onClick={()=>setPaiementDiverseForm(p=>({...p,mode:m}))}
+                style={{
+                  padding:"14px 8px",borderRadius:10,border:paiementDiverseForm.mode===m?"2px solid #1D4ED8":"2px solid #E5E7EB",
+                  background:paiementDiverseForm.mode===m?"#EFF6FF":"#fff",cursor:"pointer",textAlign:"center",
+                }}>
+                <div style={{fontSize:22,marginBottom:4}}>{icon}</div>
+                <div style={{fontSize:12,fontWeight:600,color:paiementDiverseForm.mode===m?"#1D4ED8":"#374151"}}>{m}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date d'encaissement</label>
+          <input type="date" value={paiementDiverseForm.date||""} onChange={e=>setPaiementDiverseForm(p=>({...p,date:e.target.value}))} style={S.input}/>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>{setShowPaiementDiverseForm(false);setPaiementDiverse(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveModePaiementDiverse} disabled={saving||!paiementDiverseForm.mode}
+          style={{...S.btn(),flex:2,opacity:(saving||!paiementDiverseForm.mode)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Confirmer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL CHARGES DE STRUCTURE (CONTRÔLE DE GESTION) ══════════ */}
+  {showFraisForm&&(
+  <div style={S.modal} onClick={()=>{setShowFraisForm(false);setEditFrais(null);}}>
+    <div style={{...S.modalBox,maxWidth:440}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>📊 Charges du mois</h2>
+        <button onClick={()=>{setShowFraisForm(false);setEditFrais(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
+        Ces chiffres alimentent le résultat net de l'onglet Contrôle de gestion. Laisse un champ vide si tu ne l'as pas encore — il sera marqué "?" plutôt que compté comme zéro.
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Mois *</label>
+          <input type="month" value={(fraisForm.mois||"").slice(0,7)} onChange={e=>setFraisForm(p=>({...p,mois:e.target.value+"-01"}))} style={S.input}/>
+        </div>
+        {[
+          ["masse_salariale","Masse salariale (coût total employeur)"],
+          ["loyer","Loyer entrepôt"],
+          ["carburant","Carburant"],
+          ["assurance_vehicules","Assurance véhicules"],
+          ["entretien_vehicules","Entretien véhicules"],
+          ["leasing_vehicule","Leasing véhicule"],
+          ["frais_comptabilite","Frais comptabilité"],
+          ["frais_bancaires","Frais bancaires (Revolut+BGL+TPE)"],
+          ["telephone_mobile","Téléphone mobile"],
+          ["abonnement_box","Abonnement box"],
+          ["autres","Autres charges"],
+        ].map(([champ,label])=>(
+          <div key={champ}>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{label}</label>
+            <input type="number" step="0.01" value={fraisForm[champ]??""} onChange={e=>setFraisForm(p=>({...p,[champ]:e.target.value}))} placeholder="€" style={S.input}/>
+          </div>
+        ))}
+        <div style={{borderTop:"1px solid #F1F5F9",paddingTop:10,marginTop:4}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:2}}>Paramètres coût de livraison réel</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:8}}>Utilisés pour convertir les relevés chauffeurs (km, heures) en coût réel — préremplis, à ajuster si le prix du diesel ou le coût chauffeur changent.</div>
+        </div>
+        {[
+          ["cout_horaire_chauffeur","Coût horaire chauffeur chargé (€/h)"],
+          ["prix_diesel_litre","Prix diesel (€/L)"],
+          ["consommation_l_100km","Consommation véhicule (L/100km)"],
+        ].map(([champ,label])=>(
+          <div key={champ}>
+            <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>{label}</label>
+            <input type="number" step="0.01" value={fraisForm[champ]??""} onChange={e=>setFraisForm(p=>({...p,[champ]:e.target.value}))} style={S.input}/>
+          </div>
+        ))}
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={fraisForm.notes||""} onChange={e=>setFraisForm(p=>({...p,notes:e.target.value}))} placeholder="Ex: estimation, chiffre partiel..." style={S.input}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>{setShowFraisForm(false);setEditFrais(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveFrais} disabled={saving||!fraisForm.mois} style={{...S.btn(),flex:2,opacity:(saving||!fraisForm.mois)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL RELEVÉ CHAUFFEUR (CONTRÔLE DE GESTION — coût livraison réel) ══ */}
+  {showRelevChfForm&&(
+  <div style={S.modal} onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}}>
+    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🚚 Relevé chauffeur (TrackFleet)</h2>
+        <button onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{fontSize:12,color:"#6B7280",marginBottom:14}}>
+        À reporter chaque mois depuis le rapport "Résumé" de TrackFleet (export Excel), un relevé par chauffeur.
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Mois *</label>
+          <input type="month" value={(relevChfForm.mois||"").slice(0,7)} onChange={e=>setRelevChfForm(p=>({...p,mois:e.target.value+"-01"}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Chauffeur *</label>
+          <div style={{display:"flex",gap:6}}>
+            {["Sefa","Mikail"].map(ch=>(
+              <button key={ch} onClick={()=>setRelevChfForm(p=>({...p,chauffeur:ch}))}
+                style={{...S.btn(relevChfForm.chauffeur===ch?"#1D4ED8":"#F1F5F9",relevChfForm.chauffeur===ch?"#fff":"#374151"),flex:1,padding:"8px 0",fontSize:13}}>
+                {ch}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Distance totale (km)</label>
+          <input type="number" step="0.01" value={relevChfForm.km??""} onChange={e=>setRelevChfForm(p=>({...p,km:e.target.value}))} placeholder="Ex: 1002.48" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Temps de conduite (heures)</label>
+          <input type="number" step="0.01" value={relevChfForm.heures_conduite??""} onChange={e=>setRelevChfForm(p=>({...p,heures_conduite:e.target.value}))} placeholder="Ex: 25.63 (= 25h38)" style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Trajets (nombre, optionnel)</label>
+          <input type="number" value={relevChfForm.trajets??""} onChange={e=>setRelevChfForm(p=>({...p,trajets:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Notes</label>
+          <input value={relevChfForm.notes||""} onChange={e=>setRelevChfForm(p=>({...p,notes:e.target.value}))} style={S.input}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>{setShowRelevChfForm(false);setEditRelevChf(null);}} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={saveRelevChf} disabled={saving||!relevChfForm.mois||!relevChfForm.chauffeur} style={{...S.btn(),flex:2,opacity:(saving||!relevChfForm.mois||!relevChfForm.chauffeur)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer"}
+        </button>
+      </div>
+    </div>
+  </div>
+  )}
+
+  {/* ══ MODAL PRIX CONCURRENT (CONTRÔLE DE GESTION) ═══════════════ */}
+  {showPrixConcForm&&(
+  <div style={S.modal} onClick={()=>setShowPrixConcForm(false)}>
+    <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🏷️ Prix concurrent</h2>
+        <button onClick={()=>setShowPrixConcForm(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+      </div>
+      <div style={{display:"grid",gap:10}}>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Produit *</label>
+          <select value={prixConcForm.produit_id||""} onChange={e=>setPrixConcForm(p=>({...p,produit_id:e.target.value}))} style={S.input}>
+            <option value="">— Choisir —</option>
+            {produits.map(p=><option key={p.id} value={p.id}>{p.nom}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Concurrent</label>
+          <input value={prixConcForm.concurrent||"Freshy"} onChange={e=>setPrixConcForm(p=>({...p,concurrent:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Prix relevé (€) *</label>
+          <input type="number" step="0.01" value={prixConcForm.prix||""} onChange={e=>setPrixConcForm(p=>({...p,prix:e.target.value}))} style={S.input}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date du relevé</label>
+          <input type="date" value={prixConcForm.date_releve||localDateStr()} onChange={e=>setPrixConcForm(p=>({...p,date_releve:e.target.value}))} style={S.input}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:18}}>
+        <button onClick={()=>setShowPrixConcForm(false)} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+        <button onClick={savePrixConc} disabled={saving||!prixConcForm.produit_id||!prixConcForm.prix} style={{...S.btn(),flex:2,opacity:(saving||!prixConcForm.produit_id||!prixConcForm.prix)?0.5:1}}>
+          {saving?"Enregistrement...":"✅ Enregistrer"}
         </button>
       </div>
     </div>
