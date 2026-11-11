@@ -5046,9 +5046,38 @@ function BossokApp({ session, onLogout }) {
   dashFacts.filter(f=>f.statut==="Impayée").forEach(f=>{
     const m=f.date.slice(0,7);
     if(!impayeMap[m]) impayeMap[m]={label:m,v:0};
-    impayeMap[m].v+=totalFact(f.lignes, f.tva_pct).total;
+    impayeMap[m].v+=resteFact(f);
   });
-  const impayeChart = Object.values(impayeMap).sort((a,b)=>a.label.localeCompare(b.label)).slice(-8);
+  const impayeChartTout = Object.values(impayeMap).sort((a,b)=>a.label.localeCompare(b.label));
+  const impayeChart = impayeChartTout.slice(-8);
+
+  // ── Export Excel par graphique : exporte TOUTES les lignes (pas seulement le top affiché) + un onglet « Filtres » ──
+  const r2 = (n) => Math.round((Number(n)||0)*100)/100;
+  const exportCarte = (nom, rows) => {
+    if (!rows || rows.length===0) { notifyError("Aucune donnée à exporter pour ce graphique."); return; }
+    const cl = dashClient ? clients.find(c=>String(c.id)===String(dashClient)) : null;
+    const filtres = [
+      {Filtre:"Période", Valeur: activeFrom+" → "+activeTo},
+      {Filtre:"Client", Valeur: cl ? cl.nom : "Tous"},
+      {Filtre:"Zone", Valeur: dashZone || "Toutes"},
+      {Filtre:"Chauffeur", Valeur: dashChauffeur==="A"?"Sefa":dashChauffeur==="B"?"Mikail":"Sefa + Mikail"},
+      {Filtre:"Produits", Valeur: dashProduits.length ? dashProduits.join(", ") : "Tous"},
+      {Filtre:"Statut", Valeur: dashStatut || "Tous"},
+      {Filtre:"Exporté le", Valeur: new Date().toLocaleString("fr-FR")},
+    ];
+    telechargerBlob(buildXlsx([{name:nom.slice(0,31), rows}, {name:"Filtres", rows:filtres}]), "bossok_"+nom.replace(/[^A-Za-z0-9_]+/g,"_")+"_"+activeFrom+"_a_"+activeTo+".xlsx");
+  };
+  const xlsBtn = (nom, rows) => (
+    <button onClick={(e)=>{e.stopPropagation();exportCarte(nom, rows());}} title="Exporter ce graphique en Excel"
+      style={{marginLeft:"auto",background:"#ECFDF5",color:"#047857",border:"1px solid #A7F3D0",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600,cursor:"pointer"}}>📥 Excel</button>
+  );
+  const rowsCAMensuel = () => chartData.map(m=>({Mois:m.label, "Encaissé (€)":r2(m.paye), "Impayé (€)":r2(m.impaye), "Total (€)":r2(m.paye+m.impaye), Source:m.historique?"Historique (avant l'app)":"Factures"}));
+  const rowsImpayes = () => impayeChartTout.map(m=>({Mois:m.label, "Impayé (€)":r2(m.v)}));
+  const rowsProduits = () => Object.values(prodStats).sort((a,b)=>dashProduitTri==="marge"?b.marge-a.marge:b.qte-a.qte).map(x=>({Produit:x.nom, "Quantité vendue":x.qte, "CA HT (€)":r2(x.ca), "Marge (€)":r2(x.marge)}));
+  const rowsZones = () => Object.values(zoneStats).sort((a,b)=>b.ca-a.ca).map(z=>({Zone:z.zone, Chauffeur:ZONE_SCHEDULE[z.zone]?.driver||"?", Factures:z.nb, "CA TTC (€)":r2(z.ca), "Marge (€)":r2(z.marge)}));
+  const rowsClients = () => Object.values(clientStats).sort((a,b)=>b.ca-a.ca).map(c=>({Client:c.nom, Type:c.type, Zone:c.region, "CA TTC (€)":r2(c.ca), "Marge (€)":r2(c.marge), Factures:c.nb}));
+  const rowsTypes = () => Object.values(typeStats).sort((a,b)=>b.ca-a.ca).map(t=>({"Type de client":t.type, Factures:t.nb, "CA TTC (€)":r2(t.ca), "Marge (€)":r2(t.marge), "Marge %":t.ca>0?Math.round(t.marge/t.ca*100):0}));
+  const rowsFacturesPeriode = () => [...dashFacts].reverse().map(f=>({Date:f.date, "N° facture":f.numero, Client:f.client_nom, "Total TTC (€)":r2(totalFact(f.lignes,f.tva_pct).total), "Reste dû (€)":f.statut==="Impayée"?r2(resteFact(f)):0, Statut:f.statut}));
 
   // Export CSV
   const exportDash = () => {
@@ -5333,7 +5362,7 @@ function BossokApp({ session, onLogout }) {
     {/* ── Charts row 1 ── */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:2,display:"flex",alignItems:"center",gap:7}}><Icon name="dashboard" size={14} style={{color:"#5D6B82"}}/> CA mensuel (payé vs impayé)</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:2,display:"flex",alignItems:"center",gap:7}}><Icon name="dashboard" size={14} style={{color:"#5D6B82"}}/> CA mensuel (payé vs impayé){xlsBtn("CA_mensuel", rowsCAMensuel)}</div>
         {historiquePeriode.length>0&&(
           <div style={{fontSize:10,color:"#9CA3AF",marginBottom:8}}>Inclut {historiquePeriode.length} mois de données historiques (avant l'app)</div>
         )}
@@ -5355,7 +5384,7 @@ function BossokApp({ session, onLogout }) {
         ):<div style={{textAlign:"center",color:"#9CA3AF",padding:"70px 0",fontSize:12}}>Aucune donnée sur la période</div>}
       </div>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="warning" size={13} style={{color:"#DC2626"}}/> Impayés cumulés</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><Icon name="warning" size={13} style={{color:"#DC2626"}}/> Impayés cumulés{xlsBtn("Impayes_par_mois", rowsImpayes)}</div>
         {impayeChart.length>0?(
           <ResponsiveContainer width="100%" height={228}>
             <BarChart data={impayeChart} margin={{top:0,right:5,left:0,bottom:0}}>
@@ -5374,7 +5403,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="produits" size={14} style={{color:"#5D6B82"}}/> Top produits</div>
+          <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="produits" size={14} style={{color:"#5D6B82"}}/> Top produits{xlsBtn("Produits", rowsProduits)}</div>
           <div style={{display:"flex",gap:4}}>
             {[["quantite","Ventes"],["marge","Marge"]].map(([k,l])=>(
               <button key={k} onClick={()=>setDashProduitTri(k)}
@@ -5407,7 +5436,7 @@ function BossokApp({ session, onLogout }) {
       </div>
 
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> CA par zone</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="carte" size={14} style={{color:"#5D6B82"}}/> CA par zone{xlsBtn("CA_par_zone", rowsZones)}</div>
         {topZones.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
         topZones.map((z,i)=>{
           const maxCA=topZones[0].ca;
@@ -5486,7 +5515,7 @@ function BossokApp({ session, onLogout }) {
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Top clients par CA</div>
+          <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:7}}><Icon name="clients" size={14} style={{color:"#5D6B82"}}/> Top clients par CA{xlsBtn("Clients", rowsClients)}</div>
         </div>
         {topClients.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -5518,7 +5547,7 @@ function BossokApp({ session, onLogout }) {
       </div>
 
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="barChart2" size={14} style={{color:"#5D6B82"}}/> Marge par type de client</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="barChart2" size={14} style={{color:"#5D6B82"}}/> Marge par type de client{xlsBtn("Marge_par_type_client", rowsTypes)}</div>
         {topTypes.length===0?<div style={{textAlign:"center",color:"#9CA3AF",padding:"20px 0",fontSize:12}}>Aucune donnée</div>:
         <div>
           {topTypes.map((t,i)=>{
@@ -5550,7 +5579,7 @@ function BossokApp({ session, onLogout }) {
     {/* ── Bottom row ── */}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
       <div style={S.card}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="factures" size={14} style={{color:"#5D6B82"}}/> Dernières factures</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8,display:"flex",alignItems:"center",gap:7}}><Icon name="factures" size={14} style={{color:"#5D6B82"}}/> Dernières factures{xlsBtn("Factures_periode", rowsFacturesPeriode)}</div>
         {dashFacts.length===0?<div style={{color:"#9CA3AF",fontSize:12,textAlign:"center",padding:"20px 0"}}>Aucune facture sur la période</div>:
         [...dashFacts].reverse().slice(0,6).map(f=>{
           const {total}=totalFact(f.lignes, f.tva_pct);
