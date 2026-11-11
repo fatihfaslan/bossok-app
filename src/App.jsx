@@ -536,6 +536,16 @@ function ExportDonneesBoutons({ isMobile }) {
 }
 
 const CONSIGNE_PRIX = {"20cl":5.00,"25cl":5.00,"50cl":7.95,"1L":4.20};
+// Prix d'une consigne à partir de la taille choisie (ex "20cl"). Accepte aussi un ancien prix numérique.
+const prixConsigne = (taille) => CONSIGNE_PRIX[taille] ?? (parseFloat(taille)||0);
+// Libellé affiché sur la facture : « Consigne 20cl (3 × 5,00 €) », « Retour consigne 20cl — Coca VC (2 × 5,00 €) ».
+const libelleConsigne = ({label, taille, qte, sens}) => {
+  const retour = sens === "retour";
+  if (!CONSIGNE_PRIX[taille]) return label || (retour ? "Retour consignes (manuel)" : "Consigne supplémentaire");
+  const q = parseFloat(qte) || 0;
+  return (retour ? "Retour consigne " : "Consigne ") + taille + (label ? " — " + label : "")
+    + " (" + q + " × " + CONSIGNE_PRIX[taille].toFixed(2).replace(".", ",") + " €)";
+};
 
 // Le transport est un service, toujours soumis au taux de TVA standard (17%)
 // — indépendamment du taux appliqué aux produits (0% ou 3%, selon le client).
@@ -3846,8 +3856,8 @@ function BossokApp({ session, onLogout }) {
             return res;
           });
           manualConsigneLignesCmd.filter(l=>l.qte>0&&l.unitaire).forEach(l=>{
-            const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
-            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: l.label || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
+            const montant = parseFloat(l.qte)*prixConsigne(l.unitaire)*(l.sens==="retour"?-1:1);
+            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: libelleConsigne({label:l.label, taille:l.unitaire, qte:l.qte, sens:l.sens}), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
           });
           if (transportMontant > 0) lignes.push({ produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportMontant, consigne:0 });
           const noteClientMaj = [client?.commentaire_facture, cmdNotes].filter(Boolean).join(" — ");
@@ -3894,8 +3904,8 @@ function BossokApp({ session, onLogout }) {
             return res;
           });
           manualConsigneLignesCmd.filter(l=>l.qte>0&&l.unitaire).forEach(l=>{
-            const montant = parseFloat(l.qte)*parseFloat(l.unitaire)*(l.sens==="retour"?-1:1);
-            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: l.label || (montant<0?"Retour consignes (manuel)":"Consigne supplémentaire"), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
+            const montant = parseFloat(l.qte)*prixConsigne(l.unitaire)*(l.sens==="retour"?-1:1);
+            lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: libelleConsigne({label:l.label, taille:l.unitaire, qte:l.qte, sens:l.sens}), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
           });
           if (transportMontant > 0) lignes.push({ produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportMontant, consigne:0 });
           await db.insert("factures", {
@@ -7325,7 +7335,7 @@ function BossokApp({ session, onLogout }) {
         {manualConsigneLignesCmd.length>0 && (
           <div style={{display:"grid",gap:8,marginBottom:8}}>
             {manualConsigneLignesCmd.map((l,i)=>{
-              const montant = (parseFloat(l.qte)||0)*(parseFloat(l.unitaire)||0)*(l.sens==="retour"?-1:1);
+              const montant = (parseFloat(l.qte)||0)*prixConsigne(l.unitaire)*(l.sens==="retour"?-1:1);
               return (
                 <div key={i} style={{background:"#F8FAFC",border:"1px solid #E3E7ED",borderRadius:8,padding:10}}>
                   <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr auto",gap:6,marginBottom:6}}>
@@ -7344,7 +7354,7 @@ function BossokApp({ session, onLogout }) {
                       style={{...S.input,padding:"7px 9px",fontSize:13}}>
                       <option value="">— Consigne unitaire —</option>
                       {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
-                        <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
+                        <option key={taille} value={taille}>{taille} — {prix.toFixed(2)} €</option>
                       ))}
                     </select>
                     <select value={l.sens} onChange={e=>setManualConsigneLignesCmd(prev=>prev.map((x,xi)=>xi===i?{...x,sens:e.target.value}:x))}
@@ -8786,7 +8796,7 @@ function BossokApp({ session, onLogout }) {
           <select value={manualConsigneUnitaire} onChange={e=>setManualConsigneUnitaire(e.target.value)} style={S.input}>
             <option value="">— Choisir —</option>
             {Object.entries(CONSIGNE_PRIX).map(([taille,prix])=>(
-              <option key={taille} value={prix}>{taille} — {prix.toFixed(2)} €</option>
+              <option key={taille} value={taille}>{taille} — {prix.toFixed(2)} €</option>
             ))}
           </select>
         </div>
@@ -8799,12 +8809,12 @@ function BossokApp({ session, onLogout }) {
         </div>
         <button onClick={()=>{
           const qte = parseFloat(manualConsigneQte)||0;
-          const prix = parseFloat(manualConsigneUnitaire)||0;
+          const prix = prixConsigne(manualConsigneUnitaire);
           if (!qte || !prix) return;
           const montant = qte*prix*(manualConsigneSens==="retour"?-1:1);
           setFactLignes(prev=>[...prev, {
             produitId:"CONSIGNE_MANUELLE",
-            nom: manualConsigneLabel || (montant<0 ? "Retour consignes (manuel)" : "Consigne supplémentaire"),
+            nom: libelleConsigne({label:manualConsigneLabel, taille:manualConsigneUnitaire, qte:manualConsigneQte, sens:manualConsigneSens}),
             qte:1, pu:montant, consigne:0, isCredit: montant<0,
           }]);
           setManualConsigneLabel(""); setManualConsigneQte("1"); setManualConsigneUnitaire(""); setManualConsigneSens("plus");
