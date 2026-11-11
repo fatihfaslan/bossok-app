@@ -2556,7 +2556,9 @@ function BossokApp({ session, onLogout }) {
   const [dashClient, setDashClient] = useState("");
   const [dashZone, setDashZone] = useState("");
   const [dashChauffeur, setDashChauffeur] = useState("");
-  const [dashProduit, setDashProduit] = useState("");
+  const [dashProduits, setDashProduits] = useState([]); // filtre multi-produits
+  const [dashProdOpen, setDashProdOpen] = useState(false);
+  const [dashProdSearch, setDashProdSearch] = useState("");
   const [dashStatut, setDashStatut] = useState("");
 
   // Contrôle de gestion — filtres période (page dédiée, indépendante du Dashboard)
@@ -4916,7 +4918,7 @@ function BossokApp({ session, onLogout }) {
     (!activeFrom || m.key >= activeFrom.slice(0,7)) &&
     (!activeTo || m.key <= activeTo.slice(0,7)) &&
     !moisAvecVraiesFactures.has(m.key) &&
-    !dashClient && !dashZone && !dashChauffeur && !dashProduit // l'historique n'a pas ce niveau de détail
+    !dashClient && !dashZone && !dashChauffeur && dashProduits.length===0 // l'historique n'a pas ce niveau de détail
   );
   const caHistorique = historiquePeriode.reduce((s,m)=>s+m.ca,0);
   const payeeHistorique = historiquePeriode.reduce((s,m)=>s+m.paye,0);
@@ -4984,7 +4986,7 @@ function BossokApp({ session, onLogout }) {
   // Product stats
   const prodStats = {};
   factActives.forEach(f=>{
-    (f.lignes||[]).filter(l=>!l.isCredit&&(!dashProduit||l.nom===dashProduit)).forEach(l=>{
+    (f.lignes||[]).filter(l=>!l.isCredit&&(dashProduits.length===0||dashProduits.includes(l.nom))).forEach(l=>{
       if(!prodStats[l.nom]) prodStats[l.nom]={nom:l.nom,qte:0,ca:0,marge:0};
       prodStats[l.nom].qte+=l.qte; prodStats[l.nom].ca+=l.qte*l.pu;
       prodStats[l.nom].marge+=calcMargeLigne(l,produits,receptionsStock).marge;
@@ -5191,12 +5193,37 @@ function BossokApp({ session, onLogout }) {
           <option value="A">Sefa</option>
           <option value="B">Mikail</option>
         </select>
-        <select value={dashProduit} onChange={e=>setDashProduit(e.target.value)}
-          style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,maxWidth:200}}>
-          <option value="">Tous les produits</option>
-          {produits.map(p=><option key={p.id} value={p.nom}>{p.nom}</option>)}
-          {dashProduit&&<option value={dashProduit}>{dashProduit}</option>}
-        </select>
+        <div style={{position:"relative"}}>
+          <button onClick={()=>setDashProdOpen(o=>!o)}
+            style={{padding:"5px 8px",border:"1px solid "+(dashProduits.length?"#1D4ED8":"#E5E7EB"),borderRadius:8,fontSize:12,maxWidth:220,background:dashProduits.length?"#EFF6FF":"#fff",color:dashProduits.length?"#1D4ED8":"#111827",cursor:"pointer",fontWeight:dashProduits.length?600:400}}>
+            {dashProduits.length===0 ? "Tous les produits" : dashProduits.length===1 ? dashProduits[0] : dashProduits.length+" produits"} ▾
+          </button>
+          {dashProdOpen&&(
+            <>
+              <div onClick={()=>setDashProdOpen(false)} style={{position:"fixed",inset:0,zIndex:40}}/>
+              <div style={{position:"absolute",top:"100%",left:0,marginTop:4,zIndex:41,background:"#fff",border:"1px solid #E5E7EB",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,.15)",width:280,maxHeight:340,display:"flex",flexDirection:"column"}}>
+                <div style={{padding:8,borderBottom:"1px solid #F1F5F9"}}>
+                  <input value={dashProdSearch} onChange={e=>setDashProdSearch(e.target.value)} placeholder="🔍 Rechercher un produit..." style={{width:"100%",boxSizing:"border-box",padding:"6px 8px",border:"1px solid #E5E7EB",borderRadius:6,fontSize:12}}/>
+                </div>
+                <div style={{overflowY:"auto",padding:4}}>
+                  {[...produits].filter(p=>!dashProdSearch||p.nom.toLowerCase().includes(dashProdSearch.toLowerCase())).map(p=>{
+                    const coche = dashProduits.includes(p.nom);
+                    return(
+                      <label key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",fontSize:12,cursor:"pointer",borderRadius:6,background:coche?"#EFF6FF":"transparent"}}>
+                        <input type="checkbox" checked={coche} onChange={()=>setDashProduits(prev=>coche?prev.filter(n=>n!==p.nom):[...prev,p.nom])}/>
+                        <span>{p.nom}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div style={{display:"flex",gap:6,padding:8,borderTop:"1px solid #F1F5F9"}}>
+                  <button onClick={()=>setDashProduits([])} style={{...S.btn("#F3F4F6","#374151"),flex:1,padding:"5px 8px",fontSize:12}}>Tout effacer</button>
+                  <button onClick={()=>setDashProdOpen(false)} style={{...S.btn(),flex:1,padding:"5px 8px",fontSize:12}}>OK</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <select value={dashStatut} onChange={e=>setDashStatut(e.target.value)}
           style={{padding:"5px 8px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12}}>
           <option value="">Tous statuts</option>
@@ -5204,8 +5231,8 @@ function BossokApp({ session, onLogout }) {
           <option value="Impayée">Impayées</option>
           <option value="Avoir">Avoirs</option>
         </select>
-        {(dashClient||dashZone||dashChauffeur||dashProduit||dashStatut)&&(
-          <button onClick={()=>{setDashClient("");setDashZone("");setDashChauffeur("");setDashProduit("");setDashStatut("");}}
+        {(dashClient||dashZone||dashChauffeur||dashProduits.length>0||dashStatut)&&(
+          <button onClick={()=>{setDashClient("");setDashZone("");setDashChauffeur("");setDashProduits([]);setDashStatut("");}}
             style={{...S.btn("#FEE2E2","#DC2626"),padding:"5px 10px",fontSize:12}}>✕ Reset filtres</button>
         )}
         <span style={{fontSize:11,color:"#6B7280",marginLeft:"auto",fontWeight:600}}>
