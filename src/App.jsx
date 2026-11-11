@@ -1124,6 +1124,9 @@ const TYPE_COLORS = {
   Distributor:{bg:"#FFF8E1",text:"#FF6F00"},Privé:{bg:"#EDE9FE",text:"#5B21B6"},
 };
 const tc = (t) => TYPE_COLORS[t]||{bg:"#F3F4F6",text:"#374151"};
+// Paiements partiels : f.paiements = [{montant, date, mode}]. « Reste dû » = total TTC − somme encaissée.
+const totalPaye = (f) => (f?.paiements||[]).reduce((s,p)=>s+(parseFloat(p.montant)||0),0);
+const resteFact = (f) => Math.max(0, Math.round(((totalFact(f.lignes, f.tva_pct).total) - totalPaye(f))*100)/100);
 const totalFact = (lignes=[], tvaPct=0) => {
   // Les lignes de consigne manuelle (ajout ou retour de vidange, produitId
   // "CONSIGNE_MANUELLE") ne sont jamais soumises à la TVA — au même titre que
@@ -1267,6 +1270,8 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
   const total = sousTotal + tvaVal + totalConsignes + totalTransport + tvaTransportVal + totalCreditAppl; // vidanges + transport inclus, moins notes de crédit
 
   const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
+  const paiementsFact = isNC ? [] : (facture.paiements || []);
+  const resteDuFact = Math.max(0, total - paiementsFact.reduce((s,p)=>s+(parseFloat(p.montant)||0),0));
 
   const rows = lignes.map(l0 => { const l = {...l0, isCredit: l0.isCredit || l0.produitId==="NOTE_CREDIT"}; return `
     <tr>
@@ -1310,7 +1315,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
     <div class="impayees">
       <p class="impayees-title">Factures impayées</p>
       ${impayees.map(f => {
-        const ft = (f.lignes||[]).reduce((s,l) => s + l.qte*(l.pu+(l.consigne||0)), 0);
+        const ft = (f.paiements && f.paiements.length) ? resteFact(f) : (f.lignes||[]).reduce((s,l) => s + l.qte*(l.pu+(l.consigne||0)), 0);
         return `<div style="display:flex;justify-content:space-between;color:#555">
           <span>${f.numero}</span>
           <span>${fmtEur(ft)}</span>
@@ -1463,7 +1468,9 @@ ${noteClientHTML}
       ` : ""}
       <tr class="sub-row"><td>Total vidanges</td><td style="text-align:right">${fmtEur(totalConsignes)}</td></tr>
       ${totalCreditAppl !== 0 ? `<tr><td>Note(s) de crédit</td><td style="text-align:right;color:#059669">${fmtEur(totalCreditAppl)}</td></tr>` : ""}
-      <tr class="total-row"><td>TOTAL À PAYER</td><td style="text-align:right">${fmtEur(total)}</td></tr>
+      <tr class="total-row"><td>TOTAL À PAYER</td><td style="text-align:right;white-space:nowrap">${fmtEur(total)}</td></tr>
+      ${paiementsFact.map(p => `<tr><td>Acompte reçu le ${p.date}</td><td style="text-align:right;white-space:nowrap;color:#059669">−${fmtEur(p.montant)}</td></tr>`).join("")}
+      ${paiementsFact.length && facture.statut !== "Payée" ? `<tr class="total-row"><td>RESTE À PAYER</td><td style="text-align:right;white-space:nowrap">${fmtEur(resteDuFact)}</td></tr>` : ""}
     </table>`}
   </div>
 </div>
@@ -2465,6 +2472,7 @@ function BossokApp({ session, onLogout }) {
   const [paiementFacture, setPaiementFacture] = useState(null);
   // Notes de crédit (trop-perçu) : {mode:"create", clientId, factureNumero, montant, motif} | {mode:"apply", facture, ncId, montant}
   const [ncModal, setNcModal] = useState(null);
+  const [ppModal, setPpModal] = useState(null); // paiement partiel : {facture, montant, date, mode}
   const [paiementForm, setPaiementForm] = useState({});
   const [showPaiementDiverseForm, setShowPaiementDiverseForm] = useState(false);
   const [paiementDiverse, setPaiementDiverse] = useState(null);
@@ -3355,6 +3363,30 @@ function BossokApp({ session, onLogout }) {
     finally { setSaving(false); }
   };
 
+  const savePaiementPartiel = async () => {
+    const m = ppModal; if (!m) return;
+    const f = factures.find(x=>x.id===m.facture.id) || m.facture;
+    const montant = Math.round((parseFloat(String(m.montant).replace(",","."))||0)*100)/100;
+    const reste = resteFact(f);
+    if (montant <= 0) { notifyError("Indiquez un montant supérieur à 0."); return; }
+    if (montant > reste + 0.004) { notifyError("Ce montant dépasse le reste dû (" + fmtFull(reste) + ")."); return; }
+    if (!m.mode) { notifyError("Choisissez le moyen de paiement."); return; }
+    const date = m.date || new Date().toISOString().split("T")[0];
+    const paiements = [...(f.paiements||[]), { montant, date, mode: m.mode }];
+    const soldee = reste - montant <= 0.004;
+    const modes = [...new Set(paiements.map(x=>x.mode))];
+    setSaving(true);
+    try {
+      await db.update("factures", f.id, soldee
+        ? { paiements, statut: "Payée", mode_paiement: modes.length===1 ? modes[0] : "Mixte", date_paiement: date }
+        : { paiements });
+      await loadAll();
+      setPpModal(null);
+      notifySuccess(soldee ? "Facture " + f.numero + " soldée (paiement de " + fmtFull(montant) + ")." : "Paiement de " + fmtFull(montant) + " enregistré sur " + f.numero + " — reste dû : " + fmtFull(reste - montant) + ".");
+    } catch(e) { logError(e); notifyError("Impossible d'enregistrer le paiement."); }
+    finally { setSaving(false); }
+  };
+
   const saveModePaiement = async () => {
     if (!paiementFacture || !paiementForm.mode) return;
     setSaving(true);
@@ -3369,6 +3401,13 @@ function BossokApp({ session, onLogout }) {
         for (const id of paiementLot) await db.update("factures", id, champs);
         setFactSelected([]);
       } else {
+        // Si des paiements partiels existent déjà, le solde restant est enregistré comme dernier paiement
+        const dejaPaye = totalPaye(paiementFacture), reste = resteFact(paiementFacture);
+        if (dejaPaye > 0 && reste > 0.004) {
+          champs.paiements = [...(paiementFacture.paiements||[]), { montant: reste, date: champs.date_paiement, mode: paiementForm.mode }];
+          const modes = [...new Set(champs.paiements.map(x=>x.mode))];
+          if (modes.length > 1) champs.mode_paiement = "Mixte";
+        }
         await db.update("factures", paiementFacture.id, champs);
       }
       await loadAll();
@@ -4885,7 +4924,7 @@ function BossokApp({ session, onLogout }) {
 
   const ca = factActives.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0) + caHistorique;
   const caPayee = dashFacts.filter(f=>f.statut==="Payée").reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0) + payeeHistorique;
-  const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0) + impayeHistorique;
+  const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+resteFact(f),0) + impayeHistorique;
   let marge = 0, margeLignesReelles = 0, margeLignesTotal = 0;
   factActives.forEach(f => {
     const r = calcMargeFacture(f, produits, receptionsStock);
@@ -5068,7 +5107,7 @@ function BossokApp({ session, onLogout }) {
       const todayStr = localDateStr();
       const facturesEnRetard = factures.filter(f => f.statut==="Impayée" && f.echeance && f.echeance < todayStr);
       if (facturesEnRetard.length===0) return null;
-      const totalRetard = facturesEnRetard.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
+      const totalRetard = facturesEnRetard.reduce((s,f)=>s+resteFact(f),0);
       return (
         <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"12px 16px",marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:facturesEnRetard.length>0?10:0}}>
@@ -5079,7 +5118,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{display:"grid",gap:6}}>
             {facturesEnRetard.slice(0,6).map(f=>{
               const cl = clients.find(c=>c.id===f.client_id);
-              const {total} = totalFact(f.lignes, f.tva_pct);
+              const total = resteFact(f);
               return (
                 <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#fff",borderRadius:8,padding:"7px 10px",fontSize:12,flexWrap:"wrap",gap:6}}>
                   <span><strong>{f.client_nom}</strong> — {f.numero} · {fmtFull(total)} · échéance {f.echeance}</span>
@@ -5968,8 +6007,8 @@ function BossokApp({ session, onLogout }) {
     return echeance >= new Date(AUJOURD_HUI_CG);
   });
   const facturesEnRetardCG = facturesImpayeesCG.filter(f=>!facturesNonEcheuesCG.includes(f));
-  const montantNonEcheuesCG = facturesNonEcheuesCG.reduce((s,f)=>s+totalFact(f.lignes,f.tva_pct).total,0);
-  const montantEnRetardCG = facturesEnRetardCG.reduce((s,f)=>s+totalFact(f.lignes,f.tva_pct).total,0);
+  const montantNonEcheuesCG = facturesNonEcheuesCG.reduce((s,f)=>s+resteFact(f),0);
+  const montantEnRetardCG = facturesEnRetardCG.reduce((s,f)=>s+resteFact(f),0);
   const moisProchainCG = (() => { const d=new Date(AUJOURD_HUI_CG); d.setMonth(d.getMonth()+1); return d.toISOString().slice(0,7); })();
   const fraisMoisProchainCG = fraisGeneraux.find(f=>(f.mois||"").slice(0,7)===moisProchainCG);
   const CHAMPS_CHARGES_FIXES = ["masse_salariale","loyer","carburant","assurance_vehicules","entretien_vehicules","leasing_vehicule","frais_comptabilite","frais_bancaires","telephone_mobile","abonnement_box","autres"];
@@ -6072,7 +6111,7 @@ function BossokApp({ session, onLogout }) {
             </tr></thead>
             <tbody>
               {facturesImpayeesCG.map(f=>{
-                const {total} = totalFact(f.lignes, f.tva_pct);
+                const total = resteFact(f);
                 const jours = f.date ? Math.round((new Date(AUJOURD_HUI_CG)-new Date(f.date))/86400000) : null;
                 return (
                   <tr key={f.id} style={{borderBottom:"1px solid #F9FAFB"}}>
@@ -7038,7 +7077,7 @@ function BossokApp({ session, onLogout }) {
     return matchStatut && matchSearch && matchMois && matchClient && matchFrom && matchTo;
   });
 
-  const totalImpaye = factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
+  const totalImpaye = factures.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+resteFact(f),0);
   const totalFiltre = ff.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0);
 
   // ── Sélection multiple (actions groupées) ──
@@ -7238,15 +7277,17 @@ function BossokApp({ session, onLogout }) {
           return (
             <span style={{fontWeight:700,color:echeanceDepassee?"#DC2626":isImp?"#EF4444":"#0F172A"}}>
               {fmtFull(total)}{echeanceDepassee&&<span title="Échéance dépassée" style={{marginLeft:4,fontSize:10}}>🔴</span>}
+              {isImp&&totalPaye(f)>0&&<div style={{fontSize:10,fontWeight:600,color:"#B45309"}}>reste {fmtFull(resteFact(f))}</div>}
             </span>
           );
         }},
         {key:"statut", label:"Statut", mobileShow:true, sortValue:f=>f.statut||"", render:f=>{
-          const sc = f.statut==="Payée"?"#DCFCE7":f.statut==="Avoir"?"#EDE9FE":f.statut==="Annulée"?"#F3F4F6":"#FEE2E2";
-          const st = f.statut==="Payée"?"#166534":f.statut==="Avoir"?"#6D28D9":f.statut==="Annulée"?"#6B7280":"#DC2626";
+          const partiel = f.statut==="Impayée" && totalPaye(f) > 0;
+          const sc = f.statut==="Payée"?"#DCFCE7":f.statut==="Avoir"?"#EDE9FE":f.statut==="Annulée"?"#F3F4F6":partiel?"#FEF3C7":"#FEE2E2";
+          const st = f.statut==="Payée"?"#166534":f.statut==="Avoir"?"#6D28D9":f.statut==="Annulée"?"#6B7280":partiel?"#B45309":"#DC2626";
           const sl = f.type_document==="note_credit"
             ? ((parseFloat(f.credit_restant)||0) > 0.004 ? "🧾 Crédit dispo " + fmtFull(parseFloat(f.credit_restant)||0) : "🧾 Crédit utilisé")
-            : f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":"⚠ Impayée";
+            : f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":partiel?"◐ Partiel · reste "+fmtFull(resteFact(f)):"⚠ Impayée";
           return <span style={S.badge(sc,st)}>{sl}</span>;
         }},
         {key:"actions", label:"", sortable:false, render:f=> lectureSeule ? (
@@ -7268,7 +7309,7 @@ function BossokApp({ session, onLogout }) {
                   )}
                   {f.statut==="Impayée"&&(()=>{
                     const cl = clients.find(c=>c.id===f.client_id);
-                    const {total} = totalFact(f.lignes, f.tva_pct);
+                    const total = resteFact(f);
                     return (
                       <>
                         <button onClick={()=>{setOpenFactureMenu(null);relancerWhatsApp(f,cl,total);}}
@@ -7294,6 +7335,10 @@ function BossokApp({ session, onLogout }) {
                     className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
                   <button onClick={()=>{setOpenFactureMenu(null);const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde,soldeConsignes(f.client_id));}}
                     className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer PDF</button>
+                  {f.statut==="Impayée"&&(
+                    <button onClick={()=>{setOpenFactureMenu(null);setPpModal({facture:f,montant:"",date:new Date().toISOString().split("T")[0],mode:""});}}
+                      className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#B45309"}}>💶 Paiement partiel</button>
+                  )}
                   {f.statut==="Impayée"&&creditsDisponibles(f.client_id).length>0&&(
                     <button onClick={()=>{setOpenFactureMenu(null);const dispo=creditsDisponibles(f.client_id);const du=totalFact(f.lignes,f.tva_pct).total;setNcModal({mode:"apply",facture:f,ncId:dispo[0].id,montant:String(Math.min(parseFloat(dispo[0].credit_restant)||0,du).toFixed(2))});}}
                       className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#6D28D9"}}>🧾 Appliquer une note de crédit</button>
@@ -8631,7 +8676,7 @@ function BossokApp({ session, onLogout }) {
               {clientImpayees(selClient.id).map(f=>(
                 <div key={f.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
                   <span>{f.numero} — {f.date}</span>
-                  <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes, f.tva_pct).total)}</span>
+                  <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(resteFact(f))}</span>
                 </div>
               ))}
             </div>
@@ -8873,11 +8918,11 @@ function BossokApp({ session, onLogout }) {
           {clientImpayees(factClientId).map(f=>(
             <div key={f.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:2}}>
               <span>{f.numero} — {f.date} (éch. {f.echeance})</span>
-              <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(totalFact(f.lignes, f.tva_pct).total)}</span>
+              <span style={{fontWeight:700,color:"#DC2626"}}>{fmtFull(resteFact(f))}</span>
             </div>
           ))}
           <div style={{fontSize:11,color:"#DC2626",fontWeight:600,marginTop:4}}>
-            Total dû : {fmtFull(clientImpayees(factClientId).reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0))}
+            Total dû : {fmtFull(clientImpayees(factClientId).reduce((s,f)=>s+resteFact(f),0))}
           </div>
         </div>
       )}
@@ -9862,6 +9907,56 @@ function BossokApp({ session, onLogout }) {
           <div style={{display:"flex",gap:8,marginTop:18}}>
             <button onClick={fermer} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
             <button onClick={appliquerNoteCredit} disabled={saving||!nc||!(parseFloat(m.montant)>0)} style={{...S.btn(),flex:1,opacity:(saving||!nc||!(parseFloat(m.montant)>0))?0.5:1}}>{saving?"Application…":"Appliquer"}</button>
+          </div>
+        </div>
+      </div>
+    );
+  })()}
+
+  {ppModal&&(()=>{
+    const m = ppModal, f = factures.find(x=>x.id===m.facture.id) || m.facture;
+    const total = totalFact(f.lignes, f.tva_pct).total, paye = totalPaye(f), reste = resteFact(f);
+    const saisi = parseFloat(String(m.montant).replace(",","."))||0;
+    const fermer = () => setPpModal(null);
+    return (
+      <div style={S.modal} onClick={fermer}>
+        <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+            <h2 style={{margin:0,fontSize:16,fontWeight:700}}>💶 Paiement partiel</h2>
+            <button onClick={fermer} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+          </div>
+          <div style={{fontSize:13,color:"#6B7280",marginBottom:10}}>Facture {f.numero} — {f.client_nom}</div>
+          <div style={{background:"#F9FAFB",borderRadius:8,padding:10,fontSize:12,marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between"}}><span>Total TTC</span><b>{fmtFull(total)}</b></div>
+            {(f.paiements||[]).map((p,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",color:"#059669"}}><span>Reçu le {p.date} ({p.mode})</span><b>−{fmtFull(p.montant)}</b></div>))}
+            <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #E5E7EB",marginTop:4,paddingTop:4}}><span>Reste dû</span><b style={{color:"#DC2626"}}>{fmtFull(reste)}</b></div>
+          </div>
+          <div style={{display:"grid",gap:10}}>
+            <div>
+              <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Montant reçu (€) *</label>
+              <input type="number" min="0" step="0.01" value={m.montant} onChange={e=>setPpModal(p=>({...p,montant:e.target.value}))} style={S.input} placeholder="ex : 500.00"/>
+              {saisi>0&&<div style={{fontSize:11,color:saisi>reste+0.004?"#DC2626":"#6B7280",marginTop:4}}>{saisi>reste+0.004?"Dépasse le reste dû ("+fmtFull(reste)+")":(reste-saisi<=0.004?"La facture sera soldée (Payée).":"Il restera "+fmtFull(reste-saisi)+" à payer.")}</div>}
+            </div>
+            <div>
+              <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:6}}>Payé par *</label>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                {[["Espèces","💵"],["Carte","💳"],["Virement","🏦"]].map(([md,icon])=>(
+                  <button key={md} onClick={()=>setPpModal(p=>({...p,mode:md}))}
+                    style={{padding:"10px 6px",borderRadius:10,border:m.mode===md?"2px solid #1D4ED8":"2px solid #E5E7EB",background:m.mode===md?"#EFF6FF":"#fff",cursor:"pointer",textAlign:"center"}}>
+                    <div style={{fontSize:20}}>{icon}</div>
+                    <div style={{fontSize:12,fontWeight:600,color:m.mode===md?"#1D4ED8":"#374151"}}>{md}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:3}}>Date d'encaissement</label>
+              <input type="date" value={m.date||""} onChange={e=>setPpModal(p=>({...p,date:e.target.value}))} style={S.input}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:18}}>
+            <button onClick={fermer} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+            <button onClick={savePaiementPartiel} disabled={saving||!(saisi>0)||!m.mode} style={{...S.btn(),flex:2,opacity:(saving||!(saisi>0)||!m.mode)?0.5:1}}>{saving?"Enregistrement…":"✅ Enregistrer le paiement"}</button>
           </div>
         </div>
       </div>
