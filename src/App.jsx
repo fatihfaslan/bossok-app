@@ -3282,6 +3282,22 @@ function BossokApp({ session, onLogout }) {
     const echDate = factEcheance || (() => { const e = new Date(factDate); e.setDate(e.getDate()+7); return e.toISOString().split("T")[0]; })();
     const ech = new Date(factDate); ech.setDate(ech.getDate()+7);
     const contientCredit = lignesFinales.some(l => l.produitId === "CREDIT_CONSIGNES");
+    // Notes de crédit ajoutées à cette nouvelle facture : on vérifie le solde et le plafond avant d'enregistrer
+    const lignesNC = editingFacture ? [] : lignesFinales.filter(l => l.produitId === "NOTE_CREDIT");
+    if (lignesNC.length) {
+      const dejaParNC = {};
+      for (const l of lignesNC) {
+        const nc = factures.find(f => f.type_document==="note_credit" && f.numero===l.noteCredit);
+        const mt = Math.abs(l.qte*l.pu);
+        dejaParNC[l.noteCredit] = (dejaParNC[l.noteCredit]||0) + mt;
+        if (!nc) { notifyError("Note de crédit "+l.noteCredit+" introuvable."); return; }
+        if (mt <= 0) { notifyError("Le montant de la note de crédit "+l.noteCredit+" doit être supérieur à 0."); return; }
+        if (dejaParNC[l.noteCredit] > (parseFloat(nc.credit_restant)||0) + 0.004) { notifyError("Le montant dépasse le crédit disponible de "+l.noteCredit+" ("+fmtFull(parseFloat(nc.credit_restant)||0)+")."); return; }
+      }
+      const totalNC = lignesNC.reduce((s,l)=>s+Math.abs(l.qte*l.pu),0);
+      const duAvantNC = totalFact(lignesFinales.filter(l=>l.produitId!=="NOTE_CREDIT"), clientEstExonere(client)?0:3).total;
+      if (totalNC > duAvantNC + 0.004) { notifyError("Les notes de crédit ("+fmtFull(totalNC)+") dépassent le total de la facture ("+fmtFull(duAvantNC)+")."); return; }
+    }
     setSaving(true);
     try {
       if (editingFacture) {
@@ -3307,6 +3323,21 @@ function BossokApp({ session, onLogout }) {
           tva_pct: clientEstExonere(client) ? 0 : 3,
         });
         if (contientCredit) await marquerConsignesUtilisees(factClientId);
+        if (lignesNC.length) {
+          const todayNC = new Date().toISOString().split("T")[0];
+          for (const l of lignesNC) {
+            try {
+              const nc = factures.find(f => f.type_document==="note_credit" && f.numero===l.noteCredit);
+              const mt = Math.abs(l.qte*l.pu);
+              const restant = parseFloat(nc.credit_restant)||0;
+              await db.update("factures", nc.id, {
+                credit_restant: Math.max(0, Math.round((restant - mt)*100)/100),
+                credit_utilisations: [...(nc.credit_utilisations||[]), { facture: num, montant: mt, date: todayNC }],
+              });
+              nc.credit_restant = Math.max(0, Math.round((restant - mt)*100)/100);
+            } catch(e2) { logError(e2); notifyError("Facture "+num+" créée, mais le solde de "+l.noteCredit+" n'a pas pu être mis à jour. Corrigez-le à la main."); }
+          }
+        }
         await loadAll();
         const newFact = {numero:num, client_id:factClientId,
           client_nom:client?.nom||"", client_adresse:client?.adresse||"",
@@ -8792,6 +8823,33 @@ function BossokApp({ session, onLogout }) {
           <input type="date" value={factEcheance} onChange={e=>setFactEcheance(e.target.value)} style={S.input}/>
         </div>
       </div>
+      {factClientId&&!editingFacture&&(()=>{
+        const dispoNC = creditsDisponibles(factClientId).filter(nc=>!factLignes.some(l=>l.produitId==="NOTE_CREDIT"&&l.noteCredit===nc.numero));
+        if (dispoNC.length===0) return null;
+        const cl = clients.find(c=>c.id===factClientId);
+        const tvaPct = clientEstExonere(cl)?0:3;
+        const base = factLignes.filter(l=>l.produitId!=="NOTE_CREDIT");
+        const du = base.length ? totalFact(base, tvaPct).total : 0;
+        const deja = factLignes.filter(l=>l.produitId==="NOTE_CREDIT").reduce((s,l)=>s+Math.abs(l.qte*l.pu),0);
+        const reste = Math.max(0, du - deja);
+        return(
+          <div style={{background:"#F5F3FF",border:"1px solid #C4B5FD",borderRadius:8,padding:10,marginBottom:12}}>
+            <div style={{fontWeight:600,color:"#6D28D9",fontSize:12,marginBottom:6}}>🧾 Notes de crédit disponibles pour ce client</div>
+            {dispoNC.map(nc=>{
+              const restant = parseFloat(nc.credit_restant)||0;
+              const m = Math.round(Math.min(restant, reste)*100)/100;
+              return(
+                <div key={nc.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,fontSize:12,marginBottom:4}}>
+                  <span>{nc.numero} — <b>{fmtFull(restant)}</b> dispo</span>
+                  <button disabled={m<=0} onClick={()=>setFactLignes(prev=>[...prev,{produitId:"NOTE_CREDIT",nom:"Note de crédit "+nc.numero,qte:1,pu:-m,consigne:0,noteCredit:nc.numero}])}
+                    style={{...S.btn("#6D28D9"),padding:"4px 10px",fontSize:11,opacity:m<=0?0.5:1}}>{m>0?"Déduire "+fmtFull(m):"Ajoute d'abord des produits"}</button>
+                </div>
+              );
+            })}
+            <div style={{fontSize:11,color:"#6B7280",marginTop:2}}>Le montant déduit est plafonné au total de la facture. Le solde restant reste disponible.</div>
+          </div>
+        );
+      })()}
       {factClientId&&creditConsignes(factClientId)>0&&(
         <div style={{background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,padding:10,marginBottom:12}}>
           <div style={{fontWeight:600,color:"#059669",fontSize:12,marginBottom:4}}>
@@ -8849,7 +8907,11 @@ function BossokApp({ session, onLogout }) {
           {factLignes.map((l,i)=>(
             <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderBottom:"1px solid #F1F5F9",fontSize:12,background:l.offert?"#FFFBEB":"transparent"}}>
               <span style={{flex:1,color:l.offert?"#B45309":"inherit",fontStyle:l.offert?"italic":"normal"}}>{l.nom}</span>
+              {l.produitId==="NOTE_CREDIT" ? (
+                <input type="number" min="0" step="0.01" value={Math.abs(l.pu)} onChange={e=>{const v=Math.abs(parseFloat(e.target.value)||0);setFactLignes(prev=>prev.map((x,j)=>j===i?{...x,qte:1,pu:-v}:x));}} style={{width:78,padding:"2px 6px",border:"1px solid #C4B5FD",borderRadius:6,fontSize:12}}/>
+              ) : (
               <input type="number" min="1" value={l.qte} onChange={e=>setFactLignes(prev=>prev.map((x,j)=>j===i?{...x,qte:parseInt(e.target.value)||1}:x))} style={{width:48,padding:"2px 6px",border:"1px solid #E5E7EB",borderRadius:6,fontSize:12}}/>
+              )}
               <span style={{width:64,textAlign:"right"}}>{fmtFull(l.qte*l.pu)}</span>
               {l.consigne>0&&<span style={{width:64,textAlign:"right",color:"#7C3AED"}}>+{fmtFull(l.qte*l.consigne)}</span>}
               {!l.offert&&l.produitId!=="CONSIGNE_MANUELLE"&&l.produitId!=="CREDIT_CONSIGNES"&&l.produitId!=="NOTE_CREDIT"&&!l.isCredit&&(
