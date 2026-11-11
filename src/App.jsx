@@ -7260,7 +7260,7 @@ function BossokApp({ session, onLogout }) {
                       className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#6D28D9"}}>🧾 Appliquer une note de crédit</button>
                   )}
                   {(f.statut==="Impayée"||f.statut==="Payée")&&(
-                    <button onClick={()=>{setOpenFactureMenu(null);setNcModal({mode:"create",clientId:f.client_id,factureNumero:f.numero,montant:"",motif:"Trop-perçu sur la facture "+f.numero});}}
+                    <button onClick={()=>{setOpenFactureMenu(null);setNcModal({mode:"create",clientId:f.client_id,factureNumero:f.numero,factureTotal:totalFact(f.lignes,f.tva_pct).total,recu:"",montant:"",motif:"Trop-perçu sur la facture "+f.numero});}}
                       className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#6D28D9"}}>🧾 Créer une note de crédit</button>
                   )}
                   {(f.statut==="Impayée"||f.statut==="Payée")&&(
@@ -9733,7 +9733,16 @@ function BossokApp({ session, onLogout }) {
                 </select>
                 {cl&&dispo>0&&<div style={{fontSize:11,color:"#6D28D9",marginTop:4}}>Crédit déjà disponible pour ce client : {fmtFull(dispo)}</div>}
               </div>
-              {m.factureNumero&&<div style={{fontSize:12,color:"#374151"}}>Facture concernée : <b>{m.factureNumero}</b></div>}
+              {m.factureNumero&&<div style={{fontSize:12,color:"#374151"}}>Facture concernée : <b>{m.factureNumero}</b>{m.factureTotal!=null&&<> · total {fmtFull(m.factureTotal)}</>}</div>}
+              {m.factureNumero&&m.factureTotal!=null&&(
+                <div>
+                  <label style={lab}>Montant reçu du client (€) — calcule le crédit automatiquement</label>
+                  <input type="number" min="0" step="0.01" value={m.recu||""}
+                    onChange={e=>{const r=e.target.value;const diff=(parseFloat(r)||0)-m.factureTotal;setNcModal(p=>({...p,recu:r,montant:diff>0.004?diff.toFixed(2):""}));}}
+                    style={S.input} placeholder="ex : 500.00"/>
+                  {(parseFloat(m.recu)||0)>0&&(parseFloat(m.recu)||0)-m.factureTotal<=0.004&&<div style={{fontSize:11,color:"#DC2626",marginTop:4}}>Le montant reçu n'est pas supérieur au total de la facture : pas de trop-perçu.</div>}
+                </div>
+              )}
               <div>
                 <label style={lab}>Montant du crédit (€) *</label>
                 <input type="number" min="0" step="0.01" value={m.montant} onChange={e=>setNcModal(p=>({...p,montant:e.target.value}))} style={S.input} placeholder="ex : 50.00"/>
