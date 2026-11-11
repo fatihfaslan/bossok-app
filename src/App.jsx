@@ -1130,11 +1130,13 @@ const totalFact = (lignes=[], tvaPct=0) => {
   // les consignes normales, elles sortent entièrement de l'assiette TVA.
   // Le transport (produitId "TRANSPORT_MANUEL") est un service à part : toujours
   // soumis à la TVA standard (TVA_TRANSPORT_PCT), quel que soit le taux du client.
-  const prod = lignes.reduce((s,l)=> (l.produitId==="CONSIGNE_MANUELLE"||l.produitId==="TRANSPORT_MANUEL") ? s : s+l.qte*l.pu, 0);
+  // Les notes de crédit appliquées (produitId "NOTE_CREDIT") se déduisent du total, hors TVA.
+  const prod = lignes.reduce((s,l)=> (l.produitId==="CONSIGNE_MANUELLE"||l.produitId==="TRANSPORT_MANUEL"||l.produitId==="NOTE_CREDIT") ? s : s+l.qte*l.pu, 0);
+  const credit = lignes.reduce((s,l)=> s + (l.produitId==="NOTE_CREDIT" ? l.qte*l.pu : 0), 0);
   const cons = lignes.reduce((s,l)=> s + (l.produitId==="CONSIGNE_MANUELLE" ? l.qte*l.pu : l.qte*(l.consigne||0)), 0);
   const transport = lignes.reduce((s,l)=> s + (l.produitId==="TRANSPORT_MANUEL" ? l.qte*l.pu : 0), 0);
   const tva = prod * (tvaPct||0) / 100 + transport * TVA_TRANSPORT_PCT / 100;
-  return {prod, cons, transport, tva, total: prod+cons+transport+tva};
+  return {prod, cons, transport, credit, tva, total: prod+cons+transport+credit+tva};
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1248,7 +1250,9 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
   // Les lignes de consigne manuelle (ajout/retour de vidange) sortent de l'assiette
   // TVA au même titre que les consignes normales — voir totalFact() plus haut.
   // Le transport (TRANSPORT_MANUEL) est traité à part : TVA standard fixe (TVA_TRANSPORT_PCT).
-  const sousTotal = lignes.reduce((s, l) => (l.produitId==="CONSIGNE_MANUELLE"||l.produitId==="TRANSPORT_MANUEL") ? s : s + l.qte * l.pu, 0);
+  const isNC = facture.type_document === "note_credit";
+  const sousTotal = lignes.reduce((s, l) => (l.produitId==="CONSIGNE_MANUELLE"||l.produitId==="TRANSPORT_MANUEL"||l.produitId==="NOTE_CREDIT") ? s : s + l.qte * l.pu, 0);
+  const totalCreditAppl = lignes.reduce((s, l) => s + (l.produitId==="NOTE_CREDIT" ? l.qte * l.pu : 0), 0);
   const totalConsignes = lignes.reduce((s, l) => s + (l.produitId==="CONSIGNE_MANUELLE" ? l.qte * l.pu : l.qte * (l.consigne || 0)), 0);
   const totalTransport = lignes.reduce((s, l) => s + (l.produitId==="TRANSPORT_MANUEL" ? l.qte * l.pu : 0), 0);
 
@@ -1259,11 +1263,11 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
   const tvaPct = facture.tva_pct != null ? facture.tva_pct : (clientEstExonere(client) ? 0 : 3);
   const tvaVal = sousTotal * tvaPct / 100;
   const tvaTransportVal = totalTransport * TVA_TRANSPORT_PCT / 100;
-  const total = sousTotal + tvaVal + totalConsignes + totalTransport + tvaTransportVal; // vidanges + transport inclus
+  const total = sousTotal + tvaVal + totalConsignes + totalTransport + tvaTransportVal + totalCreditAppl; // vidanges + transport inclus, moins notes de crédit
 
   const fmtEur = (n) => Number(n || 0).toFixed(2).replace(".", ",") + " €";
 
-  const rows = lignes.map(l => `
+  const rows = lignes.map(l0 => { const l = {...l0, isCredit: l0.isCredit || l0.produitId==="NOTE_CREDIT"}; return `
     <tr>
       <td style="text-align:center;font-weight:600;color:${l.isCredit?'#059669':'#111'}">${l.isCredit ? "♻" : l.qte}</td>
       <td style="color:${l.isCredit?'#059669':'inherit'};font-style:${l.isCredit?'italic':'normal'}">${l.nom}</td>
@@ -1271,7 +1275,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
       <td style="text-align:right">${l.isCredit ? "" : fmtEur(l.pu)}</td>
       <td style="text-align:right;font-weight:600;color:${l.isCredit?'#059669':'inherit'}">${fmtEur(l.qte * l.pu)}</td>
     </tr>
-  `).join("");
+  `; }).join("");
 
   const emptyRows = Array(Math.max(0, 5 - lignes.length)).fill("").map(() => `
     <tr><td>&nbsp;</td><td></td><td></td><td></td><td style="text-align:right;color:#ccc">—</td></tr>
@@ -1332,7 +1336,7 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
-  <title>Facture ${facture.numero}</title>
+  <title>${isNC ? "Note de crédit" : "Facture"} ${facture.numero}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:Arial,sans-serif; font-size:9pt; color:#111; padding:12mm 14mm; min-height:100vh; display:flex; flex-direction:column; }
@@ -1398,12 +1402,12 @@ const generatePDF = (facture, client, impayees = [], soldeClient = 0, soldeDetai
 <div class="meta">
   <div class="meta-left">
     <p><strong>Date :</strong> ${facture.date || ""}</p>
-    <p><strong>N° Facture :</strong> <strong>${facture.numero}</strong></p>
-    <p><strong>Échéance :</strong> ${facture.echeance || ""}</p>
+    <p><strong>${isNC ? "N° Note de crédit" : "N° Facture"} :</strong> <strong>${facture.numero}</strong></p>
+    ${isNC ? (facture.facture_origine ? `<p><strong>Facture concernée :</strong> ${facture.facture_origine}</p>` : "") : `<p><strong>Échéance :</strong> ${facture.echeance || ""}</p>`}
     ${payeeStampHTML}
   </div>
   <div style="text-align:right">
-    <p style="font-size:7.5pt;color:#555;margin-bottom:2px">Facturé à :</p>
+    <p style="font-size:7.5pt;color:#555;margin-bottom:2px">${isNC ? "Crédit en faveur de :" : "Facturé à :"}</p>
     <p class="client-name">${facture.client_nom || ""}</p>
     <p style="font-size:8pt;color:#333;line-height:1.6">
       ${client?.adresse || facture.client_adresse || ""}<br/>
@@ -1437,13 +1441,18 @@ ${noteClientHTML}
 <!-- BOTTOM -->
 <div class="bottom">
   <div style="width:52%">
-    <div class="sig">
+    ${isNC ? `<div style="font-size:8pt;color:#333;line-height:1.6"><strong>Motif :</strong> ${facture.notes || ""}<br/>Ce crédit est déductible de vos prochaines factures chez Hondro Trading &amp; Distribution.</div>` : `<div class="sig">
       Reçu marchandise en bon état : ──────────────────────<br/>
       Pour acquit Hondro Trading S.à r.l. : ─────────────
-    </div>
+    </div>`}
   </div>
   <div>
-    <table class="totals-table">
+    ${isNC ? `<table class="totals-table">
+      <tr class="total-row"><td>MONTANT DU CRÉDIT</td><td style="text-align:right">${fmtEur(Math.abs(total))}</td></tr>
+      <tr><td>Crédit disponible</td><td style="text-align:right">${fmtEur(facture.credit_restant != null ? facture.credit_restant : Math.abs(total))}</td></tr>
+      ${(facture.credit_utilisations || []).map(u => `<tr><td>Utilisé sur ${u.facture} (${u.date})</td><td style="text-align:right">−${fmtEur(u.montant)}</td></tr>`).join("")}
+    </table>` : ""}
+    ${isNC ? "" : `<table class="totals-table">
       <tr><td>Sous-total HT</td><td style="text-align:right">${fmtEur(sousTotal)}</td></tr>
       <tr><td>TVA ${tvaPct}%</td><td style="text-align:right">${fmtEur(tvaVal)}</td></tr>
       <tr class="sub-row"><td>Total boissons (TTC)</td><td style="text-align:right">${fmtEur(sousTotal + tvaVal)}</td></tr>
@@ -1452,8 +1461,9 @@ ${noteClientHTML}
       <tr><td>TVA transport ${TVA_TRANSPORT_PCT}%</td><td style="text-align:right">${fmtEur(tvaTransportVal)}</td></tr>
       ` : ""}
       <tr class="sub-row"><td>Total vidanges</td><td style="text-align:right">${fmtEur(totalConsignes)}</td></tr>
+      ${totalCreditAppl !== 0 ? `<tr><td>Note(s) de crédit</td><td style="text-align:right;color:#059669">${fmtEur(totalCreditAppl)}</td></tr>` : ""}
       <tr class="total-row"><td>TOTAL À PAYER</td><td style="text-align:right">${fmtEur(total)}</td></tr>
-    </table>
+    </table>`}
   </div>
 </div>
 </div>
@@ -1467,13 +1477,13 @@ ${noteClientHTML}
     <div style="flex:1;min-width:0">${impayeesHTML}</div>
   </div>
   ` : ""}
-  <p class="bank">Conditions : 7 jours date de facture</p>
+  ${isNC ? "" : `<p class="bank">Conditions : 7 jours date de facture</p>
   <div style="display:flex;justify-content:flex-end;gap:28px;margin-top:8px">
     ${BANQUES.map(b => `<div style="font-size:7.5pt;line-height:1.45;color:#333">
       <strong>${b.nom}</strong><br/>IBAN : ${b.ibanFmt}<br/>BIC : ${b.bic}<br/>Titulaire : ${b.titulaire}
     </div>`).join("")}
-  </div>
-  <p style="margin-top:14px;padding-top:10px;border-top:1px solid #EAEAEA;font-size:6.5pt;color:#999;font-style:italic;text-align:justify;">La présente facture vaut contrat. Par sa signature, le client reconnaît la dette et accepte les présentes conditions ainsi que les General Terms &amp; Conditions de Hondro Trading S.à r.l. Toute contestation doit être formulée par écrit dans un délai de 8 jours à compter de la date de la facture. Le droit luxembourgeois est applicable et les tribunaux de Luxembourg sont exclusivement compétents.</p>
+  </div>`}
+  ${isNC ? "" : `  <p style="margin-top:14px;padding-top:10px;border-top:1px solid #EAEAEA;font-size:6.5pt;color:#999;font-style:italic;text-align:justify;">La présente facture vaut contrat. Par sa signature, le client reconnaît la dette et accepte les présentes conditions ainsi que les General Terms &amp; Conditions de Hondro Trading S.à r.l. Toute contestation doit être formulée par écrit dans un délai de 8 jours à compter de la date de la facture. Le droit luxembourgeois est applicable et les tribunaux de Luxembourg sont exclusivement compétents.</p>`}
 </div>
 
 </body>
@@ -2452,6 +2462,8 @@ function BossokApp({ session, onLogout }) {
   const [paiementLot, setPaiementLot] = useState(null);   // ids à marquer payées en une fois (null = paiement unitaire)
   const [openCmdMenu, setOpenCmdMenu] = useState(null);
   const [paiementFacture, setPaiementFacture] = useState(null);
+  // Notes de crédit (trop-perçu) : {mode:"create", clientId, factureNumero, montant, motif} | {mode:"apply", facture, ncId, montant}
+  const [ncModal, setNcModal] = useState(null);
   const [paiementForm, setPaiementForm] = useState({});
   const [showPaiementDiverseForm, setShowPaiementDiverseForm] = useState(false);
   const [paiementDiverse, setPaiementDiverse] = useState(null);
@@ -3713,6 +3725,67 @@ function BossokApp({ session, onLogout }) {
     }, {danger:true, confirmLabel:"Supprimer"});
   };
 
+  // ── NOTES DE CRÉDIT (trop-perçu) ──────────────────────────────────────────
+  // Une note de crédit est une ligne de la table "factures" (statut "Avoir", donc exclue des
+  // statistiques) marquée type_document="note_credit", avec un solde (credit_restant) utilisable
+  // plus tard sur une facture impayée via « Appliquer une note de crédit ».
+  const creditsDisponibles = (clientId) => factures.filter(f => f.type_document==="note_credit" && f.client_id===clientId && (parseFloat(f.credit_restant)||0) > 0.004);
+  const creerNoteCredit = async () => {
+    const m = ncModal; if (!m || m.mode!=="create") return;
+    const montant = Math.round((parseFloat(String(m.montant).replace(",","."))||0)*100)/100;
+    const client = clients.find(c=>c.id===m.clientId);
+    if (!client) { notifyError("Choisissez un client."); return; }
+    if (montant <= 0) { notifyError("Indiquez un montant supérieur à 0."); return; }
+    if (!String(m.motif||"").trim()) { notifyError("Le motif est obligatoire."); return; }
+    setSaving(true);
+    try {
+      const numero = "NC-" + Date.now().toString().slice(-6);
+      const today = new Date().toISOString().split("T")[0];
+      await db.insert("factures", {
+        numero, client_id: client.id, client_nom: client.nom, client_adresse: client.adresse || "", client_tva: client.tva || "",
+        date: today, echeance: today,
+        lignes: [{ produitId:"NOTE_CREDIT_EMISE", nom: "Note de crédit — " + String(m.motif).trim(), qte:1, pu:-montant, consigne:0, isCredit:true }],
+        tva_pct: 0, statut: "Avoir", notes: String(m.motif).trim(), retours: [],
+        type_document: "note_credit", credit_restant: montant, credit_utilisations: [], facture_origine: m.factureNumero || null,
+      });
+      await loadAll();
+      setNcModal(null);
+      notifySuccess("Note de crédit " + numero + " créée : " + fmtFull(montant) + " disponibles pour " + client.nom + ".");
+    } catch(e) { logError(e); notifyError("Impossible de créer la note de crédit."); }
+    finally { setSaving(false); }
+  };
+  const appliquerNoteCredit = async () => {
+    const m = ncModal; if (!m || m.mode!=="apply") return;
+    const facture = m.facture;
+    const nc = factures.find(f => f.id === m.ncId);
+    if (!nc) { notifyError("Choisissez une note de crédit."); return; }
+    const montant = Math.round((parseFloat(String(m.montant).replace(",","."))||0)*100)/100;
+    const restant = parseFloat(nc.credit_restant)||0;
+    const du = totalFact(facture.lignes, facture.tva_pct).total;
+    if (montant <= 0) { notifyError("Indiquez un montant supérieur à 0."); return; }
+    if (montant > restant + 0.004) { notifyError("Ce montant dépasse le crédit disponible (" + fmtFull(restant) + ")."); return; }
+    if (montant > du + 0.004) { notifyError("Ce montant dépasse le total de la facture (" + fmtFull(du) + ")."); return; }
+    setSaving(true);
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const lignes = [...(facture.lignes||[]), { produitId:"NOTE_CREDIT", nom:"Note de crédit " + nc.numero, qte:1, pu:-montant, consigne:0, noteCredit: nc.numero }];
+      await db.update("factures", facture.id, { lignes });
+      try {
+        await db.update("factures", nc.id, {
+          credit_restant: Math.max(0, Math.round((restant - montant)*100)/100),
+          credit_utilisations: [...(nc.credit_utilisations||[]), { facture: facture.numero, montant, date: today }],
+        });
+      } catch(e2) {
+        logError(e2);
+        notifyError("Attention : la ligne a été ajoutée à la facture " + facture.numero + " mais le solde de " + nc.numero + " n'a pas pu être mis à jour. Corrigez-le à la main.");
+      }
+      await loadAll();
+      setNcModal(null);
+      notifySuccess("Note de crédit " + nc.numero + " appliquée : −" + fmtFull(montant) + " sur la facture " + facture.numero + ".");
+    } catch(e) { logError(e); notifyError("Impossible d'appliquer la note de crédit."); }
+    finally { setSaving(false); }
+  };
+
   const creerAvoir = async (facture) => {
     askConfirm(`Créer un avoir pour annuler la facture ${facture.numero} ?`, async () => {
       setSaving(true);
@@ -4241,6 +4314,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {page==="clients" && <button style={S.btn("#fff","#1D4ED8")} onClick={()=>{setEditClient(null);setClientForm({type:"Snack",nom:"",adresse:"",telephone:"",email:"",region:"",statut:"Actif",tva:"",conditions:"30 jours",categorie_fidelite:""});setShowClientForm(true);}}>{isMobile?"+":"+ Nouveau client"}</button>}
             {page==="factures" && !lectureSeule && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewFactureTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
+            {page==="factures" && !lectureSeule && <button style={S.btn("#fff","#6D28D9")} onClick={()=>setNcModal({mode:"create",clientId:null,factureNumero:"",montant:"",motif:""})}>{isMobile?"+ NC":"+ Note de crédit"}</button>}
             {page==="diverses" && !showDiverseForm && <button style={S.btn("#fff","#1D4ED8")} onClick={openNewDiverseTab}>{isMobile?"+":"+ Nouvelle facture"}</button>}
             {page==="commandes" && (showCmdForm ? (
               <button style={{...S.btn("#fff","#1D4ED8"),opacity:saving?0.6:1}} onClick={saveCmd} disabled={saving}>{isMobile?"✅":"✅ Enregistrer"}</button>
@@ -7086,7 +7160,7 @@ function BossokApp({ session, onLogout }) {
       selectedIds={factSelected}
       onToggleRow={toggleFactRow}
       onToggleAll={toggleFactAll}
-      onRowClick={lectureSeule ? undefined : (f=>openEditFacture(f))}
+      onRowClick={lectureSeule ? undefined : (f=> f.type_document==="note_credit" ? generatePDF(f, clients.find(x=>x.id===f.client_id), [], 0, []) : openEditFacture(f))}
       emptyIcon="🧾"
       emptyMessage="Aucune facture trouvée"
       initialSort={{key:"date",dir:"desc"}}
@@ -7131,7 +7205,9 @@ function BossokApp({ session, onLogout }) {
         {key:"statut", label:"Statut", mobileShow:true, sortValue:f=>f.statut||"", render:f=>{
           const sc = f.statut==="Payée"?"#DCFCE7":f.statut==="Avoir"?"#EDE9FE":f.statut==="Annulée"?"#F3F4F6":"#FEE2E2";
           const st = f.statut==="Payée"?"#166534":f.statut==="Avoir"?"#6D28D9":f.statut==="Annulée"?"#6B7280":"#DC2626";
-          const sl = f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":"⚠ Impayée";
+          const sl = f.type_document==="note_credit"
+            ? ((parseFloat(f.credit_restant)||0) > 0.004 ? "🧾 Crédit dispo " + fmtFull(parseFloat(f.credit_restant)||0) : "🧾 Crédit utilisé")
+            : f.statut==="Payée"?"✓ Payée":f.statut==="Avoir"?"↩ Avoir":f.statut==="Annulée"?"✕ Annulée":"⚠ Impayée";
           return <span style={S.badge(sc,st)}>{sl}</span>;
         }},
         {key:"actions", label:"", sortable:false, render:f=> lectureSeule ? (
@@ -7179,6 +7255,14 @@ function BossokApp({ session, onLogout }) {
                     className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#0EA5E9"}}>📋 Dupliquer</button>
                   <button onClick={()=>{setOpenFactureMenu(null);const c=clients.find(x=>x.id===f.client_id);const imp=factures.filter(x=>x.client_id===f.client_id&&x.statut==="Impayée"&&x.id!==f.id&&x.numero!==f.numero);const solde=soldeConsignes(f.client_id).reduce((s,r)=>s+r.solde*r.consigne,0);generatePDF(f,c,imp,solde,soldeConsignes(f.client_id));}}
                     className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#374151"}}>🖨️ Imprimer PDF</button>
+                  {f.statut==="Impayée"&&creditsDisponibles(f.client_id).length>0&&(
+                    <button onClick={()=>{setOpenFactureMenu(null);const dispo=creditsDisponibles(f.client_id);const du=totalFact(f.lignes,f.tva_pct).total;setNcModal({mode:"apply",facture:f,ncId:dispo[0].id,montant:String(Math.min(parseFloat(dispo[0].credit_restant)||0,du).toFixed(2))});}}
+                      className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#6D28D9"}}>🧾 Appliquer une note de crédit</button>
+                  )}
+                  {(f.statut==="Impayée"||f.statut==="Payée")&&(
+                    <button onClick={()=>{setOpenFactureMenu(null);setNcModal({mode:"create",clientId:f.client_id,factureNumero:f.numero,montant:"",motif:"Trop-perçu sur la facture "+f.numero});}}
+                      className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#6D28D9"}}>🧾 Créer une note de crédit</button>
+                  )}
                   {(f.statut==="Impayée"||f.statut==="Payée")&&(
                     <button onClick={()=>{setOpenFactureMenu(null);creerAvoir(f);}}
                       className="menu-item" style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",background:"none",border:"none",textAlign:"left",fontSize:13,cursor:"pointer",color:"#8B5CF6"}}>↩️ Créer un avoir</button>
@@ -8768,7 +8852,7 @@ function BossokApp({ session, onLogout }) {
               <input type="number" min="1" value={l.qte} onChange={e=>setFactLignes(prev=>prev.map((x,j)=>j===i?{...x,qte:parseInt(e.target.value)||1}:x))} style={{width:48,padding:"2px 6px",border:"1px solid #E5E7EB",borderRadius:6,fontSize:12}}/>
               <span style={{width:64,textAlign:"right"}}>{fmtFull(l.qte*l.pu)}</span>
               {l.consigne>0&&<span style={{width:64,textAlign:"right",color:"#7C3AED"}}>+{fmtFull(l.qte*l.consigne)}</span>}
-              {!l.offert&&l.produitId!=="CONSIGNE_MANUELLE"&&l.produitId!=="CREDIT_CONSIGNES"&&!l.isCredit&&(
+              {!l.offert&&l.produitId!=="CONSIGNE_MANUELLE"&&l.produitId!=="CREDIT_CONSIGNES"&&l.produitId!=="NOTE_CREDIT"&&!l.isCredit&&(
                 <button onClick={()=>offrirUniteFact(i)} title="Offrir 1 unité de cette ligne (gratuit)" style={{background:"none",border:"none",color:"#D97706",cursor:"pointer",fontSize:13}}>🎁</button>
               )}
               <button onClick={()=>setFactLignes(prev=>prev.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#EF4444",cursor:"pointer"}}>✕</button>
@@ -9625,6 +9709,83 @@ function BossokApp({ session, onLogout }) {
   )}
 
   {/* ══ MODAL MODE DE PAIEMENT ══════════════════════════════════════ */}
+  {ncModal&&(()=>{
+    const m = ncModal;
+    const fermer = () => setNcModal(null);
+    const lab = {fontSize:12,color:"#6B7280",display:"block",marginBottom:3};
+    if (m.mode==="create") {
+      const cl = clients.find(c=>c.id===m.clientId);
+      const dispo = cl ? creditsDisponibles(cl.id).reduce((s,x)=>s+(parseFloat(x.credit_restant)||0),0) : 0;
+      return (
+        <div style={S.modal} onClick={fermer}>
+          <div style={{...S.modalBox,maxWidth:440}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🧾 Nouvelle note de crédit</h2>
+              <button onClick={fermer} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+            </div>
+            <div style={{fontSize:12,color:"#6B7280",marginBottom:12}}>Argent reçu en trop : le client garde ce crédit, que vous appliquerez sur une de ses factures quand vous le décidez. Sans TVA.</div>
+            <div style={{display:"grid",gap:10}}>
+              <div>
+                <label style={lab}>Client *</label>
+                <select value={m.clientId||""} onChange={e=>setNcModal(p=>({...p,clientId:e.target.value?Number(e.target.value):null}))} style={S.input} disabled={!!m.factureNumero}>
+                  <option value="">— Choisir un client —</option>
+                  {[...clients].sort((a,b)=>(a.nom||"").localeCompare(b.nom||"")).map(c=><option key={c.id} value={c.id}>{c.nom}</option>)}
+                </select>
+                {cl&&dispo>0&&<div style={{fontSize:11,color:"#6D28D9",marginTop:4}}>Crédit déjà disponible pour ce client : {fmtFull(dispo)}</div>}
+              </div>
+              {m.factureNumero&&<div style={{fontSize:12,color:"#374151"}}>Facture concernée : <b>{m.factureNumero}</b></div>}
+              <div>
+                <label style={lab}>Montant du crédit (€) *</label>
+                <input type="number" min="0" step="0.01" value={m.montant} onChange={e=>setNcModal(p=>({...p,montant:e.target.value}))} style={S.input} placeholder="ex : 50.00"/>
+              </div>
+              <div>
+                <label style={lab}>Motif *</label>
+                <input value={m.motif} onChange={e=>setNcModal(p=>({...p,motif:e.target.value}))} style={S.input} placeholder="ex : Trop-perçu virement du 05/11"/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:18}}>
+              <button onClick={fermer} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+              <button onClick={creerNoteCredit} disabled={saving||!m.clientId||!(parseFloat(m.montant)>0)||!String(m.motif||"").trim()} style={{...S.btn(),flex:1,opacity:(saving||!m.clientId||!(parseFloat(m.montant)>0)||!String(m.motif||"").trim())?0.5:1}}>{saving?"Création…":"Créer la note de crédit"}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    // mode "apply"
+    const f = m.facture;
+    const dispo = creditsDisponibles(f.client_id);
+    const du = totalFact(f.lignes, f.tva_pct).total;
+    const nc = dispo.find(x=>x.id===m.ncId);
+    return (
+      <div style={S.modal} onClick={fermer}>
+        <div style={{...S.modalBox,maxWidth:440}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+            <h2 style={{margin:0,fontSize:16,fontWeight:700}}>🧾 Appliquer une note de crédit</h2>
+            <button onClick={fermer} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#9CA3AF"}}>✕</button>
+          </div>
+          <div style={{fontSize:13,color:"#6B7280",marginBottom:12}}>Facture {f.numero} — {f.client_nom} · à payer : <b>{fmtFull(du)}</b></div>
+          <div style={{display:"grid",gap:10}}>
+            <div>
+              <label style={lab}>Note de crédit à utiliser</label>
+              <select value={m.ncId} onChange={e=>{const x=dispo.find(d=>d.id===Number(e.target.value));setNcModal(p=>({...p,ncId:Number(e.target.value),montant:x?String(Math.min(parseFloat(x.credit_restant)||0,du).toFixed(2)):""}));}} style={S.input}>
+                {dispo.map(d=><option key={d.id} value={d.id}>{d.numero} — {fmtFull(parseFloat(d.credit_restant)||0)} dispo{d.notes?" · "+d.notes:""}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lab}>Montant à déduire (€)</label>
+              <input type="number" min="0" step="0.01" value={m.montant} onChange={e=>setNcModal(p=>({...p,montant:e.target.value}))} style={S.input}/>
+              {nc&&<div style={{fontSize:11,color:"#6B7280",marginTop:4}}>Il restera {fmtFull(Math.max(0,(parseFloat(nc.credit_restant)||0)-(parseFloat(m.montant)||0)))} de crédit · la facture passera à {fmtFull(Math.max(0,du-(parseFloat(m.montant)||0)))}</div>}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:18}}>
+            <button onClick={fermer} style={{...S.btn("#F3F4F6","#374151"),flex:1}}>Annuler</button>
+            <button onClick={appliquerNoteCredit} disabled={saving||!nc||!(parseFloat(m.montant)>0)} style={{...S.btn(),flex:1,opacity:(saving||!nc||!(parseFloat(m.montant)>0))?0.5:1}}>{saving?"Application…":"Appliquer"}</button>
+          </div>
+        </div>
+      </div>
+    );
+  })()}
+
   {showPaiementForm&&paiementFacture&&(
   <div style={S.modal} onClick={()=>{setShowPaiementForm(false);setPaiementFacture(null);setPaiementLot(null);}}>
     <div style={{...S.modalBox,maxWidth:420}} onClick={e=>e.stopPropagation()}>
