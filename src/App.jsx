@@ -1136,7 +1136,8 @@ const totalFact = (lignes=[], tvaPct=0) => {
   const cons = lignes.reduce((s,l)=> s + (l.produitId==="CONSIGNE_MANUELLE" ? l.qte*l.pu : l.qte*(l.consigne||0)), 0);
   const transport = lignes.reduce((s,l)=> s + (l.produitId==="TRANSPORT_MANUEL" ? l.qte*l.pu : 0), 0);
   const tva = prod * (tvaPct||0) / 100 + transport * TVA_TRANSPORT_PCT / 100;
-  return {prod, cons, transport, credit, tva, total: prod+cons+transport+credit+tva};
+  const tot = prod+cons+transport+credit+tva;
+  return {prod, cons, transport, credit, tva, total: Math.abs(tot)<0.005 ? 0 : tot}; // évite l'affichage « -0,00 € » (arrondi flottant)
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3321,6 +3322,8 @@ function BossokApp({ session, onLogout }) {
           date: factDate, echeance: echDate,
           lignes: lignesFinales, statut: "Impayée", notes: factNotes, note_client: factNoteClient, retours: [],
           tva_pct: clientEstExonere(client) ? 0 : 3,
+          ...(lignesNC.length && totalFact(lignesFinales, clientEstExonere(client)?0:3).total <= 0.004
+              ? { statut: "Payée", mode_paiement: "Note de crédit", date_paiement: new Date().toISOString().split("T")[0] } : {}),
         });
         if (contientCredit) await marquerConsignesUtilisees(factClientId);
         if (lignesNC.length) {
@@ -3341,7 +3344,9 @@ function BossokApp({ session, onLogout }) {
         await loadAll();
         const newFact = {numero:num, client_id:factClientId,
           client_nom:client?.nom||"", client_adresse:client?.adresse||"",
-          client_tva:client?.tva||"", date:factDate, lignes:lignesFinales, statut:"Impayée", note_client:factNoteClient};
+          client_tva:client?.tva||"", date:factDate, echeance:echDate, lignes:lignesFinales, statut:"Impayée", note_client:factNoteClient,
+          tva_pct: clientEstExonere(client) ? 0 : 3};
+        if (lignesNC.length && totalFact(lignesFinales, newFact.tva_pct).total <= 0.004) { newFact.statut="Payée"; newFact.mode_paiement="Note de crédit"; newFact.date_paiement=new Date().toISOString().split("T")[0]; }
         setLastFacture({facture:newFact, client});
       }
       setFactLignes([]); setFactNotes(""); setFactNoteClient(""); setFactTransportMontant(""); setFactClientId(null);
@@ -3800,7 +3805,10 @@ function BossokApp({ session, onLogout }) {
     try {
       const today = new Date().toISOString().split("T")[0];
       const lignes = [...(facture.lignes||[]), { produitId:"NOTE_CREDIT", nom:"Note de crédit " + nc.numero, qte:1, pu:-montant, consigne:0, noteCredit: nc.numero }];
-      await db.update("factures", facture.id, { lignes });
+      const soldeFacture = totalFact(lignes, facture.tva_pct).total;
+      await db.update("factures", facture.id, soldeFacture <= 0.004
+        ? { lignes, statut: "Payée", mode_paiement: "Note de crédit", date_paiement: today }
+        : { lignes });
       try {
         await db.update("factures", nc.id, {
           credit_restant: Math.max(0, Math.round((restant - montant)*100)/100),
@@ -8921,9 +8929,12 @@ function BossokApp({ session, onLogout }) {
             </div>
           ))}
           <div style={{padding:"7px 10px",background:"#F9FAFB",display:"flex",justifyContent:"flex-end",gap:14,fontSize:12}}>
-            <span>HT : <b>{fmtFull(factLignes.reduce((s,l)=>s+l.qte*l.pu,0))}</b></span>
+            <span>HT : <b>{fmtFull(factLignes.filter(l=>l.produitId!=="NOTE_CREDIT").reduce((s,l)=>s+l.qte*l.pu,0))}</b></span>
             {factLignes.some(l=>l.consigne>0)&&<span style={{color:"#7C3AED"}}>Consignes : <b>{fmtFull(factLignes.reduce((s,l)=>s+l.qte*(l.consigne||0),0))}</b></span>}
-            <span style={{fontWeight:700}}>Total : <b>{fmtFull(factLignes.reduce((s,l)=>s+l.qte*(l.pu+(l.consigne||0)),0))}</b></span>
+            {factLignes.some(l=>l.produitId==="NOTE_CREDIT")&&<span style={{color:"#6D28D9"}}>Notes de crédit : <b>{fmtFull(factLignes.filter(l=>l.produitId==="NOTE_CREDIT").reduce((s,l)=>s+l.qte*l.pu,0))}</b></span>}
+            {factLignes.some(l=>l.produitId==="NOTE_CREDIT")
+              ? <span style={{fontWeight:700}}>Reste à payer (TTC) : <b>{fmtFull(totalFact(factLignes, clientEstExonere(clients.find(c=>c.id===factClientId))?0:3).total)}</b></span>
+              : <span style={{fontWeight:700}}>Total : <b>{fmtFull(factLignes.reduce((s,l)=>s+l.qte*(l.pu+(l.consigne||0)),0))}</b></span>}
           </div>
         </div>
       )}
