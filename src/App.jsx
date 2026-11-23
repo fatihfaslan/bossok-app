@@ -2962,6 +2962,31 @@ function BossokApp({ session, onLogout }) {
     }, {danger:true});
   };
 
+  // Suppression définitive d'un client : bloquée s'il a des factures ou commandes liées
+  // (on ne veut jamais perdre un historique comptable réel). Dans ce cas, on propose
+  // de le passer en "Passif" à la place.
+  const supprimerClient = (client) => {
+    const nbFactures = factures.filter(f => f.client_id === client.id).length;
+    const nbCommandes = commandes.filter(c => c.client_id === client.id).length;
+    if (nbFactures > 0 || nbCommandes > 0) {
+      const details = [
+        nbFactures > 0 ? `${nbFactures} facture(s)` : null,
+        nbCommandes > 0 ? `${nbCommandes} commande(s)` : null,
+      ].filter(Boolean).join(" et ");
+      notifyError(`Impossible de supprimer "${client.nom}" : ${details} encore liée(s) à ce client. Passe-le en "Passif" (✏️ → Statut) si tu veux le retirer sans perdre l'historique.`);
+      return;
+    }
+    askConfirm(`Supprimer définitivement "${client.nom}" ? Cette action est irréversible. Ce client n'a aucune facture ni commande enregistrée.`, async () => {
+      setSaving(true);
+      try {
+        await db.delete("clients", client.id);
+        await loadAll();
+        notifySuccess(`Client "${client.nom}" supprimé.`);
+      } catch(e) { logError(e); }
+      finally { setSaving(false); }
+    }, {danger:true, confirmLabel:"Supprimer définitivement"});
+  };
+
   const geocoderClientsExistants = async () => {
     const aGeocoder = clients.filter(c => c.adresse && (!c.lat || !c.lng));
     if (aGeocoder.length === 0) { notifySuccess("Tous les clients avec une adresse sont déjà géolocalisés."); return; }
@@ -4926,7 +4951,21 @@ function BossokApp({ session, onLogout }) {
 
   const ca = factActives.reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0) + caHistorique;
   const caPayee = dashFacts.filter(f=>f.statut==="Payée").reduce((s,f)=>s+totalFact(f.lignes, f.tva_pct).total,0) + payeeHistorique;
-  const impaye = dashFacts.filter(f=>f.statut==="Impayée").reduce((s,f)=>s+resteFact(f),0) + impayeHistorique;
+
+  // Impayé = solde dû À CE JOUR (un solde, pas un flux) : jamais limité à la période choisie,
+  // sinon il ne reflète qu'une partie de ce qui est réellement dû (cause du décalage avec l'onglet Factures).
+  // Seuls le client et la zone restent des filtres pertinents ici.
+  const factsImpayeesGlobal = factures.filter(f=>{
+    if (f.statut !== "Impayée") return false;
+    if (dashClient && f.client_id !== dashClient) return false;
+    if (dashZone) { const cl=clients.find(c=>c.id===f.client_id); if(cl?.region!==dashZone) return false; }
+    return true;
+  });
+  const impayeHistoriqueGlobal = MONTHLY_DATA_KEYED.filter(m =>
+    !moisAvecVraiesFactures.has(m.key) &&
+    !dashClient && !dashZone && !dashChauffeur && dashProduits.length===0
+  ).reduce((s,m)=>s+m.impaye,0);
+  const impaye = factsImpayeesGlobal.reduce((s,f)=>s+resteFact(f),0) + impayeHistoriqueGlobal;
   let marge = 0, margeLignesReelles = 0, margeLignesTotal = 0;
   factActives.forEach(f => {
     const r = calcMargeFacture(f, produits, receptionsStock);
@@ -5282,7 +5321,7 @@ function BossokApp({ session, onLogout }) {
         {l:"CA Total",v:fmtFull(ca),c:"#0F172A",icon:"money",sub:factActives.length+" factures"},
         {l:margeCouverture===100?"Marge réelle":"Marge (estimée)",v:fmtFull(marge),c:"#0F172A",icon:"trendingUp",sub:margePct+"% du CA"},
         {l:"Encaissé",v:fmtFull(caPayee),c:"#0F172A",icon:"check",sub:dashFacts.filter(f=>f.statut==="Payée").length+" payées"},
-        {l:"Impayés",v:fmtFull(impaye),c:"#DC2626",icon:"warning",sub:dashFacts.filter(f=>f.statut==="Impayée").length+" factures",alert:true},
+        {l:"Impayés",v:fmtFull(impaye),c:"#DC2626",icon:"warning",sub:factsImpayeesGlobal.length+" factures",alert:true},
       ].map((s,i)=>(
         <div key={i} style={{...S.card,padding:"18px 20px",borderLeft:s.alert?"3px solid #DC2626":"1px solid #E3E7ED"}}>
           <div style={{width:36,height:36,borderRadius:9,background:s.alert?"#FEF2F2":"#F1F5F9",color:s.alert?"#DC2626":"#5D6B82",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:10}}><Icon name={s.icon} size={17}/></div>
@@ -8628,6 +8667,7 @@ function BossokApp({ session, onLogout }) {
           <div style={{display:"flex",gap:6,flexShrink:0}}>
             <button onClick={()=>{openNewFactureTab();setFactClientId(selClient.id);setFactNoteClient(selClient.commentaire_facture||"");}} style={S.btn()}>+ Facture</button>
             <button onClick={()=>{setEditClient(selClient);setClientForm({...selClient});setShowClientForm(true);}} style={S.btn("#F1F5F9","#334155")}>✏️</button>
+            <button title="Supprimer définitivement" onClick={()=>supprimerClient(selClient)} style={S.btn("#FEE2E2","#DC2626")}>🗑️</button>
           </div>
         </div>
         {selClient.code_activation&&(
