@@ -3010,7 +3010,19 @@ function BossokApp({ session, onLogout }) {
     askConfirm(`Supprimer définitivement "${client.nom}" ? Cette action est irréversible. Ce client n'a aucune facture ni commande enregistrée.`, async () => {
       setSaving(true);
       try {
+        const authUserId = client.auth_user_id;
         await db.delete("clients", client.id);
+        // Supprime aussi le compte de connexion portail lié, sinon son e-mail reste
+        // "pris" côté Supabase Auth et le client ne peut plus se réinscrire.
+        if (authUserId) {
+          try {
+            await fetch(`${SUPABASE_URL}/functions/v1/supprimer-compte-client`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": "Bearer " + SUPABASE_KEY },
+              body: JSON.stringify({ auth_user_id: authUserId }),
+            });
+          } catch (e) { /* le client est déjà supprimé ; on ne bloque pas dessus */ }
+        }
         await loadAll();
         notifySuccess(`Client "${client.nom}" supprimé.`);
       } catch(e) { logError(e); }
