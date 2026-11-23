@@ -2942,12 +2942,43 @@ function BossokApp({ session, onLogout }) {
 
   // Demandes de compte portail (clients.statut_compte === "en_attente")
   // — inscriptions faites depuis hondro-distribution.com, à vérifier avant activation.
+  // E-mail "votre compte est activé", envoyé via la fonction Supabase Edge "activer-compte-client".
+  // Ne bloque jamais l'activation elle-même : si l'e-mail échoue, le compte reste activé
+  // et on prévient juste que l'e-mail n'est pas parti.
+  const envoyerEmailActivation = async (client) => {
+    if (!client.email) return { ok: false, reason: "pas d'e-mail" };
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/activer-compte-client`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${getSession()?.access_token || SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: client.email, nom: client.nom }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        return { ok: false, reason: err };
+      }
+      return { ok: true };
+    } catch(e) {
+      return { ok: false, reason: String(e) };
+    }
+  };
+
   const activerDemandeCompte = (client) => {
     askConfirm(`Activer le compte de "${client.nom}" ? Le client pourra se connecter et passer commande sur le portail.`, async () => {
       try {
         await db.update("clients", client.id, { statut_compte: "actif" });
         await loadAll();
         notifySuccess(`✅ Compte activé pour ${client.nom}.`);
+        const emailResult = await envoyerEmailActivation(client);
+        if (emailResult.ok) {
+          notifySuccess(`📧 E-mail de confirmation envoyé à ${client.email}.`);
+        } else {
+          notifyError(`⚠️ Compte activé, mais l'e-mail de confirmation n'a pas pu être envoyé (${emailResult.reason}).`);
+        }
       } catch(e) { logError(e); }
     });
   };
