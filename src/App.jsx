@@ -4129,7 +4129,7 @@ function BossokApp({ session, onLogout }) {
             lignes.push({ produitId:"CONSIGNE_MANUELLE", nom: libelleConsigne({label:l.label, taille:l.unitaire, qte:l.qte, sens:l.sens}), qte:1, pu:montant, consigne:0, isCredit: montant<0 });
           });
           if (transportMontant > 0) lignes.push({ produitId:"TRANSPORT_MANUEL", nom:"Transport", qte:1, pu:transportMontant, consigne:0 });
-          await db.insert("factures", {
+          const newFacture = await db.insert("factures", {
             numero: num, client_id: cmdClientId,
             client_nom: client?.nom||"", client_adresse: client?.adresse||"",
             client_tva: client?.tva||"",
@@ -4138,6 +4138,12 @@ function BossokApp({ session, onLogout }) {
             note_client: [client?.commentaire_facture, cmdNotes].filter(Boolean).join(" — "),
             tva_pct: clientEstExonere(client) ? 0 : 3,
           });
+          // Relier officiellement la facture à la commande (évite qu'un autre mécanisme
+          // ne la refacture, et permet au reste de l'app de retrouver la bonne facture).
+          const createdFacture = Array.isArray(newFacture) ? newFacture[0] : newFacture;
+          if (createdFacture?.id) {
+            await db.update("commandes", newCmd.id, { facture_id: createdFacture.id });
+          }
         }
       }
       await loadAll();
